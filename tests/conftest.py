@@ -35,3 +35,9 @@ def auth_client(client):
         data={"username": settings.admin_username, "password": settings.admin_password},
     )
     return client
+
+
+@pytest.fixture()
+def db():
+    with Session(db_module.engine) as session:
+        yield session
