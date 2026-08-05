@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}PointBook{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  {% if request.session.get('admin_username') %}
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="/">PointBook</a>
+      <nav class="nav">
+        <a href="/people">인원</a>
+        <a href="/teams">팀</a>
+        <a href="/monthly">월간 처리</a>
+        <a href="/dashboard">대시보드</a>
+        <form method="post" action="/logout" class="inline-form">
+          <button type="submit" class="btn btn-link">로그아웃</button>
+        </form>
+      </nav>
+    </div>
+  </header>
+  {% endif %}
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>
