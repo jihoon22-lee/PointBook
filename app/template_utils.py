@@ -10,6 +10,15 @@ TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 
 
+def number_format(value: int | None) -> str:
+    if value is None:
+        return "-"
+    return f"{value:,}"
+
+
+templates.env.filters["number_format"] = number_format
+
+
 def render(
     request: Request,
     name: str,

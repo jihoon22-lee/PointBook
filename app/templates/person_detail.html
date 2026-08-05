@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}{{ person.name }} - PointBook{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <h1>{{ person.name }} <span class="muted">({{ person.personal_no }})</span></h1>
+  <div class="spacer"></div>
+  <a class="btn" href="/people/{{ person.id }}/edit">수정</a>
+  <a class="btn" href="/people">목록</a>
+</div>
+
+<div class="card">
+  <table>
+    <tr><th>계급</th><td>{{ person.grade or '-' }}</td></tr>
+    <tr><th>팀</th><td>{% if person.team %}<span class="badge" style="background: {{ person.team.color }}">{{ person.team.name }}</span>{% else %}-{% endif %}</td></tr>
+    <tr><th>상태</th><td>{% if person.status == 'active' %}<span class="badge badge-active">재직</span>{% else %}<span class="badge badge-inactive">비재직</span>{% endif %}</td></tr>
+  </table>
+</div>
+
+<div class="card">
+  <h2>월별 포인트 이력</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>월</th><th>이월 잔액</th><th>당월 충전</th><th>사용</th><th>총 잔액</th></tr>
+      </thead>
+      <tbody>
+      {% for b in balances %}
+        <tr>
+          <td>{{ b.snapshot.month }}</td>
+          <td>{{ b.carry_balance|number_format }}</td>
+          <td>{{ b.amount|number_format }}</td>
+          <td>{{ b.usage|number_format }}</td>
+          <td><strong>{{ b.total|number_format }}</strong></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5" class="muted">아직 기록된 월별 데이터가 없습니다. (월간 처리에서 생성)</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
