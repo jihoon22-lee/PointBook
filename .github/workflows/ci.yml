@@ -61,9 +61,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [lint, typecheck, test]
     if: hashFiles('e2e/**') != ''
-    defaults:
-      run:
-        working-directory: e2e
     steps:
       - uses: actions/checkout@v4
-      - run: docker compose -f compose.yml up --build --abort-on-container-exit --exit-code-from e2e
+      - name: Run E2E (구버전 Chromium)
+        working-directory: e2e
+        run: docker compose -f compose.yml up --build --abort-on-container-exit --exit-code-from e2e
