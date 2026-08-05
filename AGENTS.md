@@ -74,7 +74,8 @@ uv run python -m scripts.init_db   # DB 초기화 (관리자 계정 생성)
   (pytest + coverage **85% 이상**) → `security`(pip-audit) → `secret-scan`(gitleaks) → `e2e`
   (구버전 Chromium Playwright, `e2e/` 존재 시)
 - 각 단계 완료 후: **계획 대비 자체 검토 → PR(한글, 리뷰 가능 상태) → CI 전체 통과
-  → squash merge**. `main`에 직접 푸시 금지 (브랜치 보호 규칙)
+  → squash merge**. `main`에 직접 푸시 금지 (자체 규칙 — GitHub 브랜치 보호는
+  private 무료 요금제에서 불가, squash 머지만 저장소 기본값으로 설정됨)
 - PR 머지 전 모든 CI job 통과 필수
 
 ## 작업 컨벤션
