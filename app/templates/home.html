@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}PointBook 홈{% endblock %}
+{% block content %}
+<h1>PointBook</h1>
+<p class="muted">소방서 포인트 충전 요청서 관리 서비스</p>
+<div class="card-grid">
+  <a class="card card-link" href="/people">
+    <h2>인원 관리</h2>
+    <p>재직/비재직, 팀, 잔액 조회 및 개별 수정</p>
+  </a>
+  <a class="card card-link" href="/teams">
+    <h2>팀 관리</h2>
+    <p>팀 마스터 추가/삭제, 색상 구분</p>
+  </a>
+  <a class="card card-link" href="/monthly">
+    <h2>월간 처리</h2>
+    <p>요청서 사진 인식 → 검수 → 동기화 · 잔액 계산</p>
+  </a>
+  <a class="card card-link" href="/dashboard">
+    <h2>대시보드</h2>
+    <p>월별 사용량·잔액 통계, 월별 이력</p>
+  </a>
+</div>
+{% endblock %}
