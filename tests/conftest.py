@@ -10,19 +10,25 @@ from app.models import AdminUser
 
 
 @pytest.fixture()
-def client(tmp_path):
+def db(tmp_path):
     db_path = tmp_path / "test.db"
     db_module.configure_database(f"sqlite:///{db_path}")
     db_module.Base.metadata.create_all(db_module.engine)
+    with Session(db_module.engine) as session:
+        yield session
+
+
+@pytest.fixture()
+def client(db):
     settings = get_settings()
-    with Session(db_module.engine) as db:
-        db.add(
+    with Session(db_module.engine) as session:
+        session.add(
             AdminUser(
                 username=settings.admin_username,
                 password_hash=generate_password_hash(settings.admin_password),
             )
         )
-        db.commit()
+        session.commit()
     with TestClient(app) as c:
         yield c
 
@@ -35,9 +41,3 @@ def auth_client(client):
         data={"username": settings.admin_username, "password": settings.admin_password},
     )
     return client
-
-
-@pytest.fixture()
-def db():
-    with Session(db_module.engine) as session:
-        yield session
