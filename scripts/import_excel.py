@@ -5,10 +5,10 @@
 """
 
 import argparse
-from datetime import UTC, datetime
 from pathlib import Path
 
 from app import db as db_module
+from app.services.dates import current_month
 from app.services.excel_import import import_excel
 
 
@@ -16,9 +16,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="기존 엑셀 요청서 데이터를 DB로 이관")
     parser.add_argument("--file", required=True, type=Path, help="엑셀 파일 경로 (.xlsx)")
     parser.add_argument(
-        "--month",
-        default=datetime.now(UTC).strftime("%Y-%m"),
-        help="처리 월 (YYYY-MM, 기본: 이번 달)",
+        "--month", default=current_month(), help="처리 월 (YYYY-MM, 기본: 이번 달 KST)"
     )
     args = parser.parse_args()
 

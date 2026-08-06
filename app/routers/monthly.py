@@ -1,5 +1,4 @@
 import re
-from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse, Response
@@ -12,7 +11,9 @@ from app.ai.factory import get_provider
 from app.auth import require_login
 from app.db import get_db
 from app.models import MonthlySnapshot, Person
+from app.services import stats
 from app.services.balance import build_balance_records, create_monthly_snapshot
+from app.services.dates import current_month
 from app.services.parsing import _to_int, parse_pasted
 from app.services.sync import RequestRow, SyncAnalysis, analyze, apply_analysis
 from app.template_utils import render
@@ -22,30 +23,24 @@ router = APIRouter(prefix="/monthly", dependencies=[Depends(require_login)], tag
 MONTH_RE = re.compile(r"^\d{4}-\d{2}$")
 
 
-def current_month() -> str:
-    return datetime.now(UTC).strftime("%Y-%m")
-
-
 def _parse_row_fields(form: FormData) -> list[RequestRow]:
     rows: list[RequestRow] = []
-    for i in range(100):
-        key = f"personal_no_{i}"
-        if key not in form:
-            break
-        personal_no = str(form.get(key, "")).strip()
+    i = 0
+    while f"personal_no_{i}" in form:
+        personal_no = str(form.get(f"personal_no_{i}", "")).strip()
         name = str(form.get(f"name_{i}", "")).strip()
-        if not personal_no or not name:
-            continue
-        rows.append(
-            RequestRow(
-                personal_no=personal_no,
-                name=name,
-                team=str(form.get(f"team_{i}", "")).strip(),
-                grade=str(form.get(f"grade_{i}", "")).strip(),
-                amount=_to_int(str(form.get(f"amount_{i}", "0"))),
-                note=str(form.get(f"note_{i}", "")).strip(),
+        if personal_no and name:
+            rows.append(
+                RequestRow(
+                    personal_no=personal_no,
+                    name=name,
+                    team=str(form.get(f"team_{i}", "")).strip(),
+                    grade=str(form.get(f"grade_{i}", "")).strip(),
+                    amount=_to_int(str(form.get(f"amount_{i}", "0"))),
+                    note=str(form.get(f"note_{i}", "")).strip(),
+                )
             )
-        )
+        i += 1
     return rows
 
 
@@ -60,20 +55,8 @@ def _parse_carry_fields(form: FormData) -> dict[str, int]:
 
 @router.get("")
 def monthly_home(request: Request, db: Session = Depends(get_db)) -> Response:
-    snapshots = list(
-        db.scalars(select(MonthlySnapshot).order_by(MonthlySnapshot.month.desc())).all()
-    )
-    summary = []
-    for snapshot in snapshots:
-        summary.append(
-            {
-                "month": snapshot.month,
-                "count": len(snapshot.records),
-                "total_amount": sum(r.amount for r in snapshot.records),
-                "total_usage": sum(r.usage for r in snapshot.records),
-                "total_balance": sum(r.total for r in snapshot.records),
-            }
-        )
+    months = stats.available_months(db)
+    summary = [stats.month_summary(db, month) for month in months]
     return render(
         request,
         "monthly.html",
@@ -94,25 +77,15 @@ async def upload(request: Request, db: Session = Depends(get_db)) -> Response:
         provider = get_provider()
         rows = provider.extract_table(await file.read(), file.filename)
     if not rows:
-        snapshots = list(
-            db.scalars(select(MonthlySnapshot).order_by(MonthlySnapshot.month.desc())).all()
-        )
+        months = stats.available_months(db)
+        summary = [stats.month_summary(db, m) for m in months]
         return render(
             request,
             "monthly.html",
             {
                 "month": month,
                 "error": "인식된 인원이 없습니다. 사진을 다시 업로드하거나 표를 붙여넣기해 주세요.",
-                "summary": [
-                    {
-                        "month": s.month,
-                        "count": len(s.records),
-                        "total_amount": sum(r.amount for r in s.records),
-                        "total_usage": sum(r.usage for r in s.records),
-                        "total_balance": sum(r.total for r in s.records),
-                    }
-                    for s in snapshots
-                ],
+                "summary": summary,
             },
             400,
         )
