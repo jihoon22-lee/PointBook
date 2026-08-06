@@ -64,6 +64,17 @@ def monthly_home(request: Request, db: Session = Depends(get_db)) -> Response:
     )
 
 
+def _error_response(request: Request, db: Session, month: str, message: str) -> Response:
+    months = stats.available_months(db)
+    summary = [stats.month_summary(db, m) for m in months]
+    return render(
+        request,
+        "monthly.html",
+        {"month": month, "error": message, "summary": summary},
+        400,
+    )
+
+
 @router.post("/upload")
 async def upload(request: Request, db: Session = Depends(get_db)) -> Response:
     form = await request.form()
@@ -75,19 +86,16 @@ async def upload(request: Request, db: Session = Depends(get_db)) -> Response:
     file = form.get("file")
     if isinstance(file, StarletteUploadFile) and file.filename:
         provider = get_provider()
-        rows = provider.extract_table(await file.read(), file.filename)
+        try:
+            rows = provider.extract_table(await file.read(), file.filename)
+        except ValueError as exc:
+            return _error_response(request, db, month, str(exc))
     if not rows:
-        months = stats.available_months(db)
-        summary = [stats.month_summary(db, m) for m in months]
-        return render(
+        return _error_response(
             request,
-            "monthly.html",
-            {
-                "month": month,
-                "error": "인식된 인원이 없습니다. 사진을 다시 업로드하거나 표를 붙여넣기해 주세요.",
-                "summary": summary,
-            },
-            400,
+            db,
+            month,
+            "인식된 인원이 없습니다. 사진을 다시 업로드하거나 표를 붙여넣기해 주세요.",
         )
     analysis = analyze(db, rows)
     prev_totals: dict[str, int] = {}
