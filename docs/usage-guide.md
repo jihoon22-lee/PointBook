@@ -152,6 +152,27 @@ netsh advfirewall firewall add rule name="PointBook" dir=in action=allow protoco
 
 > 안드로이드 에뮬레이터는 `http://10.0.2.2:8000`.
 
+### 4-1. Tailscale serve 사용 시 주의 (포트 점유)
+
+Tailscale serve(`https://main.tail30f401.ts.net:8002` 등)를 설정하면 **serve 리스너가
+백엔드 서버가 죽어도 해당 포트를 계속 점유**한다. stop.sh로 PointBook을 내려도
+`scripts/run.sh` 재실행 시 "포트 사용 중" 오류가 날 수 있다.
+
+해결 절차:
+
+```bash
+tailscale serve status                  # 원인 확인 (8002 프록시 설정 확인)
+tailscale serve --https=8002 off        # 8002 서빙만 해제 (다른 서빙은 유지)
+scripts/run.sh                          # PointBook 기동
+```
+
+- serve 리스너는 `0.0.0.0:8002` 바인딩과 충돌하므로, **serve를 다시 켤 때는 PointBook을
+  127.0.0.1로만 바인딩**해야 한다:
+  ```bash
+  HOST=127.0.0.1 scripts/run.sh
+  tailscale serve --bg https+8002 http://127.0.0.1:8002
+  ```
+
 ---
 
 ## 5. 주의사항·팁
