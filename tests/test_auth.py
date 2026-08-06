@@ -58,3 +58,14 @@ def test_logout(client):
     assert resp.headers["location"] == "/login"
     resp = client.get("/", follow_redirects=False)
     assert resp.status_code == 303
+
+
+def test_login_with_whitespace_username(client):
+    settings = get_settings()
+    resp = client.post(
+        "/login",
+        data={"username": f"  {settings.admin_username}  ", "password": settings.admin_password},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/"

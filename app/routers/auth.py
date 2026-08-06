@@ -26,6 +26,7 @@ def login(
     password: str = Form(...),
     db: Session = Depends(get_db),
 ) -> Response:
+    username = username.strip()
     user = db.scalar(select(AdminUser).where(AdminUser.username == username))
     if user is not None and check_password_hash(user.password_hash, password):
         login_user(request, user.username)

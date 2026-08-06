@@ -237,3 +237,21 @@ def test_monthly_requires_login(client):
 def test_monthly_done_message(auth_client):
     resp = auth_client.get("/monthly?done=1")
     assert "처리가 완료되었습니다" in resp.text
+
+
+def test_parse_row_fields_over_100_rows(auth_client):
+    from starlette.datastructures import FormData
+
+    from app.routers.monthly import _parse_row_fields
+
+    form_data = []
+    for i in range(101):
+        form_data.append((f"personal_no_{i}", f"10{i:03d}"))
+        form_data.append((f"name_{i}", f"인원{i}"))
+        form_data.append((f"team_{i}", "1팀"))
+        form_data.append((f"grade_{i}", ""))
+        form_data.append((f"amount_{i}", "50000"))
+    form = FormData(form_data)
+    rows = _parse_row_fields(form)
+    assert len(rows) == 101
+    assert rows[100].personal_no == "10100"
