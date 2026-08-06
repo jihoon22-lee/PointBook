@@ -17,23 +17,23 @@ def _row(personal_no="1001", name="홍길동", team="1팀", grade="소방위", a
     return RequestRow(personal_no=personal_no, name=name, team=team, grade=grade, amount=amount)
 
 
-def test_analyze_new_person(db):
+def test_analyze_new_person(client, db):
     analysis = analyze(db, [_row()])
     assert [c.action for c in analysis.changes] == [ACTION_NEW]
 
 
-def test_analyze_new_person_does_not_write(db):
+def test_analyze_new_person_does_not_write(client, db):
     analyze(db, [_row()])
     assert db.scalar(select(Person)) is None
 
 
-def test_analyze_kept_person(db):
+def test_analyze_kept_person(client, db):
     make_person(db, "1001", "홍길동")
     analysis = analyze(db, [_row()])
     assert [c.action for c in analysis.changes] == [ACTION_KEPT]
 
 
-def test_analyze_deactivates_missing_person(db):
+def test_analyze_deactivates_missing_person(client, db):
     make_person(db, "1001", "홍길동")
     analysis = analyze(db, [_row("2002", "김철수")])
     actions = {c.action for c in analysis.changes}
@@ -43,13 +43,13 @@ def test_analyze_deactivates_missing_person(db):
     assert deactivated.personal_no == "1001"
 
 
-def test_analyze_returned_person(db):
+def test_analyze_returned_person(client, db):
     make_person(db, "1001", "홍길동", status="inactive")
     analysis = analyze(db, [_row()])
     assert [c.action for c in analysis.changes] == [ACTION_RETURNED]
 
 
-def test_analyze_stays_inactive_when_absent(db):
+def test_analyze_stays_inactive_when_absent(client, db):
     make_person(db, "1001", "홍길동", status="inactive")
     analysis = analyze(db, [_row("2002", "김철수")])
     actions = [c.action for c in analysis.changes]
@@ -57,7 +57,7 @@ def test_analyze_stays_inactive_when_absent(db):
     assert ACTION_NEW in actions
 
 
-def test_analyze_team_change_detected(db):
+def test_analyze_team_change_detected(client, db):
     team_a = make_team(db, "1팀")
     make_person(db, "1001", "홍길동", team=team_a)
     analysis = analyze(db, [_row(team="2팀")])
@@ -65,7 +65,7 @@ def test_analyze_team_change_detected(db):
     assert change.team_changed is True
 
 
-def test_analyze_no_team_change(db):
+def test_analyze_no_team_change(client, db):
     team_a = make_team(db, "1팀")
     make_person(db, "1001", "홍길동", team=team_a)
     analysis = analyze(db, [_row(team="1팀")])
@@ -73,12 +73,12 @@ def test_analyze_no_team_change(db):
     assert change.team_changed is False
 
 
-def test_analyze_duplicate_rows_count_once(db):
+def test_analyze_duplicate_rows_count_once(client, db):
     analysis = analyze(db, [_row(), _row()])
     assert len(analysis.changes) == 1
 
 
-def test_apply_new_person_creates(db):
+def test_apply_new_person_creates(client, db):
     analysis = analyze(db, [_row()])
     apply_analysis(db, analysis)
     db.commit()
@@ -88,7 +88,7 @@ def test_apply_new_person_creates(db):
     assert person.team.name == "1팀"
 
 
-def test_apply_deactivates(db):
+def test_apply_deactivates(client, db):
     person = make_person(db, "1001", "홍길동")
     analysis = analyze(db, [_row("2002", "김철수")])
     apply_analysis(db, analysis)
@@ -97,7 +97,7 @@ def test_apply_deactivates(db):
     assert person.status == "inactive"
 
 
-def test_apply_returns_to_active(db):
+def test_apply_returns_to_active(client, db):
     person = make_person(db, "1001", "홍길동", status="inactive")
     analysis = analyze(db, [_row()])
     apply_analysis(db, analysis)
@@ -106,7 +106,7 @@ def test_apply_returns_to_active(db):
     assert person.status == "active"
 
 
-def test_apply_team_change(db):
+def test_apply_team_change(client, db):
     team_a = make_team(db, "1팀")
     person = make_person(db, "1001", "홍길동", team=team_a)
     analysis = analyze(db, [_row(team="2팀")])
@@ -116,7 +116,7 @@ def test_apply_team_change(db):
     assert person.team.name == "2팀"
 
 
-def test_apply_keeps_grade_default(db):
+def test_apply_keeps_grade_default(client, db):
     person = make_person(db, "1001", "홍길동", grade="소방경")
     analysis = analyze(db, [_row(grade="")])
     apply_analysis(db, analysis)
@@ -125,7 +125,7 @@ def test_apply_keeps_grade_default(db):
     assert person.grade == "소방경"
 
 
-def test_apply_new_person_no_team(db):
+def test_apply_new_person_no_team(client, db):
     analysis = analyze(db, [_row(team="")])
     apply_analysis(db, analysis)
     db.commit()

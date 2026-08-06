@@ -26,12 +26,12 @@ def test_compute_total():
     assert compute_total(amount=50000, carry_balance=4000) == 54000
 
 
-def test_previous_total_none(db):
+def test_previous_total_none(client, db):
     person = make_person(db, "1001", "홍길동")
     assert previous_total(db, person.id, "2026-07") == 0
 
 
-def test_previous_total_uses_latest_month(db):
+def test_previous_total_uses_latest_month(client, db):
     person = make_person(db, "1001", "홍길동")
     older = create_monthly_snapshot(
         db,
@@ -49,7 +49,7 @@ def test_previous_total_uses_latest_month(db):
     db.refresh(latest)
 
 
-def test_previous_total_ignores_future_months(db):
+def test_previous_total_ignores_future_months(client, db):
     person = make_person(db, "1001", "홍길동")
     create_monthly_snapshot(
         db,
@@ -59,7 +59,7 @@ def test_previous_total_ignores_future_months(db):
     assert previous_total(db, person.id, "2026-07") == 0
 
 
-def test_build_balance_records(db):
+def test_build_balance_records(client, db):
     person = make_person(db, "1001", "홍길동")
     create_monthly_snapshot(
         db,
@@ -75,14 +75,14 @@ def test_build_balance_records(db):
     assert record.total == 100000
 
 
-def test_build_balance_records_new_person(db):
+def test_build_balance_records_new_person(client, db):
     person = make_person(db, "1001", "홍길동")
     records = build_balance_records(db, "2026-07", {person.id: 3000}, {person.id: 50000})
     assert records[0].usage == 0
     assert records[0].total == 53000
 
 
-def test_recompute_record(db):
+def test_recompute_record(client, db):
     person = make_person(db, "1001", "홍길동")
     snapshot = create_monthly_snapshot(db, "2026-07", [])
     record = BalanceRecord(
@@ -98,7 +98,7 @@ def test_recompute_record(db):
     assert record.total == 20000
 
 
-def test_create_monthly_snapshot_duplicate_month(db):
+def test_create_monthly_snapshot_duplicate_month(client, db):
     person = make_person(db, "1001", "홍길동")
     create_monthly_snapshot(
         db,
@@ -109,7 +109,7 @@ def test_create_monthly_snapshot_duplicate_month(db):
         create_monthly_snapshot(db, "2026-07", [])
 
 
-def test_create_monthly_snapshot_stores_records(db):
+def test_create_monthly_snapshot_stores_records(client, db):
     person = make_person(db, "1001", "홍길동")
     snapshot = create_monthly_snapshot(
         db,
@@ -125,12 +125,12 @@ def test_create_monthly_snapshot_stores_records(db):
     assert stored.total == 3000
 
 
-def test_last_record_for_person_none(db):
+def test_last_record_for_person_none(client, db):
     person = make_person(db, "1001", "홍길동")
     assert last_record_for_person(db, person) is None
 
 
-def test_last_record_for_person_preserved(db):
+def test_last_record_for_person_preserved(client, db):
     person = make_person(db, "1001", "홍길동")
     create_monthly_snapshot(
         db,
