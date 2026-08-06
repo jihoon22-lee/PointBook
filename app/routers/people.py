@@ -21,19 +21,31 @@ def _person_by_key(db: Session, personal_no: str, name: str) -> Person | None:
     return db.scalar(select(Person).where(Person.personal_no == personal_no, Person.name == name))
 
 
+def _parse_optional_int(value: str) -> int | None:
+    """빈 문자열/숫자가 아닌 값은 None으로 처리 (폼의 '전체/없음' 옵션 대응)."""
+    value = value.strip()
+    if not value:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
 @router.get("")
 def list_people(
     request: Request,
     status: str = "",
-    team_id: int | None = None,
+    team_id: str = "",
     q: str = "",
     db: Session = Depends(get_db),
 ) -> Response:
+    team_id_int = _parse_optional_int(team_id)
     stmt = select(Person)
     if status in ("active", "inactive"):
         stmt = stmt.where(Person.status == status)
-    if team_id is not None:
-        stmt = stmt.where(Person.team_id == team_id)
+    if team_id_int is not None:
+        stmt = stmt.where(Person.team_id == team_id_int)
     if q.strip():
         pattern = f"%{q.strip()}%"
         stmt = stmt.where(or_(Person.name.like(pattern), Person.personal_no.like(pattern)))
@@ -47,7 +59,7 @@ def list_people(
             "persons": persons,
             "teams": _load_teams(db),
             "status": status,
-            "team_id": team_id,
+            "team_id": team_id_int,
             "q": q,
         },
     )
@@ -64,12 +76,13 @@ def create_person(
     personal_no: str = Form(""),
     name: str = Form(""),
     grade: str = Form(""),
-    team_id: int | None = Form(None),
+    team_id: str = Form(""),
     status: str = Form("active"),
     db: Session = Depends(get_db),
 ) -> Response:
     personal_no = personal_no.strip()
     name = name.strip()
+    team_id_int = _parse_optional_int(team_id)
     if not personal_no or not name:
         return render(
             request,
@@ -91,7 +104,7 @@ def create_person(
         personal_no=personal_no,
         name=name,
         grade=grade.strip(),
-        team_id=team_id if team_id else None,
+        team_id=team_id_int,
         status=status if status in ("active", "inactive") else "active",
     )
     db.add(person)
@@ -123,7 +136,7 @@ def edit_person(
     personal_no: str = Form(""),
     name: str = Form(""),
     grade: str = Form(""),
-    team_id: int | None = Form(None),
+    team_id: str = Form(""),
     status: str = Form("active"),
     db: Session = Depends(get_db),
 ) -> Response:
@@ -132,6 +145,7 @@ def edit_person(
         return RedirectResponse("/people", status_code=303)
     personal_no = personal_no.strip()
     name = name.strip()
+    team_id_int = _parse_optional_int(team_id)
     if not personal_no or not name:
         return render(
             request,
@@ -158,7 +172,7 @@ def edit_person(
     person.personal_no = personal_no
     person.name = name
     person.grade = grade.strip()
-    person.team_id = team_id if team_id else None
+    person.team_id = team_id_int
     person.status = status if status in ("active", "inactive") else "active"
     db.commit()
     return RedirectResponse(f"/people/{person.id}", status_code=303)
