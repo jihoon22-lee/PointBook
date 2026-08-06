@@ -33,7 +33,9 @@ def login(page: Page) -> None:
     page.wait_for_selector("text=PointBook")
 
 
-def monthly_flow(page: Page, personal_no: str, name: str, amount: str, carry: str, month: str = "2026-07") -> None:
+def monthly_flow(
+    page: Page, personal_no: str, name: str, amount: str, carry: str, month: str = "2026-07"
+) -> None:
     """붙여넣기 → 검수 → 확정까지의 월간 처리 전체 흐름."""
     page.goto(f"{BASE_URL}/monthly")
     page.fill('input[name="month"]', month)

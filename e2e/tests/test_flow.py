@@ -1,4 +1,5 @@
 """핵심 사용자 흐름 E2E — 구버전 Chromium(약 Chrome 109)으로 Blink 엔진 호환성 검증."""
+
 from conftest import BASE_URL, login, monthly_flow
 
 
