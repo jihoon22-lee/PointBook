@@ -14,7 +14,7 @@ flowchart LR
     S["FastAPI + Uvicorn<br/>(WSL 상시 구동)"]
     S --> T["Jinja2 서버 렌더링<br/>+ 바닐라 JS + CSS"]
     S --> DB[("SQLite<br/>data/pointbook.db")]
-    S --> AI["VisionProvider<br/>(Mock · Gemini/GPT-4o 추후 추가)"]
+    S --> AI["VisionProvider<br/>(Gemini · Mock)"]
     S --> AUTH["세션 쿠키 인증<br/>(단일 관리자)"]
     DB --> STATS["stats 집계 서비스<br/>(대시보드)"]
 ```
@@ -22,7 +22,8 @@ flowchart LR
 - **클라이언트**: 빌드 단계 없는 서버 렌더링 HTML + 바닐라 JS — Win7 Chrome 109·갤럭시 호환
 - **서버**: FastAPI + Uvicorn, WSL 환경에서 백그라운드 구동 (`scripts/run.sh`)
 - **저장소**: SQLite 단일 파일 — 백업·이관이 파일 복사로 끝남
-- **AI**: `VisionProvider` 인터페이스로 추상화 — API 키 확보 후 구현체만 추가하면 교체 가능
+- **AI**: `VisionProvider` 인터페이스로 추상화 — Gemini 구현체 제공, 프로바이더 교체는 `AI_PROVIDER` 설정만 변경
+- **캐시**: 모든 HTML 응답에 `Cache-Control: no-store` 미들웨어 적용 (스테일 페이지 방지, 정적 파일은 캐시 유지)
 
 ## 2. 디렉터리 구조
 
@@ -39,7 +40,7 @@ PointBook/
 │   │   ├── auth.py         #   로그인/로그아웃
 │   │   ├── home.py         #   홈 (카드 메뉴)
 │   │   ├── people.py       #   인원 목록·추가·수정·상세·개별 잔액 수정
-│   │   ├── teams.py        #   팀 마스터 추가/삭제
+│   │   ├── teams.py        #   팀 마스터 추가/삭제 + 팀 상세(소속 인원)
 │   │   ├── monthly.py      #   월간 처리: 업로드 → 검수 → 확정
 │   │   └── dashboard.py    #   대시보드 (월 선택)
 │   ├── services/           # 도메인 로직 (라우터에서 호출)
@@ -52,8 +53,9 @@ PointBook/
 │   │   └── dates.py        #   KST 시간대 current_month
 │   ├── ai/                 # 요청서 사진 인식
 │   │   ├── base.py         #   VisionProvider 인터페이스
+│   │   ├── gemini.py       #   Gemini 구현체 (REST, GEMINI_MODEL)
 │   │   ├── mock.py         #   Mock 구현체 (MOCK_TABLE_JSON)
-│   │   └── factory.py      #   AI_PROVIDER 설정으로 선택
+│   │   └── factory.py      #   AI_PROVIDER 설정으로 선택 (mock|gemini)
 │   ├── templates/          # Jinja2 템플릿 (base/people/teams/monthly/review/...)
 │   └── static/             # css/style.css, js/(dashboard.js, chart.umd.min.js), fonts/
 ├── scripts/

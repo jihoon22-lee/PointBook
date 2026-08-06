@@ -32,8 +32,8 @@
 - DB: **SQLite + SQLAlchemy 2.x** (파일 기반, `data/pointbook.db`)
 - 프론트: **Jinja2 서버 렌더링 + 바닐라 JS + 반응형 CSS** (빌드 단계 없음)
 - 인증: 세션 쿠키 기반 단일 관리자 계정 (werkzeug 해시)
-- AI: **VisionProvider 인터페이스 추상화** + 개발용 Mock 구현체. Gemini/GPT-4o 등은
-  키 확보 후 플러그인으로 추가 (키는 `.env`로 관리, 커밋 금지)
+- AI: **VisionProvider 인터페이스 추상화** + **Gemini 구현체**(REST, `GEMINI_MODEL`) + 개발용
+  Mock 구현체. GPT-4o 등은 키 확보 후 플러그인으로 추가 (키는 `.env`로 관리, 커밋 금지)
 - 엑셀 이관: openpyxl 스크립트
 - 테스트: pytest(단위) + Playwright E2E(구버전 Chromium, Docker)
 

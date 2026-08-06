@@ -21,7 +21,7 @@
 ## 기술 스택
 
 Python FastAPI + SQLite(SQLAlchemy 2.x) + Jinja2/바닐라 JS + 세션 인증.
-AI는 VisionProvider 인터페이스로 추상화되어 있으며 개발 중에는 Mock 구현체를 사용한다.
+AI는 VisionProvider 인터페이스로 추상화 — Gemini(사진 테이블 인식)와 개발용 Mock 구현체를 제공한다.
 
 ## 개발 환경 (WSL)
 
