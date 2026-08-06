@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import RequestResponseEndpoint
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import get_settings
@@ -31,7 +32,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="PointBook", lifespan=lifespan)
 
     @app.middleware("http")
-    async def no_cache(request: Request, call_next) -> Response:
+    async def no_cache(request: Request, call_next: RequestResponseEndpoint) -> Response:
         response: Response = await call_next(request)
         if not request.url.path.startswith("/static"):
             response.headers["Cache-Control"] = "no-store"
