@@ -141,3 +141,52 @@ def test_person_list_shows_team_badge(auth_client, db):
     make_person(db, team=team)
     resp = auth_client.get("/people")
     assert "#c0392b" in resp.text
+
+
+def test_search_with_empty_team_id(auth_client, db):
+    make_person(db, "1001", "홍길동")
+    resp = auth_client.get("/people?status=&team_id=&q=홍길동")
+    assert resp.status_code == 200
+    assert "홍길동" in resp.text
+
+
+def test_filter_team_id_works(auth_client, db):
+    team_a = make_team(db, "A팀")
+    make_person(db, "1001", "갑", team=team_a)
+    resp = auth_client.get(f"/people?team_id={team_a.id}")
+    assert resp.status_code == 200
+    assert "갑" in resp.text
+
+
+def test_create_person_team_less(auth_client, db):
+    resp = auth_client.post(
+        "/people/new",
+        data={
+            "personal_no": "2001",
+            "name": "팀없는사람",
+            "grade": "",
+            "team_id": "",
+            "status": "active",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert "팀없는사람" in auth_client.get("/people").text
+
+
+def test_edit_person_team_less(auth_client, db):
+    person = make_person(db, "1001", "홍길동")
+    resp = auth_client.post(
+        f"/people/{person.id}/edit",
+        data={
+            "personal_no": "1001",
+            "name": "홍길동",
+            "grade": "",
+            "team_id": "",
+            "status": "active",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    db.refresh(person)
+    assert person.team_id is None

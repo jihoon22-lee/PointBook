@@ -2,7 +2,8 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -28,6 +29,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(title="PointBook", lifespan=lifespan)
+
+    @app.middleware("http")
+    async def no_cache(request: Request, call_next) -> Response:
+        response: Response = await call_next(request)
+        if not request.url.path.startswith("/static"):
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.secret_key,
