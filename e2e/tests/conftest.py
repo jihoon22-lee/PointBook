@@ -34,7 +34,7 @@ def login(page: Page) -> None:
 
 
 def monthly_flow(
-    page: Page, personal_no: str, name: str, amount: str, carry: str, month: str = "2026-07"
+    page: Page, personal_no: str, name: str, amount: str, carry: str, month: str = "2099-01"
 ) -> None:
     """붙여넣기 → 검수 → 확정까지의 월간 처리 전체 흐름."""
     page.goto(f"{BASE_URL}/monthly")

@@ -12,7 +12,7 @@ from app.auth import require_login
 from app.db import get_db
 from app.models import MonthlySnapshot, Person
 from app.services import stats
-from app.services.balance import build_balance_records, create_monthly_snapshot
+from app.services.balance import build_balance_records, create_monthly_snapshot, previous_total
 from app.services.dates import current_month
 from app.services.parsing import _to_int, parse_pasted
 from app.services.sync import RequestRow, SyncAnalysis, analyze, apply_analysis
@@ -90,7 +90,17 @@ async def upload(request: Request, db: Session = Depends(get_db)) -> Response:
             400,
         )
     analysis = analyze(db, rows)
-    return render(request, "review.html", {"rows": rows, "analysis": analysis, "month": month})
+    prev_totals: dict[str, int] = {}
+    for change in analysis.changes:
+        prev = 0
+        if change.person_id is not None:
+            prev = previous_total(db, change.person_id, month)
+        prev_totals[f"{change.personal_no}|{change.name}"] = prev
+    return render(
+        request,
+        "review.html",
+        {"rows": rows, "analysis": analysis, "month": month, "prev_totals": prev_totals},
+    )
 
 
 @router.post("/confirm")

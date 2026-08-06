@@ -31,7 +31,7 @@ def test_monthly_flow_paste_review_confirm(page):
 
 def test_dashboard_shows_monthly_data(page):
     login(page)
-    monthly_flow(page, "779", "E2E대시", "30000", "5000", month="2026-08")
+    monthly_flow(page, "779", "E2E대시", "30000", "5000", month="2099-02")
     page.goto(f"{BASE_URL}/dashboard")
     assert "대시보드" in page.text_content("h1")
     body = page.text_content("body")
@@ -41,9 +41,9 @@ def test_dashboard_shows_monthly_data(page):
 
 def test_person_detail_shows_history(page):
     login(page)
-    monthly_flow(page, "780", "E2E이력", "20000", "0", month="2026-09")
+    monthly_flow(page, "780", "E2E이력", "20000", "0", month="2099-03")
     page.goto(f"{BASE_URL}/people")
     page.click('a:has-text("E2E이력")')
     assert "월별 포인트 이력" in page.text_content("body")
-    assert "2026-09" in page.text_content("body")
+    assert "2099-03" in page.text_content("body")
     assert "20,000" in page.text_content("body")
