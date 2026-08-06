@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}대시보드 - PointBook{% endblock %}
+{% block content %}
+<h1>대시보드</h1>
+
+<div class="toolbar">
+  <form method="get" action="/dashboard">
+    <select name="month" onchange="this.form.submit()">
+      {% for m in months %}
+      <option value="{{ m }}" {% if m == selected %}selected{% endif %}>{{ m }}</option>
+      {% endfor %}
+    </select>
+  </form>
+</div>
+
+{% if not has_data %}
+<div class="card">
+  <p class="muted">아직 처리된 월간 데이터가 없습니다. <a href="/monthly">월간 처리</a>에서 요청서를 등록하세요.</p>
+</div>
+{% else %}
+<div class="summary-grid">
+  <div class="summary-card">
+    <div class="label">{{ selected }} 재직·처리 인원</div>
+    <div class="value">{{ summary.count }}명</div>
+  </div>
+  <div class="summary-card">
+    <div class="label">총 충전 금액</div>
+    <div class="value">{{ summary.total_amount|number_format }}원</div>
+  </div>
+  <div class="summary-card">
+    <div class="label">총 사용 금액</div>
+    <div class="value">{{ summary.total_usage|number_format }}원</div>
+  </div>
+  <div class="summary-card">
+    <div class="label">총 잔액</div>
+    <div class="value">{{ summary.total_balance|number_format }}원</div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>월별 추이</h2>
+  <canvas id="trend-chart" height="120" aria-label="월별 충전·사용·잔액 차트"></canvas>
+  <script id="trend-data" type="application/json">{{ chart|tojson }}</script>
+</div>
+
+<div class="card">
+  <h2>팀별 통계 ({{ selected }})</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>팀</th><th>인원</th><th>충전</th><th>사용</th><th>잔액</th></tr>
+      </thead>
+      <tbody>
+      {% for t in teams %}
+        <tr>
+          <td><span class="badge" style="background: {{ t.color }}">{{ t.name }}</span></td>
+          <td>{{ t.count }}명</td>
+          <td>{{ t.total_amount|number_format }}</td>
+          <td>{{ t.total_usage|number_format }}</td>
+          <td><strong>{{ t.total_balance|number_format }}</strong></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5" class="muted">데이터 없음</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>개인별 통계 ({{ selected }}) <span class="muted">(컬럼 클릭 정렬)</span></h2>
+  <div class="table-wrap">
+    <table id="person-stats">
+      <thead>
+        <tr>
+          <th data-sort="name">이름</th><th>개인번호</th><th data-sort="team">팀</th><th>계급</th><th data-sort="carry">이월 잔액</th><th data-sort="amount">충전</th><th data-sort="usage">사용</th><th data-sort="total">총 잔액</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for p in persons %}
+        <tr>
+          <td><a href="/people/{{ p.person_id }}">{{ p.name }}</a>{% if p.status == 'inactive' %} <span class="badge badge-inactive">비재직</span>{% endif %}</td>
+          <td>{{ p.personal_no }}</td>
+          <td>{% if p.team_name %}<span class="badge" style="background: {{ p.team_color }}">{{ p.team_name }}</span>{% else %}-{% endif %}</td>
+          <td>{{ p.grade or '-' }}</td>
+          <td>{{ p.carry_balance|number_format }}</td>
+          <td>{{ p.amount|number_format }}</td>
+          <td>{{ p.usage|number_format }}</td>
+          <td><strong>{{ p.total|number_format }}</strong></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<script src="/static/js/chart.umd.min.js"></script>
+<script src="/static/js/dashboard.js"></script>
+{% endblock %}
