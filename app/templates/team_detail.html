@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}{{ team.name }} - PointBook{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <h1><span class="badge" style="background: {{ team.color }}">{{ team.name }}</span></h1>
+  <div class="spacer"></div>
+  <a class="btn" href="/teams">팀 목록</a>
+</div>
+
+<div class="card">
+  <h2>소속 인원 ({{ members|length }}명)</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>이름</th><th>개인번호</th><th>계급</th><th>상태</th></tr>
+      </thead>
+      <tbody>
+      {% for p in members %}
+        <tr>
+          <td><a href="/people/{{ p.id }}">{{ p.name }}</a></td>
+          <td>{{ p.personal_no }}</td>
+          <td>{{ p.grade or '-' }}</td>
+          <td>{% if p.status == 'active' %}<span class="badge badge-active">재직</span>{% else %}<span class="badge badge-inactive">비재직</span>{% endif %}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4" class="muted">소속 인원이 없습니다.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="muted" style="margin-top:10px">인원 이름을 클릭하면 개인 상세 페이지로 이동합니다.</p>
+</div>
+{% endblock %}

@@ -54,3 +54,40 @@ def test_teams_requires_login(client):
     resp = client.get("/teams", follow_redirects=False)
     assert resp.status_code == 303
     assert resp.headers["location"] == "/login"
+
+
+def test_team_detail_shows_members(auth_client, db):
+    team = make_team(db, "구조대", "#c0392b")
+    make_person(db, "1001", "홍길동", team=team)
+    make_person(db, "1002", "김철수", team=team, status="inactive")
+    resp = auth_client.get(f"/teams/{team.id}")
+    assert resp.status_code == 200
+    assert "홍길동" in resp.text
+    assert "김철수" in resp.text
+    assert "재직" in resp.text
+    assert "비재직" in resp.text
+    assert 'href="/people/' in resp.text
+
+
+def test_team_detail_empty(auth_client, db):
+    team = make_team(db, "빈팀")
+    resp = auth_client.get(f"/teams/{team.id}")
+    assert resp.status_code == 200
+    assert "소속 인원이 없습니다" in resp.text
+
+
+def test_team_detail_missing(auth_client):
+    resp = auth_client.get("/teams/9999", follow_redirects=False)
+    assert resp.status_code == 303
+
+
+def test_team_list_links_to_detail(auth_client, db):
+    team = make_team(db, "구조대")
+    resp = auth_client.get("/teams")
+    assert f'href="/teams/{team.id}"' in resp.text
+
+
+def test_team_create_color_swatch(auth_client, db):
+    resp = auth_client.get("/teams")
+    assert 'type="radio" name="color"' in resp.text
+    assert 'class="swatch' in resp.text

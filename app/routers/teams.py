@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import require_login
 from app.db import get_db
-from app.models import Team
+from app.models import Person, Team
 from app.services.teams import TEAM_COLORS
 from app.template_utils import render
 
@@ -16,6 +16,21 @@ router = APIRouter(prefix="/teams", dependencies=[Depends(require_login)], tags=
 def list_teams(request: Request, db: Session = Depends(get_db)) -> Response:
     teams = db.scalars(select(Team).order_by(Team.name)).all()
     return render(request, "teams.html", {"teams": teams, "colors": TEAM_COLORS})
+
+
+@router.get("/{team_id}")
+def team_detail(team_id: int, request: Request, db: Session = Depends(get_db)) -> Response:
+    team = db.get(Team, team_id)
+    if team is None:
+        return RedirectResponse("/teams", status_code=303)
+    members = list(
+        db.scalars(
+            select(Person)
+            .where(Person.team_id == team.id)
+            .order_by(Person.status.desc(), Person.name)
+        ).all()
+    )
+    return render(request, "team_detail.html", {"team": team, "members": members})
 
 
 @router.post("")

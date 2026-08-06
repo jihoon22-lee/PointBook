@@ -269,6 +269,27 @@ tbody tr:hover td { background: #f8fafc; }
 .inline-form-row label { margin-bottom: 0; }
 .inline-form-row input { margin-top: 4px; }
 
+/* ---------- 색상 스와치 ---------- */
+.swatch {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px var(--border);
+  vertical-align: middle;
+}
+.swatch-lg { width: 30px; height: 30px; }
+.swatch-grid { display: flex; flex-wrap: wrap; gap: 10px; margin: 6px 0 16px; }
+.swatch-option { margin: 0; cursor: pointer; }
+.swatch-option input { position: absolute; opacity: 0; width: 0; height: 0; }
+.swatch-option .swatch { transition: transform 0.1s ease; }
+.swatch-option input:checked + .swatch {
+  box-shadow: 0 0 0 3px var(--primary);
+  transform: scale(1.08);
+}
+code { font-family: ui-monospace, Consolas, monospace; font-size: 0.85rem; }
+
 /* ---------- 로그인 ---------- */
 .login-wrap {
   max-width: 400px;
