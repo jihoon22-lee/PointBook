@@ -123,6 +123,23 @@ def main() -> None:
         )
         verify("데스크톱 레이아웃", [("가로 오버플로 없음", lambda: not overflow)])
 
+        first_row_hit = page.evaluate(
+            "(() => { const row = document.querySelector('table tbody tr');"
+            " if (!row) return 'no-row';"
+            " const r = row.getBoundingClientRect();"
+            " const el = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);"
+            " return el ? el.tagName : 'none'; })()"
+        )
+        verify(
+            "테이블 헤더 오버랩 방지",
+            [
+                (
+                    "첫 번째 데이터 행이 헤더에 가려지지 않음 (TD 반환)",
+                    lambda: first_row_hit == "TD",
+                )
+            ],
+        )
+
         mobile = browser.new_context(viewport={"width": 390, "height": 844}).new_page()
         mobile.on("dialog", lambda d: d.accept())
         mobile.goto(f"{BASE_URL}/login")

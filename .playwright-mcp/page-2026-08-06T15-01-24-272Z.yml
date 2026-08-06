@@ -1,0 +1,97 @@
+- generic [active] [ref=f8e1]:
+  - banner [ref=f8e2]:
+    - generic [ref=f8e3]:
+      - link "PointBook" [ref=f8e4] [cursor=pointer]:
+        - /url: /
+      - navigation [ref=f8e5]:
+        - link "인원" [ref=f8e6] [cursor=pointer]:
+          - /url: /people
+        - link "팀" [ref=f8e7] [cursor=pointer]:
+          - /url: /teams
+        - link "월간 처리" [ref=f8e8] [cursor=pointer]:
+          - /url: /monthly
+        - link "대시보드" [ref=f8e9] [cursor=pointer]:
+          - /url: /dashboard
+        - button "로그아웃" [ref=f8e11] [cursor=pointer]
+  - main [ref=f8e12]:
+    - heading "팀 관리" [level=1] [ref=f8e13]
+    - generic [ref=f8e14]:
+      - heading "팀 목록" [level=2] [ref=f8e15]
+      - table [ref=f8e17]:
+        - rowgroup [ref=f8e18]:
+          - row [ref=f8e19]:
+            - columnheader "팀" [ref=f8e20]
+            - columnheader "색상" [ref=f8e21]
+            - columnheader "인원" [ref=f8e22]
+            - columnheader [ref=f8e23]
+        - rowgroup [ref=f8e24]:
+          - row [ref=f8e25]:
+            - cell [ref=f8e26]:
+              - link "0팀" [ref=f8e27] [cursor=pointer]:
+                - /url: /teams/1
+            - 'cell "#4a7dbd #4a7dbd" [ref=f8e28]':
+              - generic "#4a7dbd" [ref=f8e29]
+              - code [ref=f8e30]: "#4a7dbd"
+            - cell "0명" [ref=f8e31]
+            - cell [ref=f8e32]:
+              - button "삭제" [ref=f8e34] [cursor=pointer]
+          - row [ref=f8e35]:
+            - cell [ref=f8e36]:
+              - link "1팀" [ref=f8e37] [cursor=pointer]:
+                - /url: /teams/2
+            - 'cell "#4a7dbd #4a7dbd" [ref=f8e38]':
+              - generic "#4a7dbd" [ref=f8e39]
+              - code [ref=f8e40]: "#4a7dbd"
+            - cell "1명" [ref=f8e41]
+            - cell [ref=f8e42]:
+              - button "삭제" [ref=f8e44] [cursor=pointer]
+          - row [ref=f8e45]:
+            - cell [ref=f8e46]:
+              - link "2팀" [ref=f8e47] [cursor=pointer]:
+                - /url: /teams/3
+            - 'cell "#2e9e5b #2e9e5b" [ref=f8e48]':
+              - generic "#2e9e5b" [ref=f8e49]
+              - code [ref=f8e50]: "#2e9e5b"
+            - cell "0명" [ref=f8e51]
+            - cell [ref=f8e52]:
+              - button "삭제" [ref=f8e54] [cursor=pointer]
+          - row [ref=f8e55]:
+            - cell [ref=f8e56]:
+              - link "3팀" [ref=f8e57] [cursor=pointer]:
+                - /url: /teams/4
+            - 'cell "#b8860b #b8860b" [ref=f8e58]':
+              - generic "#b8860b" [ref=f8e59]
+              - code [ref=f8e60]: "#b8860b"
+            - cell "0명" [ref=f8e61]
+            - cell [ref=f8e62]:
+              - button "삭제" [ref=f8e64] [cursor=pointer]
+    - generic [ref=f8e65]:
+      - heading "팀 추가" [level=2] [ref=f8e66]
+      - generic [ref=f8e67]:
+        - generic [ref=f8e68]:
+          - text: 팀 이름
+          - textbox "팀 이름" [ref=f8e69]:
+            - /placeholder: "예: 1팀, 구조대"
+        - generic [ref=f8e70]: 색상
+        - radiogroup "팀 색상 선택" [ref=f8e71]:
+          - generic "#4a7dbd" [ref=f8e72] [cursor=pointer]:
+            - radio [checked]
+          - generic "#2e9e5b" [ref=f8e74] [cursor=pointer]:
+            - radio
+          - generic "#c0392b" [ref=f8e76] [cursor=pointer]:
+            - radio
+          - generic "#b8860b" [ref=f8e78] [cursor=pointer]:
+            - radio
+          - generic "#8e44ad" [ref=f8e80] [cursor=pointer]:
+            - radio
+          - generic "#16a085" [ref=f8e82] [cursor=pointer]:
+            - radio
+          - generic "#d35400" [ref=f8e84] [cursor=pointer]:
+            - radio
+          - generic "#27ae60" [ref=f8e86] [cursor=pointer]:
+            - radio
+          - generic "#7f8c8d" [ref=f8e88] [cursor=pointer]:
+            - radio
+          - generic "#2980b9" [ref=f8e90] [cursor=pointer]:
+            - radio
+        - button "추가" [ref=f8e92] [cursor=pointer]

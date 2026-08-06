@@ -1,0 +1,12 @@
+- main [ref=e2]:
+  - generic [ref=e3]:
+    - heading "PointBook" [level=1] [ref=e4]
+    - paragraph [ref=e5]: 소방서 포인트 충전 요청서 관리
+    - generic [ref=e6]:
+      - generic [ref=e7]:
+        - text: 아이디
+        - textbox "아이디" [ref=e8]
+      - generic [ref=e9]:
+        - text: 비밀번호
+        - textbox "비밀번호" [ref=e10]
+      - button "로그인" [ref=e11] [cursor=pointer]

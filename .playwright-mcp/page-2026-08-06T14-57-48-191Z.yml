@@ -1,0 +1,38 @@
+- generic [active] [ref=f5e1]:
+  - banner [ref=f5e2]:
+    - generic [ref=f5e3]:
+      - link "PointBook" [ref=f5e4] [cursor=pointer]:
+        - /url: /
+      - navigation [ref=f5e5]:
+        - link "인원" [ref=f5e6] [cursor=pointer]:
+          - /url: /people
+        - link "팀" [ref=f5e7] [cursor=pointer]:
+          - /url: /teams
+        - link "월간 처리" [ref=f5e8] [cursor=pointer]:
+          - /url: /monthly
+        - link "대시보드" [ref=f5e9] [cursor=pointer]:
+          - /url: /dashboard
+        - button "로그아웃" [ref=f5e11] [cursor=pointer]
+  - main [ref=f5e12]:
+    - generic [ref=f5e13]:
+      - heading "1팀" [level=1] [ref=f5e14]
+      - link "팀 목록" [ref=f5e16] [cursor=pointer]:
+        - /url: /teams
+    - generic [ref=f5e17]:
+      - heading "소속 인원 (1명)" [level=2] [ref=f5e18]
+      - table [ref=f5e20]:
+        - rowgroup [ref=f5e21]:
+          - row [ref=f5e22]:
+            - columnheader "이름" [ref=f5e23]
+            - columnheader "개인번호" [ref=f5e24]
+            - columnheader "계급" [ref=f5e25]
+            - columnheader "상태" [ref=f5e26]
+        - rowgroup [ref=f5e27]:
+          - row [ref=f5e28]:
+            - cell [ref=f5e29]:
+              - link "김삼성" [ref=f5e30] [cursor=pointer]:
+                - /url: /people/2
+            - cell "1234" [ref=f5e31]
+            - cell "소방차" [ref=f5e32]
+            - cell "재직" [ref=f5e33]
+      - paragraph [ref=f5e35]: 인원 이름을 클릭하면 개인 상세 페이지로 이동합니다.
