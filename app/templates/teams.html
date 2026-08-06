@@ -12,9 +12,9 @@
       <tbody>
       {% for team in teams %}
         <tr>
-          <td>{{ team.name }}</td>
-          <td><span class="badge" style="background: {{ team.color }}">{{ team.color }}</span></td>
-          <td>{{ team.persons|length }}</td>
+          <td><a href="/teams/{{ team.id }}">{{ team.name }}</a></td>
+          <td><span class="swatch" style="background: {{ team.color }}" title="{{ team.color }}"></span> <code class="muted">{{ team.color }}</code></td>
+          <td>{{ team.persons|length }}명</td>
           <td>
             <form method="post" action="/teams/{{ team.id }}/delete" onsubmit="return confirm('팀 \'{{ team.name }}\' 을(를) 삭제할까요? (소속 인원은 팀 없음으로 변경됩니다)')">
               <button type="submit" class="btn btn-sm btn-danger">삭제</button>
@@ -35,13 +35,15 @@
     <label>팀 이름
       <input type="text" name="name" required maxlength="50" placeholder="예: 1팀, 구조대">
     </label>
-    <label>색상
-      <select name="color">
-        {% for c in colors %}
-        <option value="{{ c }}" {% if loop.first %}selected{% endif %}>색상 {{ loop.index }} ({{ c }})</option>
-        {% endfor %}
-      </select>
-    </label>
+    <label>색상</label>
+    <div class="swatch-grid" role="radiogroup" aria-label="팀 색상 선택">
+      {% for c in colors %}
+      <label class="swatch-option" title="{{ c }}">
+        <input type="radio" name="color" value="{{ c }}" {% if loop.first %}checked{% endif %}>
+        <span class="swatch swatch-lg" style="background: {{ c }}"></span>
+      </label>
+      {% endfor %}
+    </div>
     <button type="submit" class="btn btn-primary">추가</button>
   </form>
 </div>
