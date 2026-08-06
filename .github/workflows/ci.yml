@@ -13,6 +13,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.13"
+      - run: wc -l tests/conftest.py && sha256sum tests/conftest.py
       - run: uv sync --group dev
       - run: uv run ruff check .
       - run: uv run ruff format --check .
