@@ -10,6 +10,7 @@ from app.config import get_settings
 from app.db import ensure_default_database, init_db
 from app.routers import auth as auth_router
 from app.routers import home as home_router
+from app.routers import monthly as monthly_router
 from app.routers import people as people_router
 from app.routers import teams as teams_router
 
@@ -36,6 +37,7 @@ def create_app() -> FastAPI:
     app.include_router(home_router.router)
     app.include_router(people_router.router)
     app.include_router(teams_router.router)
+    app.include_router(monthly_router.router)
     return app
 
 

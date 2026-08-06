@@ -38,5 +38,20 @@
       </tbody>
     </table>
   </div>
+  {% if balances %}
+  <div class="card">
+    <h2>잔액 개별 수정 ({{ balances[0].snapshot.month }} 월)</h2>
+    <p class="muted">요청서와 별개로 발생한 개인 변동이 있을 때 수정합니다. 사용 합계·총 잔액은 자동 재계산됩니다.</p>
+    <form method="post" action="/people/{{ person.id }}/record-edit" class="inline-form-row">
+      <label>이월 잔액
+        <input type="number" name="carry_balance" value="{{ balances[0].carry_balance }}" min="0" step="100" style="width:150px">
+      </label>
+      <label>당월 충전
+        <input type="number" name="amount" value="{{ balances[0].amount }}" min="0" step="100" style="width:150px">
+      </label>
+      <button type="submit" class="btn btn-primary">수정</button>
+    </form>
+  </div>
+  {% endif %}
 </div>
 {% endblock %}

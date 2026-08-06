@@ -86,6 +86,12 @@ tr:hover td { background: #f8fafc; }
 .toolbar .spacer { flex: 1; }
 
 .month-label { font-weight: 700; font-size: 1.05rem; }
+.row-input { width: 110px; padding: 5px 8px; margin: 0; }
+.balance-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+.balance-item { background: #f7f9fb; border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin: 0; }
+.balance-item span { display: block; margin-bottom: 6px; font-size: 0.9rem; }
+.balance-item input { width: 100%; }
+.inline-form-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
 .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 18px; }
 .summary-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
 .summary-card .value { font-size: 1.35rem; font-weight: 700; }

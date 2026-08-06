@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}월간 처리 - PointBook{% endblock %}
+{% block content %}
+<h1>월간 처리</h1>
+{% if error %}<p class="alert alert-error">{{ error }}</p>{% endif %}
+{% if done %}<p class="alert" style="background:#e8f5ee;color:#1e7e44;border:1px solid #b7e3cc">월간 처리가 완료되었습니다.</p>{% endif %}
+
+<div class="card">
+  <h2>요청서 등록</h2>
+  <p class="muted">요청서 사진을 업로드하거나, 표를 복사해 붙여넣기하면 AI가 인원 목록을 추출합니다.<br>
+    붙여넣기 형식(탭/콤마 구분): 순번 팀 이름 계급 금액 개인번호 비고 (순번 없이 6컬럼도 가능)</p>
+  <form method="post" action="/monthly/upload" enctype="multipart/form-data">
+    <label>처리 월
+      <input type="month" name="month" value="{{ month }}">
+    </label>
+    <label>요청서 사진
+      <input type="file" name="file" accept="image/*">
+    </label>
+    <label>또는 표 붙여넣기
+      <textarea name="pasted" rows="5" placeholder="팀\t이름\t계급\t금액\t개인번호\t비고&#10;1팀\t김소방\t소방경\t50000\t101\t"></textarea>
+    </label>
+    <button type="submit" class="btn btn-primary">인식 · 검수하기</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>처리 이력</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>월</th><th>인원 수</th><th>총 충전</th><th>총 사용</th><th>총 잔액</th></tr>
+      </thead>
+      <tbody>
+      {% for s in summary %}
+        <tr>
+          <td class="month-label">{{ s.month }}</td>
+          <td>{{ s.count }}명</td>
+          <td>{{ s.total_amount|number_format }}원</td>
+          <td>{{ s.total_usage|number_format }}원</td>
+          <td><strong>{{ s.total_balance|number_format }}원</strong></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5" class="muted">아직 처리된 월이 없습니다.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
