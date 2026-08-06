@@ -282,3 +282,20 @@ def test_review_new_person_no_hint(auth_client):
     )
     assert resp.status_code == 200
     assert "직전 잔액" not in resp.text
+
+
+def test_upload_provider_error_shows_message(auth_client, monkeypatch):
+    from app.routers import monthly as monthly_router
+
+    class FailingProvider:
+        def extract_table(self, image_bytes, filename):
+            raise ValueError("Gemini API 오류 (400): invalid key")
+
+    monkeypatch.setattr(monthly_router, "get_provider", lambda: FailingProvider())
+    resp = auth_client.post(
+        "/monthly/upload",
+        data={"month": "2026-07"},
+        files={"file": ("req.png", b"fake", "image/png")},
+    )
+    assert resp.status_code == 400
+    assert "Gemini API 오류" in resp.text

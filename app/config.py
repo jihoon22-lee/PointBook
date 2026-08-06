@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     secret_key: str = "dev-secret-change-me"
     ai_provider: str = "mock"
     gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
     openai_api_key: str = ""
     mock_table_json: str = ""
     database_path: str = "data/pointbook.db"
