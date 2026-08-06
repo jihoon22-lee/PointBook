@@ -24,16 +24,39 @@ AI는 VisionProvider 인터페이스로 추상화되어 있으며 개발 중에�
 uv sync --group dev                # 의존성 설치
 cp .env.example .env               # 관리자 계정/비밀번호 설정
 uv run python -m scripts.init_db   # DB 초기화 (관리자 계정 생성)
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8000   # 서버 실행
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000   # 서버 실행 (개발)
 ```
 
-접속: Windows(호스트) 브라우저는 `http://localhost:8000` 으로 바로 접속 가능.
+## 실행 · 배포 (WSL 상시 구동)
 
-### 갤럭시 실기기 접속 (WSL2)
+```bash
+cp .env.example .env            # ADMIN_USERNAME / ADMIN_PASSWORD / SECRET_KEY 설정
+uv run python -m scripts.init_db  # 최초 1회 (관리자 계정 생성)
+scripts/run.sh                  # 백그라운드 실행 (PID·로그는 data/)
+scripts/stop.sh                 # 중지
+```
 
-- `.wslconfig`에 `networkingMode=mirrored` 설정, 또는
-- `netsh interface portproxy add v4tov4 listenport=8000 listenaddress=0.0.0.0 connectport=8000 connectaddress=<WSL IP>`
-  + 방화벽 인바운드 8000 포트 허용
+- 접속: **Windows(호스트) 브라우저**는 `http://localhost:8000` 으로 바로 접속 가능 (WSL2 localhost 포워딩 내장)
+- 기본 접속은 HTTP(내부망). HTTPS 필요 시 uvicorn에 인증서 옵션을 추가해 TLS 1.2로 전환:
+  `uv run uvicorn app.main:app --host 0.0.0.0 --port 8443 --ssl-keyfile key.pem --ssl-certfile cert.pem`
+
+### 갤럭시 실기기·Win7 접속 (WSL2 외부 노출)
+
+방법 A — `.wslconfig` (C:\Users\<사용자>\.wslconfig)에 mirrored 모드:
+
+```ini
+[wsl2]
+networkingMode=mirrored
+```
+
+방법 B — 포트 프록시 + 방화벽 (관리자 PowerShell, WSL IP 확인: `hostname -I`):
+
+```powershell
+netsh interface portproxy add v4tov4 listenport=8000 listenaddress=0.0.0.0 connectport=8000 connectaddress=<WSL IP>
+netsh advfirewall firewall add rule name="PointBook" dir=in action=allow protocol=TCP localport=8000
+```
+
+이후 갤럭시는 `http://<윈도우PC IP>:8000` 으로 접속 (안드로이드 에뮬레이터는 `10.0.2.2:8000`).
 
 ## 테스트
 
@@ -42,17 +65,21 @@ uv run pytest                    # 단위 테스트
 uv run pytest --cov=app --cov-report=term-missing --cov-fail-under=85
 uv run ruff check .
 uv run ruff format --check .
-uv run mypy app
+uv run mypy app scripts
 ```
 
-E2E(구버전 Chromium)는 `e2e/` 참고 — Docker 컨테이너에서 실행한다.
+E2E(구버전 Chromium ~Chrome 110, Docker):
+
+```bash
+docker compose -f e2e/compose.yml up --build --abort-on-container-exit --exit-code-from e2e
+```
 
 ## 엑셀 이관
 
-기존 엑셀 데이터를 DB로 옮길 때:
+기존 엑셀 요청서 데이터를 빈 DB로 옮길 때:
 
 ```bash
-uv run python -m scripts.import_excel --file 기존파일.xlsx
+uv run python -m scripts.import_excel --file 기존파일.xlsx [--month 2026-07]
 ```
 
 ## CI

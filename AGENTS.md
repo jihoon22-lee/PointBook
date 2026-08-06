@@ -60,12 +60,15 @@
 ```bash
 uv sync --group dev        # 의존성 설치 (uv.lock 기준)
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000   # 개발 서버 (WSL)
+scripts/run.sh             # 상시 구동 (백그라운드, data/server.pid·log) — scripts/stop.sh로 중지
 uv run pytest              # 단위 테스트
 uv run pytest --cov=app --cov-report=term-missing --cov-fail-under=85  # 커버리지 확인
 uv run ruff check .        # 린트
 uv run ruff format --check .  # 포맷 검사
-uv run mypy app            # 타입 체크
+uv run mypy app scripts    # 타입 체크
 uv run python -m scripts.init_db   # DB 초기화 (관리자 계정 생성)
+uv run python -m scripts.import_excel --file 기존파일.xlsx  # 엑셀 이관 (빈 DB 전용)
+docker compose -f e2e/compose.yml up --build --abort-on-container-exit --exit-code-from e2e  # E2E (구버전 Chromium)
 ```
 
 ## CI / 머지 워크플로 (GitHub Actions)
@@ -77,6 +80,10 @@ uv run python -m scripts.init_db   # DB 초기화 (관리자 계정 생성)
   → squash merge**. `main`에 직접 푸시 금지 (자체 규칙 — GitHub 브랜치 보호는
   private 무료 요금제에서 불가, squash 머지만 저장소 기본값으로 설정됨)
 - PR 머지 전 모든 CI job 통과 필수
+- **주의**: CI는 PR 머지 ref(`refs/pull/N/merge`) 기준으로 실행된다. conftest 등
+  공용 테스트 파일을 PR에서 전면 재작성하면 git 3-way 머지가 양쪽 변경을 섞어
+  깨진 파일이 생길 수 있다 — 공용 파일은 main과 내용을 동일하게 유지하거나
+  최소 diff로 수정할 것 (실제 사례: P3에서 발생, 수정 이력 참고)
 
 ## 작업 컨벤션
 
