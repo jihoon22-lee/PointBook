@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 from app.auth import require_login
 from app.db import get_db
 from app.models import Person, Team
+from app.services.balance import last_record_for_person, previous_total, recompute_record
+from app.services.parsing import _to_int
 from app.template_utils import render
 
 router = APIRouter(prefix="/people", dependencies=[Depends(require_login)], tags=["people"])
@@ -160,3 +162,25 @@ def edit_person(
     person.status = status if status in ("active", "inactive") else "active"
     db.commit()
     return RedirectResponse(f"/people/{person.id}", status_code=303)
+
+
+@router.post("/{person_id}/record-edit")
+def edit_person_record(
+    person_id: int,
+    request: Request,
+    carry_balance: str = Form("0"),
+    amount: str = Form("0"),
+    db: Session = Depends(get_db),
+) -> Response:
+    """개별 인원 단위 금액·잔액 수정 (요청서와 무관한 개별 변동)."""
+    person = db.get(Person, person_id)
+    if person is None:
+        return RedirectResponse("/people", status_code=303)
+    record = last_record_for_person(db, person)
+    if record is None:
+        return RedirectResponse(f"/people/{person_id}", status_code=303)
+    record.carry_balance = _to_int(carry_balance)
+    record.amount = _to_int(amount)
+    recompute_record(record, previous_total(db, person.id, record.snapshot.month))
+    db.commit()
+    return RedirectResponse(f"/people/{person_id}", status_code=303)

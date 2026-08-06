@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}요청서 검수 - PointBook{% endblock %}
+{% block content %}
+<h1>요청서 검수 · 확정</h1>
+{% if error %}<p class="alert alert-error">{{ error }}</p>{% endif %}
+<p class="muted">AI가 추출한 목록을 확인·수정한 뒤, 아래에서 모든 처리 대상 인원의 <strong>이월 잔액</strong>을 입력하고 확정하세요.</p>
+
+<form method="post" action="/monthly/confirm">
+  <div class="toolbar">
+    <label class="month-label">처리 월
+      <input type="month" name="month" value="{{ month }}" style="width:auto">
+    </label>
+    <div class="spacer"></div>
+    <button type="submit" class="btn btn-primary" onclick="return confirm('이 내용으로 확정할까요? 확정 후 해당 월은 수정하려면 개별 수정을 이용해야 합니다.')">확정 · 동기화</button>
+  </div>
+
+  <div class="card">
+    <h2>인식된 인원 ({{ analysis.request_count }}명) <button type="button" class="btn btn-sm" id="add-row">행 추가</button></h2>
+    <div class="table-wrap">
+      <table id="rows">
+        <thead>
+          <tr><th>개인번호</th><th>이름</th><th>팀</th><th>계급</th><th>금액</th><th>비고</th><th></th></tr>
+        </thead>
+        <tbody>
+        {% for row in rows %}
+          <tr>
+            <td><input type="text" name="personal_no_{{ loop.index0 }}" value="{{ row.personal_no }}" class="row-input"></td>
+            <td><input type="text" name="name_{{ loop.index0 }}" value="{{ row.name }}" class="row-input"></td>
+            <td><input type="text" name="team_{{ loop.index0 }}" value="{{ row.team }}" class="row-input"></td>
+            <td><input type="text" name="grade_{{ loop.index0 }}" value="{{ row.grade }}" class="row-input"></td>
+            <td><input type="text" name="amount_{{ loop.index0 }}" value="{{ row.amount }}" class="row-input"></td>
+            <td><input type="text" name="note_{{ loop.index0 }}" value="{{ row.note }}" class="row-input"></td>
+            <td><button type="button" class="btn btn-sm btn-danger row-del">삭제</button></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>변경 예상 (DB 전체 대조)</h2>
+    {% set groups = {'new': [], 'returned': [], 'kept': [], 'deactivated': []} %}
+    {% for c in analysis.changes %}
+      {% if groups[c.action] is defined %}{% set _ = groups[c.action].append(c) %}{% endif %}
+    {% endfor %}
+    {% if groups['new'] %}
+      <h3 class="muted" style="color:#c0392b">신규 ({{ groups['new']|length }})</h3>
+      <p>{% for c in groups['new'] %}<span class="badge" style="background:#c0392b">{{ c.name }} ({{ c.team_name or '팀없음' }})</span> {% endfor %}</p>
+    {% endif %}
+    {% if groups['returned'] %}
+      <h3 class="muted" style="color:#16a085">복귀 ({{ groups['returned']|length }})</h3>
+      <p>{% for c in groups['returned'] %}<span class="badge" style="background:#16a085">{{ c.name }}</span> {% endfor %}</p>
+    {% endif %}
+    {% if groups['kept'] %}
+      <h3 class="muted">재직 유지 ({{ groups['kept']|length }})</h3>
+      <p>{% for c in groups['kept'] %}<span class="badge" style="background:#4a7dbd">{{ c.name }}{% if c.team_changed %} ·팀변경{% endif %}</span> {% endfor %}</p>
+    {% endif %}
+    {% if groups['deactivated'] %}
+      <h3 class="muted" style="color:#9aa3ad">비재직 전환 ({{ groups['deactivated']|length }})</h3>
+      <p>{% for c in groups['deactivated'] %}<span class="badge badge-inactive">{{ c.name }}</span> {% endfor %}</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>이월 잔액 입력 (처리 대상 전체 인원)</h2>
+    <p class="muted">비재직 전환 대상자·신규 인원을 포함한 모든 인원의 당월 기준 남은 포인트 잔액을 입력하세요.</p>
+    <div class="balance-grid">
+      {% for c in analysis.changes %}
+      <label class="balance-item">
+        <span>
+          {% if c.action == 'new' %}<span class="badge" style="background:#c0392b">신규</span>
+          {% elif c.action == 'returned' %}<span class="badge" style="background:#16a085">복귀</span>
+          {% elif c.action == 'deactivated' %}<span class="badge badge-inactive">비재직</span>
+          {% else %}<span class="badge" style="background:#4a7dbd">재직</span>{% endif %}
+          {{ c.name }} ({{ c.personal_no }})
+        </span>
+        <input type="number" name="carry_{{ c.personal_no }}|{{ c.name }}" min="0" step="100" placeholder="이월 잔액">
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <button type="submit" class="btn btn-primary">확정 · 동기화</button>
+  <a class="btn" href="/monthly">취소</a>
+</form>
+
+<script>
+(function () {
+  var table = document.getElementById('rows');
+  function rowInputs(tr) {
+    var inputs = tr.querySelectorAll('input');
+    var names = ['personal_no', 'name', 'team', 'grade', 'amount', 'note'];
+    var result = {};
+    for (var i = 0; i < names.length; i++) result[names[i]] = inputs[i];
+    return result;
+  }
+  function reindex() {
+    var rows = table.tBodies[0].rows;
+    for (var i = 0; i < rows.length; i++) {
+      var ins = rowInputs(rows[i]);
+      ins.personal_no.name = 'personal_no_' + i;
+      ins.name.name = 'name_' + i;
+      ins.team.name = 'team_' + i;
+      ins.grade.name = 'grade_' + i;
+      ins.amount.name = 'amount_' + i;
+      ins.note.name = 'note_' + i;
+    }
+  }
+  function addRow() {
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td><input type="text" class="row-input"></td>'.repeat(6) +
+      '<td><button type="button" class="btn btn-sm btn-danger row-del">삭제</button></td>';
+    table.tBodies[0].appendChild(tr);
+    reindex();
+  }
+  document.getElementById('add-row').addEventListener('click', addRow);
+  table.addEventListener('click', function (e) {
+    if (e.target.classList.contains('row-del')) {
+      var tr = e.target.closest('tr');
+      if (tr && tr.parentElement.rows.length > 1) {
+        tr.parentElement.removeChild(tr);
+        reindex();
+      }
+    }
+  });
+})();
+</script>
+{% endblock %}

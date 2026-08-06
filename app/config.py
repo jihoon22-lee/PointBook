@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     ai_provider: str = "mock"
     gemini_api_key: str = ""
     openai_api_key: str = ""
+    mock_table_json: str = ""
     database_path: str = "data/pointbook.db"
 
 
