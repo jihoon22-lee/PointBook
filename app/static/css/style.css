@@ -215,9 +215,6 @@ th {
   background: #f8fafc;
   font-weight: 600;
   white-space: nowrap;
-  position: sticky;
-  top: 54px;
-  z-index: 1;
 }
 tbody tr:last-child td { border-bottom: none; }
 tbody tr:hover td { background: #f8fafc; }
@@ -311,5 +308,4 @@ body:has(.login-wrap) .login-wrap .muted { color: #cbd5e1; }
   .card { padding: 16px; }
   th, td { padding: 9px 8px; }
   .summary-card .value { font-size: 1.35rem; }
-  th { top: 50px; }
 }
