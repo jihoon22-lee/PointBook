@@ -64,7 +64,7 @@
 
   <div class="card">
     <h2>이월 잔액 입력 (처리 대상 전체 인원)</h2>
-    <p class="muted">비재직 전환 대상자·신규 인원을 포함한 모든 인원의 당월 기준 남은 포인트 잔액을 입력하세요.</p>
+    <p class="muted">비재직 전환 대상자·신규 인원을 포함한 모든 인원의 당월 기준 남은 포인트 잔액을 입력하세요. (각 인원의 직전 총 잔액이 안내됩니다)</p>
     <div class="balance-grid">
       {% for c in analysis.changes %}
       <label class="balance-item">
@@ -75,7 +75,8 @@
           {% else %}<span class="badge" style="background:#4a7dbd">재직</span>{% endif %}
           {{ c.name }} ({{ c.personal_no }})
         </span>
-        <input type="number" name="carry_{{ c.personal_no }}|{{ c.name }}" min="0" step="100" placeholder="이월 잔액">
+        {% set pt = prev_totals.get(c.personal_no ~ '|' ~ c.name, 0) %}
+        <input type="number" name="carry_{{ c.personal_no }}|{{ c.name }}" min="0" step="100" placeholder="{% if pt %}직전 잔액: {{ pt|number_format }}원{% else %}이월 잔액{% endif %}">
       </label>
       {% endfor %}
     </div>

@@ -12,12 +12,13 @@
     <div class="topbar-inner">
       <a class="brand" href="/">PointBook</a>
       <nav class="nav">
-        <a href="/people">인원</a>
-        <a href="/teams">팀</a>
-        <a href="/monthly">월간 처리</a>
-        <a href="/dashboard">대시보드</a>
+        {% set path = request.url.path %}
+        <a href="/people" class="{{ 'active' if path.startswith('/people') else '' }}">인원</a>
+        <a href="/teams" class="{{ 'active' if path.startswith('/teams') else '' }}">팀</a>
+        <a href="/monthly" class="{{ 'active' if path.startswith('/monthly') else '' }}">월간 처리</a>
+        <a href="/dashboard" class="{{ 'active' if path.startswith('/dashboard') else '' }}">대시보드</a>
         <form method="post" action="/logout" class="inline-form">
-          <button type="submit" class="btn btn-link">로그아웃</button>
+          <button type="submit" class="btn-link">로그아웃</button>
         </form>
       </nav>
     </div>

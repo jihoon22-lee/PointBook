@@ -17,9 +17,9 @@
       data: {
         labels: data.labels,
         datasets: [
-          { label: '충전', data: data.amount, borderColor: '#2e9e5b', backgroundColor: 'rgba(46,158,91,0.1)', tension: 0.25 },
-          { label: '사용', data: data.usage, borderColor: '#c0392b', backgroundColor: 'rgba(192,57,43,0.1)', tension: 0.25 },
-          { label: '잔액', data: data.balance, borderColor: '#4a7dbd', backgroundColor: 'rgba(74,125,189,0.1)', tension: 0.25 }
+          { label: '충전', data: data.amount, borderColor: '#16a34a', backgroundColor: 'rgba(22,163,74,0.08)', tension: 0.25 },
+          { label: '사용', data: data.usage, borderColor: '#dc2626', backgroundColor: 'rgba(220,38,38,0.08)', tension: 0.25 },
+          { label: '잔액', data: data.balance, borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,0.08)', tension: 0.25 }
         ]
       },
       options: {

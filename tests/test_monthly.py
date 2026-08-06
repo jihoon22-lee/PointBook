@@ -255,3 +255,30 @@ def test_parse_row_fields_over_100_rows(auth_client):
     rows = _parse_row_fields(form)
     assert len(rows) == 101
     assert rows[100].personal_no == "10100"
+
+
+def test_review_shows_previous_balance_hint(auth_client, db):
+    from app.models import BalanceRecord
+    from app.services.balance import create_monthly_snapshot
+
+    person = make_person(db, "101", "김소방")
+    create_monthly_snapshot(
+        db,
+        "2026-06",
+        [BalanceRecord(person_id=person.id, carry_balance=0, amount=50000, usage=0, total=50000)],
+    )
+    resp = auth_client.post(
+        "/monthly/upload",
+        data={"month": "2026-07", "pasted": "1팀\t김소방\t소방경\t50000\t101\t"},
+    )
+    assert resp.status_code == 200
+    assert "직전 잔액: 50,000원" in resp.text
+
+
+def test_review_new_person_no_hint(auth_client):
+    resp = auth_client.post(
+        "/monthly/upload",
+        data={"month": "2026-07", "pasted": "1팀\t신규인원\t소방경\t50000\t101\t"},
+    )
+    assert resp.status_code == 200
+    assert "직전 잔액" not in resp.text
