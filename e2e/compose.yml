@@ -1,0 +1,25 @@
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: e2e/Dockerfile.app
+    environment:
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: e2e-password
+      SECRET_KEY: e2e-secret-key
+      DATABASE_PATH: /app/data/e2e.db
+      AI_PROVIDER: mock
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/login')"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+  e2e:
+    build:
+      context: .
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      BASE_URL: http://app:8000
