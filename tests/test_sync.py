@@ -132,3 +132,12 @@ def test_apply_new_person_no_team(client, db):
     person = db.scalar(select(Person))
     assert person is not None
     assert person.team_id is None
+
+
+def test_apply_new_person_sets_current_amount(client, db):
+    analysis = analyze(db, [_row(amount=40000)])
+    apply_analysis(db, analysis)
+    db.commit()
+    person = db.scalar(select(Person))
+    assert person.current_amount == 40000
+    assert person.current_carry_balance == 0

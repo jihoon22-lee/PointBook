@@ -38,6 +38,25 @@ def init_db() -> None:
     from app import models  # noqa: F401
 
     Base.metadata.create_all(engine)
+    migrate(engine)
+
+
+def migrate(db_engine: Engine) -> None:
+    """스키마 변경분을 기존 DB에 적용한다 (신규 컬럼 추가)."""
+    from sqlalchemy import text
+
+    with db_engine.begin() as conn:
+        columns = {row[1] for row in conn.execute(text("PRAGMA table_info(people)"))}
+        if "current_carry_balance" not in columns:
+            conn.execute(
+                text(
+                    "ALTER TABLE people ADD COLUMN current_carry_balance INTEGER NOT NULL DEFAULT 0"
+                )
+            )
+        if "current_amount" not in columns:
+            conn.execute(
+                text("ALTER TABLE people ADD COLUMN current_amount INTEGER NOT NULL DEFAULT 0")
+            )
 
 
 def get_db() -> Generator[Session, None, None]:

@@ -144,6 +144,8 @@ def import_excel(db: Session, path: Path, month: str) -> ImportResult:
                 grade=row.grade,
                 team_id=team.id if team else None,
                 status="active",
+                current_carry_balance=row.balance,
+                current_amount=row.amount,
             )
         )
         created += 1
