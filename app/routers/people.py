@@ -180,35 +180,14 @@ def edit_person(
     person.grade = grade.strip()
     person.team_id = team_id_int
     person.status = status if status in ("active", "inactive") else "active"
-    person.current_carry_balance = _to_int(carry_balance)
-    person.current_amount = _to_int(amount)
-    db.commit()
-    return RedirectResponse(f"/people/{person.id}", status_code=303)
-
-
-@router.post("/{person_id}/record-edit")
-def edit_person_record(
-    person_id: int,
-    request: Request,
-    carry_balance: str = Form("0"),
-    amount: str = Form("0"),
-    db: Session = Depends(get_db),
-) -> Response:
-    """개별 인원 단위 금액·잔액 수정 (요청서와 무관한 개별 변동).
-
-    월간 처리 기록이 있으면 해당 기록을 수정하고, 없으면 현재 잔액 상태만 수정한다.
-    """
-    person = db.get(Person, person_id)
-    if person is None:
-        return RedirectResponse("/people", status_code=303)
     carry = _to_int(carry_balance)
     amt = _to_int(amount)
+    person.current_carry_balance = carry
+    person.current_amount = amt
     record = last_record_for_person(db, person)
     if record is not None:
         record.carry_balance = carry
         record.amount = amt
         recompute_record(record, previous_total(db, person.id, record.snapshot.month))
-    person.current_carry_balance = carry
-    person.current_amount = amt
     db.commit()
-    return RedirectResponse(f"/people/{person_id}", status_code=303)
+    return RedirectResponse(f"/people/{person.id}", status_code=303)

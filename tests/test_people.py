@@ -195,21 +195,26 @@ def test_edit_person_team_less(auth_client, db):
     assert person.team_id is None
 
 
-def test_person_detail_no_records_shows_balance_form(auth_client, db):
-    person = make_person(db, "1001", "홍길동")
+def test_person_detail_shows_balance_display_only(auth_client, db):
+    person = make_person(db, "1001", "홍길동", status="active")
+    person.current_carry_balance = 15000
+    person.current_amount = 50000
+    db.commit()
     resp = auth_client.get(f"/people/{person.id}")
     assert resp.status_code == 200
-    assert "잔액 개별 수정" in resp.text
-    assert 'name="carry_balance"' in resp.text
-    assert 'name="amount"' in resp.text
+    assert "15,000원" in resp.text
+    assert "50,000원" in resp.text
+    assert "65,000원" in resp.text
+    assert 'name="carry_balance"' not in resp.text
+    assert 'name="amount"' not in resp.text
 
 
-def test_edit_form_links_to_balance_edit(auth_client, db):
+def test_edit_form_has_balance_fields(auth_client, db):
     person = make_person(db, "1001", "홍길동")
     resp = auth_client.get(f"/people/{person.id}/edit")
     assert resp.status_code == 200
-    assert f'href="/people/{person.id}"' in resp.text
-    assert "잔액 개별 수정" in resp.text
+    assert 'name="carry_balance"' in resp.text
+    assert 'name="amount"' in resp.text
 
 
 def test_create_person_with_balance(auth_client, db):
@@ -254,11 +259,19 @@ def test_edit_person_balance(auth_client, db):
     assert person.current_amount == 30000
 
 
-def test_record_edit_without_snapshot_updates_current(auth_client, db):
+def test_edit_person_updates_current_without_snapshot(auth_client, db):
     person = make_person(db, "1001", "홍길동")
     resp = auth_client.post(
-        f"/people/{person.id}/record-edit",
-        data={"carry_balance": "9000", "amount": "20000"},
+        f"/people/{person.id}/edit",
+        data={
+            "personal_no": "1001",
+            "name": "홍길동",
+            "grade": "",
+            "team_id": "",
+            "status": "active",
+            "carry_balance": "9000",
+            "amount": "20000",
+        },
         follow_redirects=False,
     )
     assert resp.status_code == 303

@@ -191,7 +191,7 @@ def test_confirm_returns_balance_after_return(auth_client, db):
     assert person.status == "active"
 
 
-def test_record_edit_recomputes(auth_client, db):
+def test_edit_person_syncs_latest_record(auth_client, db):
     person = make_person(db, "101", "김소방")
     data = {
         "month": "2026-06",
@@ -204,8 +204,16 @@ def test_record_edit_recomputes(auth_client, db):
     }
     auth_client.post("/monthly/confirm", data=data)
     resp = auth_client.post(
-        f"/people/{person.id}/record-edit",
-        data={"carry_balance": "3000", "amount": "0"},
+        f"/people/{person.id}/edit",
+        data={
+            "personal_no": "101",
+            "name": "김소방",
+            "grade": "",
+            "team_id": "",
+            "status": "active",
+            "carry_balance": "3000",
+            "amount": "0",
+        },
         follow_redirects=False,
     )
     assert resp.status_code == 303
@@ -216,17 +224,9 @@ def test_record_edit_recomputes(auth_client, db):
     assert record.carry_balance == 3000
     assert record.usage == 0
     assert record.total == 3000
-
-
-def test_record_edit_no_record_noop(auth_client, db):
-    person = make_person(db, "101", "김소방")
-    resp = auth_client.post(
-        f"/people/{person.id}/record-edit",
-        data={"carry_balance": "100", "amount": "0"},
-        follow_redirects=False,
-    )
-    assert resp.status_code == 303
-    assert resp.headers["location"] == f"/people/{person.id}"
+    db.refresh(person)
+    assert person.current_carry_balance == 3000
+    assert person.current_amount == 0
 
 
 def test_monthly_requires_login(client):
