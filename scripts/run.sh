@@ -18,11 +18,10 @@ elif [ -f data/server.pid ]; then
   rm -f data/server.pid
 fi
 
-if command -v ss >/dev/null 2>&1 && ss -tln 2>/dev/null | grep -q ":$PORT "; then
-  echo "오류: 포트 ${PORT} 이(가) 이미 사용 중입니다." >&2
+if command -v ss >/dev/null 2>&1 && ss -tln 2>/dev/null | grep -q "$HOST:$PORT "; then
+  echo "오류: ${HOST}:${PORT} 이(가) 이미 사용 중입니다." >&2
   echo "원인 확인: ss -tlnp | grep :${PORT}" >&2
-  echo "  - tailscale serve 설정이 포트를 점유 중일 수 있습니다: tailscale serve status" >&2
-  echo "  - serve 해제: tailscale serve --https=${PORT} off" >&2
+  echo "  - tailscale serve/funnel이 같은 포트를 점유 중일 수 있습니다: tailscale serve status" >&2
   echo "  - 다른 포트로 실행: PORT=8001 scripts/run.sh" >&2
   exit 1
 fi
