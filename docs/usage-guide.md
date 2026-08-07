@@ -173,6 +173,41 @@ scripts/run.sh                          # PointBook 기동
   tailscale serve --bg https+8002 http://127.0.0.1:8002
   ```
 
+### 4-2. 외부망(매장 PC 등) 접속 — Tailscale Funnel
+
+현재 설정(Tailscale serve)은 tailnet 내부 전용이라, **외부망에 있는 매장 PC는 접속할 수 없다.**
+외부망에서 접속하려면 Tailscale **Funnel**로 서비스를 공개한다 (매장 PC에 설치 불필요, 브라우저만):
+
+```bash
+tailscale funnel --bg 8002    # 127.0.0.1:8002를 공개 노출 (443 포트)
+tailscale funnel --bg --https=8443 8002   # 8443 포트로 공개 (원하면)
+```
+
+**해제**:
+```bash
+tailscale funnel reset              # Funnel 전체 해제 (가장 확실)
+tailscale funnel --https=443 off    # 특정 포트만 해제 (다른 공개 유지)
+tailscale serve --https=8002 off    # serve(내부 전용) 특정 포트 해제
+tailscale funnel status             # 공개 상태 확인
+```
+
+- 접속 URL: `https://main.tail30f401.ts.net` (443) 또는 `https://main.tail30f401.ts.net:8443`
+- **Funnel 공개 포트 제약**: HTTPS는 **443·8443·10000만** 지원 — 내부와 동일한 8002 포트로 외부 공개는 불가능
+- 첫 사용 시 `tailscale funnel status`가 관리 콘솔 승인 링크를 안내 (1회)
+- 기존 tailnet 전용 주소(`:8002`)는 그대로 유지됨
+
+**도메인 변경**:
+- 머신 이름 부분은 변경 가능: `tailscale set --hostname=pointbook` → `pointbook.tail30f401.ts.net`
+  (변경 시 기존 즐겨찾기 URL도 새 이름으로 바뀜)
+- tailnet 접미사(`tail30f401.ts.net`)는 변경 불가. 자기 도메인 소유 시 admin console에서 커스텀 도메인+HTTPS 인증서 설정 가능
+
+**내부와 동일한 포트(8002)가 꼭 필요하면**: 매장 PC에 **ZeroTier**(Win7 지원)를 설치해 가상 사설망 구성 —
+`http://<가상IP>:8002`로 내부와 동일한 포트 접속 가능 (양쪽 설치·가입 필요)
+
+**주의**:
+- Funnel은 **완전 공개** — URL을 아는 누구나 접근 가능. 관리자 비밀번호를 강력하게 유지할 것
+- Win7 구형 업데이트 미적용 PC는 Let's Encrypt 인증서 신뢰 문제 가능 (인증서 경고 시 Windows 업데이트/ESU 적용 필요)
+
 ---
 
 ## 5. 주의사항·팁
