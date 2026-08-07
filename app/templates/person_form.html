@@ -39,5 +39,5 @@
     <a class="btn" href="{{ '/people/%d' % person.id if person else '/people' }}">취소</a>
   </form>
 </div>
-<p class="muted">* 이월 잔액·충전 금액은 언제든 수정할 수 있으며, 월간 처리 후에는 <a href="{{ '/people/%d' % person.id if person else '/people' }}">인원 상세</a>의 "잔액 개별 수정"에서도 변경할 수 있습니다.</p>
+<p class="muted">* 이월 잔액·충전 금액은 이 화면에서 언제든 수정할 수 있습니다. 월간 처리 후에는 해당 월 기록의 사용 합계·총 잔액도 함께 자동 재계산됩니다.</p>
 {% endblock %}

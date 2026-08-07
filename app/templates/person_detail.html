@@ -13,7 +13,11 @@
     <tr><th>계급</th><td>{{ person.grade or '-' }}</td></tr>
     <tr><th>팀</th><td>{% if person.team %}<span class="badge" style="background: {{ person.team.color }}">{{ person.team.name }}</span>{% else %}-{% endif %}</td></tr>
     <tr><th>상태</th><td>{% if person.status == 'active' %}<span class="badge badge-active">재직</span>{% else %}<span class="badge badge-inactive">비재직</span>{% endif %}</td></tr>
+    <tr><th>이월 잔액</th><td>{{ person.current_carry_balance|number_format }}원</td></tr>
+    <tr><th>당월 충전</th><td>{{ person.current_amount|number_format }}원</td></tr>
+    <tr><th>총 잔액</th><td><strong>{{ (person.current_carry_balance + person.current_amount)|number_format }}원</strong></td></tr>
   </table>
+  <p class="muted" style="margin-top:10px">금액 수정은 <a href="/people/{{ person.id }}/edit">수정</a> 페이지에서 할 수 있습니다.</p>
 </div>
 
 <div class="card">
@@ -38,35 +42,5 @@
       </tbody>
     </table>
   </div>
-  {% if balances %}
-  <div class="card">
-    <h2>잔액 개별 수정 ({{ balances[0].snapshot.month }} 월)</h2>
-    <p class="muted">요청서와 별개로 발생한 개인 변동이 있을 때 수정합니다. 사용 합계·총 잔액은 자동 재계산됩니다.</p>
-    <form method="post" action="/people/{{ person.id }}/record-edit" class="inline-form-row">
-      <label>이월 잔액
-        <input type="number" name="carry_balance" value="{{ balances[0].carry_balance }}" min="0" step="100" style="width:150px">
-      </label>
-      <label>당월 충전
-        <input type="number" name="amount" value="{{ balances[0].amount }}" min="0" step="100" style="width:150px">
-      </label>
-      <button type="submit" class="btn btn-primary">수정</button>
-    </form>
-  </div>
-  {% else %}
-  <div class="card">
-    <h2>잔액 개별 수정</h2>
-    <p class="muted">아직 월간 처리가 되지 않은 인원입니다. 아래에서 현재 잔액을 입력·수정할 수 있으며,
-      월간 처리가 이루어지면 해당 월 기록과 함께 반영됩니다.</p>
-    <form method="post" action="/people/{{ person.id }}/record-edit" class="inline-form-row">
-      <label>이월 잔액
-        <input type="number" name="carry_balance" value="{{ person.current_carry_balance }}" min="0" step="100" style="width:150px">
-      </label>
-      <label>당월 충전
-        <input type="number" name="amount" value="{{ person.current_amount }}" min="0" step="100" style="width:150px">
-      </label>
-      <button type="submit" class="btn btn-primary">수정</button>
-    </form>
-  </div>
-  {% endif %}
 </div>
 {% endblock %}
