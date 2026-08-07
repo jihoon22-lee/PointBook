@@ -183,6 +183,14 @@ tailscale funnel --bg 8002    # 127.0.0.1:8002를 공개 노출 (443 포트)
 tailscale funnel --bg --https=8443 8002   # 8443 포트로 공개 (원하면)
 ```
 
+**해제**:
+```bash
+tailscale funnel reset              # Funnel 전체 해제 (가장 확실)
+tailscale funnel --https=443 off    # 특정 포트만 해제 (다른 공개 유지)
+tailscale serve --https=8002 off    # serve(내부 전용) 특정 포트 해제
+tailscale funnel status             # 공개 상태 확인
+```
+
 - 접속 URL: `https://main.tail30f401.ts.net` (443) 또는 `https://main.tail30f401.ts.net:8443`
 - **Funnel 공개 포트 제약**: HTTPS는 **443·8443·10000만** 지원 — 내부와 동일한 8002 포트로 외부 공개는 불가능
 - 첫 사용 시 `tailscale funnel status`가 관리 콘솔 승인 링크를 안내 (1회)
