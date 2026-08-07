@@ -299,3 +299,19 @@ def test_upload_provider_error_shows_message(auth_client, monkeypatch):
     )
     assert resp.status_code == 400
     assert "Gemini API 오류" in resp.text
+
+
+def test_confirm_syncs_person_current_balance(auth_client, db):
+    data = {
+        "month": "2099-05",
+        "personal_no_0": "101",
+        "name_0": "김소방",
+        "team_0": "1팀",
+        "grade_0": "",
+        "amount_0": "50000",
+        "carry_101|김소방": "12000",
+    }
+    auth_client.post("/monthly/confirm", data=data)
+    person = db.scalar(select(Person).where(Person.personal_no == "101"))
+    assert person.current_carry_balance == 12000
+    assert person.current_amount == 50000

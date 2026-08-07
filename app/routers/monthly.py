@@ -103,6 +103,10 @@ async def upload(request: Request, db: Session = Depends(get_db)) -> Response:
         prev = 0
         if change.person_id is not None:
             prev = previous_total(db, change.person_id, month)
+            if prev == 0:
+                person = db.get(Person, change.person_id)
+                if person is not None:
+                    prev = person.current_carry_balance
         prev_totals[f"{change.personal_no}|{change.name}"] = prev
     return render(
         request,
@@ -157,5 +161,10 @@ async def confirm(request: Request, db: Session = Depends(get_db)) -> Response:
         )
 
     records = build_balance_records(db, month, carry_map, amount_map)
+    for record in records:
+        person = db.get(Person, record.person_id)
+        if person is not None:
+            person.current_carry_balance = record.carry_balance
+            person.current_amount = record.amount
     create_monthly_snapshot(db, month, records)
     return RedirectResponse("/monthly?done=1", status_code=303)

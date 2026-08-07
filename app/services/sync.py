@@ -30,6 +30,7 @@ class PersonChange:
     name: str
     team_name: str = ""
     grade: str = ""
+    amount: int = 0
     person_id: int | None = None
     team_changed: bool = False
 
@@ -75,6 +76,7 @@ def analyze(db: Session, rows: list[RequestRow]) -> SyncAnalysis:
                     name=row.name,
                     team_name=row.team,
                     grade=row.grade,
+                    amount=row.amount,
                 )
             )
             continue
@@ -130,6 +132,7 @@ def apply_analysis(db: Session, analysis: SyncAnalysis) -> None:
                     grade=change.grade,
                     status="active",
                     team_id=team.id if team else None,
+                    current_amount=change.amount,
                 )
             )
             continue

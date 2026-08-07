@@ -1,3 +1,6 @@
+from sqlalchemy import select
+
+from app.models import Person
 from tests.factories import make_person, make_team
 
 
@@ -190,3 +193,75 @@ def test_edit_person_team_less(auth_client, db):
     assert resp.status_code == 303
     db.refresh(person)
     assert person.team_id is None
+
+
+def test_person_detail_no_records_shows_balance_form(auth_client, db):
+    person = make_person(db, "1001", "홍길동")
+    resp = auth_client.get(f"/people/{person.id}")
+    assert resp.status_code == 200
+    assert "잔액 개별 수정" in resp.text
+    assert 'name="carry_balance"' in resp.text
+    assert 'name="amount"' in resp.text
+
+
+def test_edit_form_links_to_balance_edit(auth_client, db):
+    person = make_person(db, "1001", "홍길동")
+    resp = auth_client.get(f"/people/{person.id}/edit")
+    assert resp.status_code == 200
+    assert f'href="/people/{person.id}"' in resp.text
+    assert "잔액 개별 수정" in resp.text
+
+
+def test_create_person_with_balance(auth_client, db):
+    resp = auth_client.post(
+        "/people/new",
+        data={
+            "personal_no": "3001",
+            "name": "잔액있는사람",
+            "grade": "",
+            "team_id": "",
+            "status": "active",
+            "carry_balance": "15000",
+            "amount": "50000",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    person = db.scalar(select(Person).where(Person.personal_no == "3001"))
+    assert person is not None
+    assert person.current_carry_balance == 15000
+    assert person.current_amount == 50000
+
+
+def test_edit_person_balance(auth_client, db):
+    person = make_person(db, "1001", "홍길동")
+    resp = auth_client.post(
+        f"/people/{person.id}/edit",
+        data={
+            "personal_no": "1001",
+            "name": "홍길동",
+            "grade": "",
+            "team_id": "",
+            "status": "active",
+            "carry_balance": "7000",
+            "amount": "30000",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    db.refresh(person)
+    assert person.current_carry_balance == 7000
+    assert person.current_amount == 30000
+
+
+def test_record_edit_without_snapshot_updates_current(auth_client, db):
+    person = make_person(db, "1001", "홍길동")
+    resp = auth_client.post(
+        f"/people/{person.id}/record-edit",
+        data={"carry_balance": "9000", "amount": "20000"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    db.refresh(person)
+    assert person.current_carry_balance == 9000
+    assert person.current_amount == 20000
