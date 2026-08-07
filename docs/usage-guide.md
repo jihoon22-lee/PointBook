@@ -173,6 +173,24 @@ scripts/run.sh                          # PointBook 기동
   tailscale serve --bg https+8002 http://127.0.0.1:8002
   ```
 
+### 4-2. 외부망(매장 PC 등) 접속 — Tailscale Funnel
+
+현재 설정(Tailscale serve)은 tailnet 내부 전용이라, **외부망에 있는 매장 PC는 접속할 수 없다.**
+외부망에서 접속하려면 Tailscale **Funnel**로 서비스를 공개한다 (매장 PC에 설치 불필요, 브라우저만):
+
+```bash
+tailscale funnel --bg 8002    # 127.0.0.1:8002를 공개 노출
+```
+
+- 접속 URL: `https://main.tail30f401.ts.net` (443 포트, 자동 HTTPS 인증서)
+- 첫 사용 시 `tailscale funnel status`가 관리 콘솔 승인 링크를 안내 (1회)
+- 기존 tailnet 전용 주소(`:8002`)는 그대로 유지됨
+
+**주의**:
+- Funnel은 **완전 공개** — URL을 아는 누구나 접근 가능. 관리자 비밀번호를 강력하게 유지할 것
+- Win7 구형 업데이트 미적용 PC는 Let's Encrypt 인증서 신뢰 문제 가능 (인증서 경고 시 Windows 업데이트/ESU 적용 필요)
+- 보안이 중요하면 ZeroTier(Win7 지원) 등 가상 사설망 구성도 대안
+
 ---
 
 ## 5. 주의사항·팁
