@@ -80,9 +80,11 @@ docker compose -f e2e/compose.yml up --build --abort-on-container-exit --exit-co
   → squash merge**. `main`에 직접 푸시 금지
 - **브랜치 보호 활성화** (public 전환, v1.0.0 이후):
   - main 직접 push 차단 (enforce_admins 포함 — 소유자도 예외 없음)
-  - PR 필수 + 승인 1건 — **CODEOWNERS(관리자 본인 `jihoon22-lee`) 리뷰만 승인으로 인정**
-  - CI 6종(`lint`·`typecheck`·`test`·`security`·`secret-scan`·`e2e`) 통과 필수, force push 금지
-  - 워크플로: PR 생성 → 본인(codeowner) 승인 → CI 통과 → squash merge
+  - PR 필수 + CI 6종(`lint`·`typecheck`·`test`·`security`·`secret-scan`·`e2e`) 통과 필수, force push 금지
+  - 승인 필수 없음: GitHub는 PR 작성자의 자기 PR 승인을 차단하므로, 단독 개발에서
+    "본인 승인 필수"는 데드락. **외부인의 승인은 효력이 없고**(write 권한 없음 — 머지 불가),
+    본인이 리뷰 후 CI 통과 상태에서 머지
+  - 워크플로: PR 생성 → 본인 리뷰·검토 → CI 통과 → squash merge
 - PR 머지 전 모든 CI job 통과 필수
 - **주의**: CI는 PR 머지 ref(`refs/pull/N/merge`) 기준으로 실행된다. conftest 등
   공용 테스트 파일을 PR에서 전면 재작성하면 git 3-way 머지가 양쪽 변경을 섞어
