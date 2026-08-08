@@ -69,3 +69,25 @@ jobs:
         if: hashFiles('e2e/**') != ''
         working-directory: e2e
         run: docker compose -f compose.yml up --build --abort-on-container-exit --exit-code-from e2e
+
+  quality-gate:
+    name: Quality gate
+    needs: [lint, typecheck, test, security, secret-scan, e2e]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # 단일 필수 체크로 모아 두면, 게이팅으로 건너뛴 잡(skipped)은 통과로
+      # 취급하고 실패·취소만 잡을 수 있다.
+      - name: Verify no job failed
+        shell: bash
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "잡 결과: $RESULTS"
+          for result in $RESULTS; do
+            case "$result" in
+              success|skipped) ;;
+              *) echo "품질 게이트 실패: $result" >&2; exit 1 ;;
+            esac
+          done
