@@ -77,13 +77,19 @@ docker compose -f e2e/compose.yml up --build --abort-on-container-exit --exit-co
   (pytest + coverage **85% 이상**) → `security`(pip-audit) → `secret-scan`(gitleaks) → `e2e`
   (구버전 Chromium Playwright, `e2e/` 존재 시)
 - 각 단계 완료 후: **계획 대비 자체 검토 → PR(한글, 리뷰 가능 상태) → CI 전체 통과
-  → squash merge**. `main`에 직접 푸시 금지 (자체 규칙 — GitHub 브랜치 보호는
-  private 무료 요금제에서 불가, squash 머지만 저장소 기본값으로 설정됨)
+  → squash merge**. `main`에 직접 푸시 금지
+- **브랜치 보호 활성화** (public 전환, v1.0.0 이후):
+  - main 직접 push 차단 (enforce_admins 포함 — 소유자도 예외 없음)
+  - PR 필수 + 승인 1건 — **CODEOWNERS(관리자 본인 `jihoon22-lee`) 리뷰만 승인으로 인정**
+  - CI 6종(`lint`·`typecheck`·`test`·`security`·`secret-scan`·`e2e`) 통과 필수, force push 금지
+  - 워크플로: PR 생성 → 본인(codeowner) 승인 → CI 통과 → squash merge
 - PR 머지 전 모든 CI job 통과 필수
 - **주의**: CI는 PR 머지 ref(`refs/pull/N/merge`) 기준으로 실행된다. conftest 등
   공용 테스트 파일을 PR에서 전면 재작성하면 git 3-way 머지가 양쪽 변경을 섞어
   깨진 파일이 생길 수 있다 — 공용 파일은 main과 내용을 동일하게 유지하거나
   최소 diff로 수정할 것 (실제 사례: P3에서 발생, 수정 이력 참고)
+- **공개 저장소 주의**: 커밋 전 히스토리 보안 점검 필수. `.env`·DB·스크린샷 등
+  민감 파일은 절대 커밋 금지 (PR ref에도 남으므로 삭제 불가 — P24 실사례)
 
 ## 작업 컨벤션
 
