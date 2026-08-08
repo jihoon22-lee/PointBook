@@ -81,7 +81,8 @@ docker compose -f e2e/compose.yml up --build --abort-on-container-exit --exit-co
 - **Ruleset "main-protection" 활성화** (public 전환 이후, SoolJang 저장소와 동일 구성):
   - 대상: `main` 브랜치, bypass 없음 (소유자 포함 전원 적용)
   - 규칙: PR 필수(승인 0건) / 브랜치 삭제 금지 / force push(non-fast-forward) 금지 /
-    CI 6종(`lint`·`typecheck`·`test`·`security`·`secret-scan`·`e2e`) 필수(strict)
+    **`Quality gate` 체크 필수(strict)** — lint·typecheck·test·security·secret-scan·e2e
+    6개 job을 집계하는 최종 관문 (모든 job 통과 시에만 게이트 통과)
   - 승인 필수 없음: GitHub는 PR 작성자의 자기 PR 승인을 차단하므로, 단독 개발에서
     "본인 승인 필수"는 데드락. **외부인의 승인은 효력이 없고**(write 권한 없음 — 머지 불가),
     본인이 리뷰 후 CI 통과 상태에서 머지
