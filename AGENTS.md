@@ -78,9 +78,10 @@ docker compose -f e2e/compose.yml up --build --abort-on-container-exit --exit-co
   (구버전 Chromium Playwright, `e2e/` 존재 시)
 - 각 단계 완료 후: **계획 대비 자체 검토 → PR(한글, 리뷰 가능 상태) → CI 전체 통과
   → squash merge**. `main`에 직접 푸시 금지
-- **브랜치 보호 활성화** (public 전환, v1.0.0 이후):
-  - main 직접 push 차단 (enforce_admins 포함 — 소유자도 예외 없음)
-  - PR 필수 + CI 6종(`lint`·`typecheck`·`test`·`security`·`secret-scan`·`e2e`) 통과 필수, force push 금지
+- **Ruleset "main-protection" 활성화** (public 전환 이후, SoolJang 저장소와 동일 구성):
+  - 대상: `main` 브랜치, bypass 없음 (소유자 포함 전원 적용)
+  - 규칙: PR 필수(승인 0건) / 브랜치 삭제 금지 / force push(non-fast-forward) 금지 /
+    CI 6종(`lint`·`typecheck`·`test`·`security`·`secret-scan`·`e2e`) 필수(strict)
   - 승인 필수 없음: GitHub는 PR 작성자의 자기 PR 승인을 차단하므로, 단독 개발에서
     "본인 승인 필수"는 데드락. **외부인의 승인은 효력이 없고**(write 권한 없음 — 머지 불가),
     본인이 리뷰 후 CI 통과 상태에서 머지
