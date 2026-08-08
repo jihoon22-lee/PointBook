@@ -300,6 +300,14 @@ body:has(.login-wrap) { background: linear-gradient(160deg, var(--navy) 0%, #1e3
 body:has(.login-wrap) .login-wrap h1 { color: #fff; }
 body:has(.login-wrap) .login-wrap .muted { color: #cbd5e1; }
 
+/* ---------- 푸터 ---------- */
+.footer {
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.8rem;
+  padding: 18px 0 28px;
+}
+
 /* ---------- 모바일 ---------- */
 @media (max-width: 640px) {
   body { font-size: 14px; }

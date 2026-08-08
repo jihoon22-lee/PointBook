@@ -1,6 +1,6 @@
 [project]
 name = "pointbook"
-version = "0.1.0"
+version = "1.0.0"
 description = "소방서 포인트 충전 요청서 관리 웹서비스"
 readme = "README.md"
 requires-python = ">=3.11"
