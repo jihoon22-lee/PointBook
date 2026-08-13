@@ -184,6 +184,9 @@ def edit_person(
     amt = _to_int(amount)
     person.current_carry_balance = carry
     person.current_amount = amt
+    # 개별 수정은 항상 "현재 상태 + 가장 최근 월 기록 1건"만 변경한다.
+    # 이전 월 기록은 건드리지 않으며(역사 보존), 이후 월은 아직 존재하지 않으므로
+    # 최신 기록만 직전 총 잔액 기준으로 재계산하면 정합성이 유지된다.
     record = last_record_for_person(db, person)
     if record is not None:
         record.carry_balance = carry

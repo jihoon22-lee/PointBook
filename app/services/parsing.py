@@ -5,6 +5,9 @@
 - 6컬럼: 첫 컬럼이 숫자면 순번 없는 요청서(순번,팀,이름,계급,금액,개인번호),
   아니면 (팀,이름,계급,금액,개인번호,비고)
 - 5컬럼: (팀,이름,계급,금액,개인번호)
+
+구분자 우선순위는 탭 → 콤마. 금액에 콤마(50,000)가 들어간 요청서는
+콤마 구분자와 충돌할 수 있으므로 **탭 구분(엑셀 복사)을 권장**한다.
 """
 
 import re
@@ -18,17 +21,19 @@ def _to_int(value: str) -> int:
     return int(match.group()) if match else 0
 
 
+def _split_columns(line: str) -> list[str]:
+    if "\t" in line:
+        return [c.strip() for c in line.split("\t") if c.strip()]
+    return [c.strip() for c in line.split(",") if c.strip()]
+
+
 def parse_pasted(text: str) -> list[RequestRow]:
     rows: list[RequestRow] = []
     for line in text.splitlines():
         line = line.strip()
         if not line:
             continue
-        cols = [c.strip() for c in re.split(r"\t|,", line) if c.strip()]
-        if "\t" in line:
-            cols = [c.strip() for c in line.split("\t") if c.strip()]
-        else:
-            cols = [c.strip() for c in line.split(",") if c.strip()]
+        cols = _split_columns(line)
         if not cols:
             continue
         team = name = grade = amount = personal_no = note = ""

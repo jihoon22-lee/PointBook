@@ -278,3 +278,38 @@ def test_edit_person_updates_current_without_snapshot(auth_client, db):
     db.refresh(person)
     assert person.current_carry_balance == 9000
     assert person.current_amount == 20000
+
+
+def test_edit_person_preserves_earlier_records(auth_client, db):
+    from app.models import BalanceRecord
+    from app.services.balance import create_monthly_snapshot
+
+    person = make_person(db, "1001", "홍길동")
+    create_monthly_snapshot(
+        db,
+        "2026-05",
+        [BalanceRecord(person_id=person.id, carry_balance=0, amount=1000, usage=0, total=1000)],
+    )
+    create_monthly_snapshot(
+        db,
+        "2026-06",
+        [BalanceRecord(person_id=person.id, carry_balance=0, amount=2000, usage=0, total=2000)],
+    )
+    resp = auth_client.post(
+        f"/people/{person.id}/edit",
+        data={
+            "personal_no": "1001",
+            "name": "홍길동",
+            "grade": "",
+            "team_id": "",
+            "status": "active",
+            "carry_balance": "1500",
+            "amount": "0",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    records = sorted(person.balances, key=lambda b: b.snapshot.month)
+    assert [r.total for r in records] == [1000, 1500]
+    assert records[0].carry_balance == 0
+    assert records[1].carry_balance == 1500

@@ -11,6 +11,7 @@ from app.ai.factory import get_provider
 from app.auth import require_login
 from app.config import get_settings
 from app.db import get_db
+from app.logging import get_logger
 from app.models import MonthlySnapshot, Person
 from app.services import stats
 from app.services.balance import build_balance_records, create_monthly_snapshot, previous_total
@@ -155,30 +156,46 @@ async def confirm(request: Request, db: Session = Depends(get_db)) -> Response:
     if not analysis.changes:
         return render(request, "review.html", {**empty, "error": "동기화할 인원이 없습니다."}, 400)
 
-    apply_analysis(db, analysis)
-    db.flush()
+    try:
+        apply_analysis(db, analysis)
+        db.flush()
 
-    carry_map: dict[int, int] = {}
-    amount_map: dict[int, int] = {}
-    for change in analysis.changes:
-        person = db.scalar(
-            select(Person).where(
-                Person.personal_no == change.personal_no, Person.name == change.name
+        carry_map: dict[int, int] = {}
+        amount_map: dict[int, int] = {}
+        for change in analysis.changes:
+            person = db.scalar(
+                select(Person).where(
+                    Person.personal_no == change.personal_no, Person.name == change.name
+                )
             )
-        )
-        if person is None:
-            continue
-        key = f"{change.personal_no}|{change.name}"
-        carry_map[person.id] = carries.get(key, 0)
-        amount_map[person.id] = sum(
-            r.amount for r in rows if r.personal_no == change.personal_no and r.name == change.name
-        )
+            if person is None:
+                continue
+            key = f"{change.personal_no}|{change.name}"
+            carry_map[person.id] = carries.get(key, 0)
+            amount_map[person.id] = sum(
+                r.amount
+                for r in rows
+                if r.personal_no == change.personal_no and r.name == change.name
+            )
 
-    records = build_balance_records(db, month, carry_map, amount_map)
-    for record in records:
-        person = db.get(Person, record.person_id)
-        if person is not None:
-            person.current_carry_balance = record.carry_balance
-            person.current_amount = record.amount
-    create_monthly_snapshot(db, month, records)
+        records = build_balance_records(db, month, carry_map, amount_map)
+        for record in records:
+            person = db.get(Person, record.person_id)
+            if person is not None:
+                person.current_carry_balance = record.carry_balance
+                person.current_amount = record.amount
+        create_monthly_snapshot(db, month, records, commit=False)
+        db.commit()
+    except ValueError as exc:
+        db.rollback()
+        return render(request, "review.html", {**empty, "error": str(exc)}, 400)
+    except Exception:  # noqa: BLE001 — 예상 밖 오류도 롤백 후 친절한 메시지로 안내
+        db.rollback()
+        get_logger().exception("월간 확정 처리 실패")
+        return render(
+            request,
+            "review.html",
+            {**empty, "error": "확정 처리 중 오류가 발생했습니다. 다시 시도해 주세요."},
+            500,
+        )
     return RedirectResponse("/monthly?done=1", status_code=303)

@@ -15,22 +15,18 @@ def compute_total(amount: int, carry_balance: int) -> int:
 
 
 def previous_total(db: Session, person_id: int, month: str) -> int:
-    """해당 인원의 month 이전 가장 최근 월별 기록의 총 잔액. 없으면 0."""
-    snapshots = db.scalars(
-        select(MonthlySnapshot)
-        .where(MonthlySnapshot.month < month)
+    """해당 인원의 month 이전 가장 최근 월별 기록의 총 잔액. 없으면 0.
+
+    단일 조인 쿼리로 조회해 월간 확정 시 인원×월 이중 순회(N+1)를 피한다.
+    """
+    total = db.scalar(
+        select(BalanceRecord.total)
+        .join(MonthlySnapshot, MonthlySnapshot.id == BalanceRecord.snapshot_id)
+        .where(MonthlySnapshot.month < month, BalanceRecord.person_id == person_id)
         .order_by(MonthlySnapshot.month.desc())
-    ).all()
-    for snapshot in snapshots:
-        record = db.scalar(
-            select(BalanceRecord).where(
-                BalanceRecord.snapshot_id == snapshot.id,
-                BalanceRecord.person_id == person_id,
-            )
-        )
-        if record is not None:
-            return record.total
-    return 0
+        .limit(1)
+    )
+    return total if total is not None else 0
 
 
 def build_balance_records(
@@ -64,7 +60,7 @@ def recompute_record(record: BalanceRecord, prev_total: int) -> None:
 
 
 def create_monthly_snapshot(
-    db: Session, month: str, records: list[BalanceRecord]
+    db: Session, month: str, records: list[BalanceRecord], *, commit: bool = True
 ) -> MonthlySnapshot:
     if db.scalar(select(MonthlySnapshot).where(MonthlySnapshot.month == month)) is not None:
         raise ValueError(f"{month} 월은 이미 처리되었습니다.")
@@ -74,7 +70,8 @@ def create_monthly_snapshot(
     for record in records:
         record.snapshot_id = snapshot.id
         db.add(record)
-    db.commit()
+    if commit:
+        db.commit()
     return snapshot
 
 

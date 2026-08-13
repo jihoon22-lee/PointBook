@@ -48,6 +48,15 @@ def test_parse_pasted_amount_with_commas():
     assert rows[0].amount == 50000
 
 
+def test_parse_pasted_comma_delimited():
+    text = "1,1팀,김소방,소방경,50000,101,비고"
+    rows = parse_pasted(text)
+    assert len(rows) == 1
+    assert rows[0].personal_no == "101"
+    assert rows[0].amount == 50000
+    assert rows[0].note == "비고"
+
+
 def test_monthly_page_empty(auth_client):
     resp = auth_client.get("/monthly")
     assert resp.status_code == 200
@@ -315,3 +324,25 @@ def test_confirm_syncs_person_current_balance(auth_client, db):
     person = db.scalar(select(Person).where(Person.personal_no == "101"))
     assert person.current_carry_balance == 12000
     assert person.current_amount == 50000
+
+
+def test_confirm_rolls_back_on_error(auth_client, db, monkeypatch):
+    from app.routers import monthly as monthly_router
+
+    def boom(db, month, records, **kwargs):
+        raise ValueError("테스트용 실패")
+
+    monkeypatch.setattr(monthly_router, "create_monthly_snapshot", boom)
+    data = {
+        "month": "2026-07",
+        "personal_no_0": "101",
+        "name_0": "김소방",
+        "team_0": "1팀",
+        "grade_0": "소방경",
+        "amount_0": "50000",
+        "carry_101|김소방": "10000",
+    }
+    resp = auth_client.post("/monthly/confirm", data=data)
+    assert resp.status_code == 400
+    assert "테스트용 실패" in resp.text
+    assert db.scalar(select(Person).where(Person.personal_no == "101")) is None
