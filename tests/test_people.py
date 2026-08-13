@@ -313,3 +313,17 @@ def test_edit_person_preserves_earlier_records(auth_client, db):
     assert [r.total for r in records] == [1000, 1500]
     assert records[0].carry_balance == 0
     assert records[1].carry_balance == 1500
+
+
+def test_people_pagination(auth_client, db):
+    for i in range(55):
+        make_person(db, str(1000 + i), f"인원{i:02d}")
+    resp = auth_client.get("/people")
+    assert resp.status_code == 200
+    assert "페이지 1 / 2" in resp.text
+    assert "총 55명" in resp.text
+    assert "인원00" in resp.text
+    resp = auth_client.get("/people?page=2")
+    assert "페이지 2 / 2" in resp.text
+    assert "인원00" not in resp.text
+    assert "인원54" in resp.text

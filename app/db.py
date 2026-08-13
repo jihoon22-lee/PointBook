@@ -1,6 +1,7 @@
 from collections.abc import Generator
 from pathlib import Path
 
+from alembic.config import Config
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
@@ -36,6 +37,11 @@ def current_database_url() -> str:
     return _url or default_database_url()
 
 
+def current_database_path() -> Path:
+    """현재 엔진이 가리키는 DB 파일 경로 (백업 등에서 사용)."""
+    return Path(engine.url.database or "")
+
+
 def ensure_default_database() -> None:
     if not _configured:
         configure_database(default_database_url())
@@ -47,9 +53,7 @@ def init_db() -> None:
     run_migrations()
 
 
-def _alembic_config():
-    from alembic.config import Config
-
+def _alembic_config() -> Config:
     project_root = Path(__file__).resolve().parent.parent
     cfg = Config(str(project_root / "alembic.ini"))
     cfg.set_main_option("script_location", str(project_root / "migrations"))

@@ -14,6 +14,7 @@ from app.db import get_db
 from app.logging import get_logger
 from app.models import MonthlySnapshot, Person
 from app.services import stats
+from app.services.backup import backup_database
 from app.services.balance import build_balance_records, create_monthly_snapshot, previous_total
 from app.services.dates import current_month
 from app.services.parsing import _to_int, parse_pasted
@@ -157,6 +158,7 @@ async def confirm(request: Request, db: Session = Depends(get_db)) -> Response:
         return render(request, "review.html", {**empty, "error": "동기화할 인원이 없습니다."}, 400)
 
     try:
+        backup_database()
         apply_analysis(db, analysis)
         db.flush()
 

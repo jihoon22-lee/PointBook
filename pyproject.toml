@@ -1,6 +1,6 @@
 [project]
 name = "pointbook"
-version = "1.0.0"
+dynamic = ["version"]
 description = "소방서 포인트 충전 요청서 관리 웹서비스"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -25,6 +25,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
+
+[tool.hatch.version]
+path = "app/_version.py"
 
 [dependency-groups]
 dev = [
@@ -54,6 +57,7 @@ strict = true
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+exclude = ["migrations/versions"]
 
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = ["fastapi.Depends", "fastapi.Form", "fastapi.Query", "fastapi.Path"]

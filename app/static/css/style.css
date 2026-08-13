@@ -308,6 +308,16 @@ body:has(.login-wrap) .login-wrap .muted { color: #cbd5e1; }
   padding: 18px 0 28px;
 }
 
+/* ---------- 페이지네이션 ---------- */
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 14px;
+}
+.pagination .muted { font-size: 0.9rem; }
+
 /* ---------- 모바일 ---------- */
 @media (max-width: 640px) {
   body { font-size: 14px; }
