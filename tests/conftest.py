@@ -7,6 +7,14 @@ from app import db as db_module
 from app.config import get_settings
 from app.main import app
 from app.models import AdminUser
+from app.services.rate_limit import login_limiter
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    login_limiter.clear_all()
+    yield
+    login_limiter.clear_all()
 
 
 @pytest.fixture()
