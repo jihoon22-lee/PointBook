@@ -2,6 +2,40 @@
 
 버전별 주요 변경 사항을 기록합니다. 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따릅니다.
 
+## [1.1.0] - 2026-08-13
+
+보안·운영 하드닝, 데이터 무결성·성능 강화, Alembic 마이그레이션 도입, 신규 기능(백업·비밀번호 변경·페이지네이션).
+
+### 추가
+
+- **Alembic 마이그레이션**: ad-hoc `migrate()`를 Alembic으로 대체 (`migrations/`, `alembic.ini`). 기동 시 `upgrade head` 자동 실행, 기존 1.0.x DB는 `alembic_version` 부재 시 현재 상태를 head로 자동 표식(stamp). CI에 마이그레이션 검증(upgrade + check) job 추가
+- **DB 자동 백업**: 월간 확정 커밋 전 `data/backups/`에 타임스탬프 복사본 자동 생성, 보관 개수 제한(`BACKUP_KEEP`, 기본 30). 수동 백업 스크립트 `scripts/backup.py`
+- **설정 페이지**: `/settings`에서 관리자 비밀번호 변경 (현재 비밀번호 검증, 8자 이상, 확인 일치)
+- **인원 목록 페이지네이션**: 페이지당 50명, 이전/다음 + 총 인원 표시
+- **로깅**: 공통 로거(`app/logging.py`) — 시작·보안 경고·확정·백업·비밀번호 변경 이벤트 기록 (민감정보 미기록)
+
+### 보안
+
+- **시크릿 fail-fast**: `SECRET_KEY`/`ADMIN_PASSWORD` 기본값 사용 시 경고 로그, `ENFORCE_SECURE_DEFAULTS=true`면 서버 시작 거부
+- **로그인 레이트리밋**: N회 실패 시 잠금(429), 성공 시 초기화 (`LOGIN_MAX_ATTEMPTS`/`LOGIN_LOCKOUT_SECONDS`)
+- **업로드 검증**: 이미지 확장자·최대 크기(`MAX_UPLOAD_MB`) 제한
+- **세션 쿠키 플래그**: `COOKIE_SAMESITE`(기본 lax)·`COOKIE_SECURE` 명시
+
+### 수정
+
+- **확정 트랜잭션 원자화**: 동기화·잔액 계산·스냅샷 저장을 단일 커밋으로 묶고, 실패 시 롤백 + 친절한 오류 페이지
+- **개별 수정 불변식**: 인원 수정은 항상 현재 상태 + 최신 월 기록 1건만 변경(이전 월 기록 보존) 명시·회귀 테스트
+- **버전 상수 분리**: `pyproject.toml` 읽기 제거 → `app/_version.py` 단일 소스 (wheel 배포 크래시 방지)
+
+### 성능
+
+- **`previous_total` N+1 제거**: 인원×월 이중 순회를 단일 조인 쿼리로 교체
+- **stats eager loading**: `trend`/`team_summary`/`person_summary`에 `selectinload` 적용
+
+### 수정 (파싱)
+
+- 붙여넣기 파싱의 중복·데드 코드 제거, 탭 우선 구분자 처리 명시
+
 ## [1.0.0] - 2026-08-08
 
 최초 정식 릴리스. 소방서 포인트 충전 요청서(엑셀)를 웹에서 관리하는 서비스의 첫 배포 버전.

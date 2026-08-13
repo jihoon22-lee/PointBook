@@ -37,6 +37,20 @@ jobs:
       - run: uv sync --group dev
       - run: uv run pytest --cov=app --cov-report=term-missing --cov-fail-under=85
 
+  migrations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+      - run: uv sync --group dev
+      - name: 마이그레이션 검증 (빈 DB upgrade head + 드리프트 확인)
+        run: |
+          export DATABASE_PATH=/tmp/ci_pointbook.db
+          uv run alembic upgrade head
+          uv run alembic check
+
   security:
     runs-on: ubuntu-latest
     steps:
@@ -72,7 +86,7 @@ jobs:
 
   quality-gate:
     name: Quality gate
-    needs: [lint, typecheck, test, security, secret-scan, e2e]
+    needs: [lint, typecheck, test, migrations, security, secret-scan, e2e]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

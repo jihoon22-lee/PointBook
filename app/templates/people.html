@@ -46,4 +46,16 @@
     </tbody>
   </table>
 </div>
+
+{% if pages > 1 %}
+<div class="pagination">
+  {% if page > 1 %}
+  <a class="btn btn-sm" href="/people?status={{ status|urlencode }}&team_id={{ team_id if team_id else '' }}&q={{ q|urlencode }}&page={{ page - 1 }}">이전</a>
+  {% endif %}
+  <span class="muted">페이지 {{ page }} / {{ pages }} (총 {{ total }}명)</span>
+  {% if page < pages %}
+  <a class="btn btn-sm" href="/people?status={{ status|urlencode }}&team_id={{ team_id if team_id else '' }}&q={{ q|urlencode }}&page={{ page + 1 }}">다음</a>
+  {% endif %}
+</div>
+{% endif %}
 {% endblock %}

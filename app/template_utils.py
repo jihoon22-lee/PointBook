@@ -1,4 +1,3 @@
-import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -6,19 +5,13 @@ from fastapi import Request
 from fastapi.responses import Response
 from fastapi.templating import Jinja2Templates
 
+from app._version import __version__
+
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 
-
-def _load_version() -> str:
-    pyproject = tomllib.loads(
-        (Path(__file__).resolve().parent.parent / "pyproject.toml").read_text(encoding="utf-8")
-    )
-    return str(pyproject["project"]["version"])
-
-
-templates.env.globals["version"] = _load_version()
+templates.env.globals["version"] = __version__
 
 
 def number_format(value: int | None) -> str:

@@ -18,10 +18,12 @@
   (비재직자의 잔액은 보존되어 복귀 시 이어짐)
 - **인원·팀 관리**: 개인번호+이름 고유, 개별 수정(상태/팀/금액), 팀 마스터(색상 구분)
 - **대시보드**: 월별 사용량·금액/잔액 통계 (전체/팀별/개인별), 월별 이력 조회
+- **자동 백업**: 월간 확정 전 DB 자동 백업 (`data/backups/`), 보관 개수 제한
+- **설정**: 관리자 비밀번호 변경 (`/settings`)
 
 ## 기술 스택
 
-Python FastAPI + SQLite(SQLAlchemy 2.x) + Jinja2/바닐라 JS + 세션 인증.
+Python FastAPI + SQLite(SQLAlchemy 2.x) + Alembic(마이그레이션) + Jinja2/바닐라 JS + 세션 인증.
 AI는 VisionProvider 인터페이스로 추상화 — Gemini(사진 테이블 인식)와 개발용 Mock 구현체를 제공한다.
 
 ## 개발 환경 (WSL)
@@ -87,6 +89,20 @@ docker compose -f e2e/compose.yml up --build --abort-on-container-exit --exit-co
 ```bash
 uv run python -m scripts.import_excel --file 기존파일.xlsx [--month 2026-07]
 ```
+
+## DB 마이그레이션·백업
+
+스키마 마이그레이션은 Alembic이 담당하며, 서버 기동 시 자동으로 적용된다.
+기존 1.0.x DB는 최초 1회 자동으로 기준점(stamp)이 잡힌다. 수동 명령:
+
+```bash
+uv run alembic upgrade head   # 최신 스키마로 마이그레이션
+uv run alembic check          # 모델-마이그레이션 드리프트 확인
+uv run python -m scripts.backup   # DB 수동 백업 (data/backups/)
+```
+
+- 월간 확정 시 `data/backups/`에 DB가 자동 백업된다 (보관 개수 `BACKUP_KEEP`, 기본 30)
+- 복구: 서버 중지 후 원하는 백업 파일을 `data/pointbook.db`로 복사
 
 ## CI
 

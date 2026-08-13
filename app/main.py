@@ -16,6 +16,7 @@ from app.routers import dashboard as dashboard_router
 from app.routers import home as home_router
 from app.routers import monthly as monthly_router
 from app.routers import people as people_router
+from app.routers import settings as settings_router
 from app.routers import teams as teams_router
 from app.services.rate_limit import login_limiter
 
@@ -63,6 +64,7 @@ def create_app() -> FastAPI:
     app.include_router(teams_router.router)
     app.include_router(monthly_router.router)
     app.include_router(dashboard_router.router)
+    app.include_router(settings_router.router)
     return app
 
 

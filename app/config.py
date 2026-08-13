@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     max_upload_mb: int = 10
     cookie_samesite: Literal["lax", "strict", "none"] = "lax"
     cookie_secure: bool = False
+    backup_keep: int = 30
 
     def security_warnings(self) -> list[str]:
         """운영 전에 반드시 확인해야 할 보안 설정 문제를 목록으로 반환한다."""

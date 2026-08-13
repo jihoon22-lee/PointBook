@@ -30,43 +30,51 @@ flowchart LR
 ```
 PointBook/
 ├── app/
-│   ├── main.py             # FastAPI 앱 생성, 라우터 등록, lifespan(DB 초기화)
-│   ├── config.py           # 환경설정 (pydantic-settings, .env)
-│   ├── db.py               # SQLAlchemy 엔진·세션, configure_database, init_db
+│   ├── main.py             # FastAPI 앱 생성, 라우터 등록, lifespan(DB 초기화·보안 경고)
+│   ├── config.py           # 환경설정 (pydantic-settings, .env) + 보안 경고 검사
+│   ├── db.py               # SQLAlchemy 엔진·세션, configure_database, Alembic 마이그레이션 실행
 │   ├── models.py           # ORM 모델 5종 (아래 ERD)
+│   ├── _version.py         # 버전 단일 소스 (__version__)
 │   ├── auth.py             # 세션 인증 — require_login 가드
+│   ├── logging.py          # 공통 로거 (시작·보안·확정·백업 이벤트, 민감정보 미기록)
 │   ├── template_utils.py   # Jinja2 템플릿 객체 + number_format 필터
 │   ├── routers/            # 라우터 (URL → 렌더링/리다이렉트)
-│   │   ├── auth.py         #   로그인/로그아웃
+│   │   ├── auth.py         #   로그인/로그아웃 (+ 레이트리밋)
 │   │   ├── home.py         #   홈 (카드 메뉴)
-│   │   ├── people.py       #   인원 목록·추가·수정·상세·개별 잔액 수정
+│   │   ├── people.py       #   인원 목록(페이지네이션)·추가·수정·상세·개별 잔액 수정
 │   │   ├── teams.py        #   팀 마스터 추가/삭제 + 팀 상세(소속 인원)
-│   │   ├── monthly.py      #   월간 처리: 업로드 → 검수 → 확정
-│   │   └── dashboard.py    #   대시보드 (월 선택)
+│   │   ├── monthly.py      #   월간 처리: 업로드(검증) → 검수 → 확정(트랜잭션+백업)
+│   │   ├── dashboard.py    #   대시보드 (월 선택)
+│   │   └── settings.py     #   설정 — 관리자 비밀번호 변경
 │   ├── services/           # 도메인 로직 (라우터에서 호출)
 │   │   ├── sync.py         #   ★ 재직 상태 대조 동기화 (analyze/apply)
 │   │   ├── balance.py      #   ★ 잔액 계산 (사용 합계·총 잔액·스냅샷)
-│   │   ├── stats.py        #   대시보드 집계 (월/팀/개인/추이)
+│   │   ├── stats.py        #   대시보드 집계 (월/팀/개인/추이, eager loading)
 │   │   ├── teams.py        #   팀 자동 생성 (get_or_create_team)
 │   │   ├── parsing.py      #   붙여넣기 텍스트 파싱
 │   │   ├── excel_import.py #   엑셀 이관 (openpyxl)
-│   │   └── dates.py        #   KST 시간대 current_month
+│   │   ├── dates.py        #   KST 시간대 current_month
+│   │   ├── backup.py       #   DB 자동 백업 + 보관 개수 제한
+│   │   └── rate_limit.py   #   로그인 브루트포스 방지 (인메모리)
 │   ├── ai/                 # 요청서 사진 인식
 │   │   ├── base.py         #   VisionProvider 인터페이스
 │   │   ├── gemini.py       #   Gemini 구현체 (REST, GEMINI_MODEL)
 │   │   ├── mock.py         #   Mock 구현체 (MOCK_TABLE_JSON)
 │   │   └── factory.py      #   AI_PROVIDER 설정으로 선택 (mock|gemini)
-│   ├── templates/          # Jinja2 템플릿 (base/people/teams/monthly/review/...)
+│   ├── templates/          # Jinja2 템플릿 (base/people/teams/monthly/review/settings/...)
 │   └── static/             # css/style.css, js/(dashboard.js, chart.umd.min.js), fonts/
+├── migrations/             # Alembic 마이그레이션 (env.py + versions/)
+├── alembic.ini             # Alembic 설정 (DB URL은 env.py가 app 설정에서 주입)
 ├── scripts/
-│   ├── init_db.py          # 테이블 생성 + 관리자 계정 생성
+│   ├── init_db.py          # 관리자 계정 생성
 │   ├── import_excel.py     # 기존 엑셀 → DB 이관 (빈 DB 전용)
+│   ├── backup.py           # DB 수동 백업
 │   ├── run.sh              # WSL 상시 구동 (백그라운드, PID/로그)
 │   └── stop.sh             # 서버 중지
 ├── tests/                  # pytest 단위 테스트 (커버리지 85%+)
 ├── e2e/                    # 구버전 Chromium(≈Chrome 110) Playwright E2E (Docker)
 ├── docs/                   # 아키텍처·사용 가이드
-└── .github/workflows/ci.yml# CI (lint/typecheck/test/security/secret-scan/e2e)
+└── .github/workflows/ci.yml# CI (lint/typecheck/test/migrations/security/secret-scan/e2e)
 ```
 
 레이어 규칙: `routers → services → models/db`. 라우터는 폼 파싱·렌더링만 담당하고,
@@ -195,6 +203,8 @@ sequenceDiagram
 
 - 업로드 실패(인식된 인원 없음) 시 오류 안내 후 재시도
 - 확정 후 해당 월은 재처리 불가 — 변경은 개별 수정으로만
+- 확정 커밋 전 `backup_database()`가 직전 상태를 `data/backups/`에 자동 백업 (보관 개수 제한)
+- 동기화·잔액 계산·스냅샷 저장은 단일 트랜잭션이며, 실패 시 롤백 후 친절한 오류 페이지 표시
 
 ### 5-2. 개별 인원 수정
 
@@ -226,6 +236,7 @@ sequenceDiagram
     U->>S: GET /login
     S-->>U: 로그인 폼
     U->>S: POST /login (아이디·비밀번호)
+    S->>S: 레이트리밋 확인 (N회 실패 시 429 잠금)
     S->>DB: admin_users 조회 + 해시 검증
     DB-->>S: 일치
     S-->>U: 세션 쿠키 설정 + /로 리다이렉트
@@ -233,6 +244,9 @@ sequenceDiagram
     U->>S: POST /logout
     S-->>U: 세션 제거 + /login 리다이렉트
 ```
+
+- 세션 쿠키는 `SameSite=lax` 기본, HTTPS 전환 시 `COOKIE_SECURE=true`로 Secure 플래그
+- 로그인 실패는 사용자+IP 기준 인메모리 카운터로 제한 (성공 시 초기화)
 
 ## 6. 대시보드 데이터 흐름
 
@@ -255,15 +269,25 @@ flowchart LR
         L["lint — ruff check/format"]
         T["typecheck — mypy app scripts"]
         TS["test — pytest + coverage ≥ 85%"]
+        M["migrations — alembic upgrade head + check"]
         SEC["security — pip-audit"]
         SS["secret-scan — gitleaks"]
         E["e2e — 구버전 Chromium(≈110) Playwright Docker"]
     end
-    L --> T --> TS --> SEC --> E
+    L --> T --> TS --> M --> SEC --> E
     SS -.-> E
-    E --> M["squash merge"]
+    E --> R["squash merge"]
 ```
 
 - 단위 테스트: 도메인 로직(sync/balance) 중심 + 라우터 폼 흐름 (TestClient)
 - E2E: Win7 마지막 Chrome(109)과 같은 Blink 세대의 구버전 Chromium으로 핵심 사용 흐름 검증
 - 주의: CI는 PR 머지 ref(`refs/pull/N/merge`) 기준 실행 — 공용 테스트 파일은 main과 동일하게 유지 (AGENTS.md 참고)
+
+## 8. 마이그레이션·백업 전략
+
+- **마이그레이션**: Alembic이 스키마 변경을 관리. 서버 기동 시 `init_db()`가 `upgrade head`를
+  실행하고, 기존 1.0.x DB는 `alembic_version` 부재 시 현재 스키마를 head로 자동 표식(stamp)한다.
+  `migrations/env.py`가 `app` 설정의 DB URL을 주입하므로 테스트·개발·운영이 같은 대상을 쓴다.
+- **백업**: SQLite 단일 파일 특성상 파일 복사가 곧 백업. 월간 확정 커밋 전에
+  `data/backups/pointbook-<타임스탬프>.db`를 생성하고 `BACKUP_KEEP`(기본 30)개만 유지한다.
+  수동 백업은 `scripts/backup.py`로 가능하며, 복구는 서버 중지 후 파일 복사로 끝난다.

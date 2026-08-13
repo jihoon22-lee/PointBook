@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse, Response
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.auth import require_login
@@ -11,6 +11,8 @@ from app.services.parsing import _to_int
 from app.template_utils import render
 
 router = APIRouter(prefix="/people", dependencies=[Depends(require_login)], tags=["people"])
+
+PAGE_SIZE = 50
 
 
 def _load_teams(db: Session) -> list[Team]:
@@ -38,19 +40,38 @@ def list_people(
     status: str = "",
     team_id: str = "",
     q: str = "",
+    page: int = 1,
     db: Session = Depends(get_db),
 ) -> Response:
     team_id_int = _parse_optional_int(team_id)
-    stmt = select(Person)
+    filters = []
     if status in ("active", "inactive"):
-        stmt = stmt.where(Person.status == status)
+        filters.append(Person.status == status)
     if team_id_int is not None:
-        stmt = stmt.where(Person.team_id == team_id_int)
+        filters.append(Person.team_id == team_id_int)
     if q.strip():
         pattern = f"%{q.strip()}%"
-        stmt = stmt.where(or_(Person.name.like(pattern), Person.personal_no.like(pattern)))
+        filters.append(or_(Person.name.like(pattern), Person.personal_no.like(pattern)))
+
+    stmt = select(Person)
+    if filters:
+        stmt = stmt.where(*filters)
+    total = (
+        db.scalar(
+            select(func.count(Person.id)).where(*filters)
+            if filters
+            else select(func.count(Person.id))
+        )
+        or 0
+    )
+    pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+    page = max(1, min(page, pages))
     persons = list(
-        db.scalars(stmt.order_by(Person.status.desc(), Person.team_id, Person.name)).all()
+        db.scalars(
+            stmt.order_by(Person.status.desc(), Person.team_id, Person.name)
+            .offset((page - 1) * PAGE_SIZE)
+            .limit(PAGE_SIZE)
+        ).all()
     )
     return render(
         request,
@@ -61,6 +82,9 @@ def list_people(
             "status": status,
             "team_id": team_id_int,
             "q": q,
+            "page": page,
+            "pages": pages,
+            "total": total,
         },
     )
 

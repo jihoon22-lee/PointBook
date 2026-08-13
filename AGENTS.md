@@ -68,21 +68,24 @@ uv run ruff format --check .  # 포맷 검사
 uv run mypy app scripts    # 타입 체크
 uv run python -m scripts.init_db   # DB 초기화 (관리자 계정 생성)
 uv run python -m scripts.import_excel --file 기존파일.xlsx  # 엑셀 이관 (빈 DB 전용)
+uv run alembic upgrade head        # 스키마 마이그레이션 (기동 시 자동 적용)
+uv run alembic check               # 모델-마이그레이션 드리프트 확인
+uv run python -m scripts.backup    # DB 수동 백업 (data/backups/)
 docker compose -f e2e/compose.yml up --build --abort-on-container-exit --exit-code-from e2e  # E2E (구버전 Chromium)
 ```
 
 ## CI / 머지 워크플로 (GitHub Actions)
 
 - PR 기준 CI job: `lint`(ruff check+format) → `typecheck`(mypy) → `test`
-  (pytest + coverage **85% 이상**) → `security`(pip-audit) → `secret-scan`(gitleaks) → `e2e`
-  (구버전 Chromium Playwright, `e2e/` 존재 시)
+  (pytest + coverage **85% 이상**) → `migrations`(alembic upgrade+check) → `security`(pip-audit)
+  → `secret-scan`(gitleaks) → `e2e` (구버전 Chromium Playwright, `e2e/` 존재 시)
 - 각 단계 완료 후: **계획 대비 자체 검토 → PR(한글, 리뷰 가능 상태) → CI 전체 통과
   → squash merge**. `main`에 직접 푸시 금지
 - **Ruleset "main-protection" 활성화** (public 전환 이후, SoolJang 저장소와 동일 구성):
   - 대상: `main` 브랜치, bypass 없음 (소유자 포함 전원 적용)
   - 규칙: PR 필수(승인 0건) / 브랜치 삭제 금지 / force push(non-fast-forward) 금지 /
-    **`Quality gate` 체크 필수(strict)** — lint·typecheck·test·security·secret-scan·e2e
-    6개 job을 집계하는 최종 관문 (모든 job 통과 시에만 게이트 통과)
+    **`Quality gate` 체크 필수(strict)** — lint·typecheck·test·migrations·security·secret-scan·e2e
+    7개 job을 집계하는 최종 관문 (모든 job 통과 시에만 게이트 통과)
   - 승인 필수 없음: GitHub는 PR 작성자의 자기 PR 승인을 차단하므로, 단독 개발에서
     "본인 승인 필수"는 데드락. **외부인의 승인은 효력이 없고**(write 권한 없음 — 머지 불가),
     본인이 리뷰 후 CI 통과 상태에서 머지
