@@ -5,6 +5,10 @@ on:
   push:
     branches: [main]
 
+# 최소 권한 원칙: 기본 권한을 read로 제한 (secret-scan은 job 레벨에서 확대)
+permissions:
+  contents: read
+
 jobs:
   lint:
     runs-on: ubuntu-latest
