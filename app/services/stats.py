@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.models import BalanceRecord, MonthlySnapshot, Person, Team
 
@@ -15,22 +15,37 @@ class MonthSummary:
     total_balance: int
 
 
-def month_summary(db: Session, month: str) -> MonthSummary:
-    snapshot = db.scalar(select(MonthlySnapshot).where(MonthlySnapshot.month == month))
-    if snapshot is None:
-        return MonthSummary(month=month, count=0, total_amount=0, total_usage=0, total_balance=0)
+def _summarize(snapshot: MonthlySnapshot) -> MonthSummary:
+    records = snapshot.records
     return MonthSummary(
-        month=month,
-        count=len(snapshot.records),
-        total_amount=sum(r.amount for r in snapshot.records),
-        total_usage=sum(r.usage for r in snapshot.records),
-        total_balance=sum(r.total for r in snapshot.records),
+        month=snapshot.month,
+        count=len(records),
+        total_amount=sum(r.amount for r in records),
+        total_usage=sum(r.usage for r in records),
+        total_balance=sum(r.total for r in records),
     )
 
 
+def month_summary(db: Session, month: str) -> MonthSummary:
+    snapshot = db.scalar(
+        select(MonthlySnapshot)
+        .options(selectinload(MonthlySnapshot.records))
+        .where(MonthlySnapshot.month == month)
+    )
+    if snapshot is None:
+        return MonthSummary(month=month, count=0, total_amount=0, total_usage=0, total_balance=0)
+    return _summarize(snapshot)
+
+
 def trend(db: Session) -> list[MonthSummary]:
-    snapshots = list(db.scalars(select(MonthlySnapshot).order_by(MonthlySnapshot.month)).all())
-    return [month_summary(db, s.month) for s in snapshots]
+    snapshots = list(
+        db.scalars(
+            select(MonthlySnapshot)
+            .options(selectinload(MonthlySnapshot.records))
+            .order_by(MonthlySnapshot.month)
+        ).all()
+    )
+    return [_summarize(s) for s in snapshots]
 
 
 def available_months(db: Session) -> list[str]:
@@ -50,7 +65,11 @@ class TeamStat:
 
 
 def team_summary(db: Session, month: str) -> list[TeamStat]:
-    snapshot = db.scalar(select(MonthlySnapshot).where(MonthlySnapshot.month == month))
+    snapshot = db.scalar(
+        select(MonthlySnapshot)
+        .options(selectinload(MonthlySnapshot.records).selectinload(BalanceRecord.person))
+        .where(MonthlySnapshot.month == month)
+    )
     if snapshot is None:
         return []
     teams = list(db.scalars(select(Team).order_by(Team.name)).all())
@@ -94,8 +113,9 @@ def person_summary(db: Session, month: str) -> list[PersonStat]:
         return []
     records = db.scalars(
         select(BalanceRecord)
-        .where(BalanceRecord.snapshot_id == snapshot.id)
         .join(Person, Person.id == BalanceRecord.person_id)
+        .options(selectinload(BalanceRecord.person).selectinload(Person.team))
+        .where(BalanceRecord.snapshot_id == snapshot.id)
         .order_by(Person.name)
     ).all()
     result: list[PersonStat] = []
