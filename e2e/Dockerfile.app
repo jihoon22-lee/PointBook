@@ -1,7 +1,8 @@
 FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
 WORKDIR /app
-COPY pyproject.toml uv.lock README.md ./
+COPY pyproject.toml uv.lock README.md alembic.ini ./
 COPY app ./app
+COPY migrations ./migrations
 COPY scripts ./scripts
 RUN uv sync --frozen --no-dev
 ENV PATH="/app/.venv/bin:$PATH"
