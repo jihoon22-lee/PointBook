@@ -9,6 +9,7 @@ from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from app.ai.factory import get_provider
 from app.auth import require_login
+from app.config import get_settings
 from app.db import get_db
 from app.models import MonthlySnapshot, Person
 from app.services import stats
@@ -21,6 +22,8 @@ from app.template_utils import render
 router = APIRouter(prefix="/monthly", dependencies=[Depends(require_login)], tags=["monthly"])
 
 MONTH_RE = re.compile(r"^\d{4}-\d{2}$")
+
+ALLOWED_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".heic"}
 
 
 def _parse_row_fields(form: FormData) -> list[RequestRow]:
@@ -85,9 +88,20 @@ async def upload(request: Request, db: Session = Depends(get_db)) -> Response:
         rows = parse_pasted(pasted)
     file = form.get("file")
     if isinstance(file, StarletteUploadFile) and file.filename:
+        settings = get_settings()
+        ext = f".{file.filename.lower().rsplit('.', 1)[-1]}" if "." in file.filename else ""
+        if ext not in ALLOWED_IMAGE_EXTS:
+            return _error_response(
+                request, db, month, "지원하지 않는 이미지 형식입니다. (png, jpg, jpeg, webp, heic)"
+            )
+        data = await file.read()
+        if len(data) > settings.max_upload_mb * 1024 * 1024:
+            return _error_response(
+                request, db, month, f"파일이 너무 큽니다. (최대 {settings.max_upload_mb}MB)"
+            )
         provider = get_provider()
         try:
-            rows = provider.extract_table(await file.read(), file.filename)
+            rows = provider.extract_table(data, file.filename)
         except ValueError as exc:
             return _error_response(request, db, month, str(exc))
     if not rows:
