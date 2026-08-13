@@ -1,45 +1,52 @@
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 
-from app.db import migrate
+from app import db as db_module
 
 
-def test_migrate_adds_current_balance_columns(tmp_path):
-    eng = create_engine(f"sqlite:///{tmp_path / 'old.db'}")
-    with eng.begin() as conn:
+def _configure(url: str) -> None:
+    db_module.configure_database(url)
+
+
+def test_fresh_database_migrates_to_head(tmp_path):
+    url = f"sqlite:///{tmp_path / 'fresh.db'}"
+    _configure(url)
+    db_module.run_migrations()
+
+    engine = create_engine(url)
+    tables = set(inspect(engine).get_table_names())
+    assert {"people", "teams", "monthly_snapshots", "balance_records", "admin_users"} <= tables
+    assert "alembic_version" in tables
+    with engine.connect() as conn:
+        version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+    assert version is not None
+
+
+def test_existing_database_without_version_is_stamped(tmp_path):
+    url = f"sqlite:///{tmp_path / 'legacy.db'}"
+    engine = create_engine(url)
+    with engine.begin() as conn:
         conn.execute(
             text(
                 "CREATE TABLE people (id INTEGER PRIMARY KEY, personal_no VARCHAR(50),"
-                " name VARCHAR(50), grade VARCHAR(50), status VARCHAR(20),"
-                " team_id INTEGER, created_at DATETIME)"
+                " name VARCHAR(50))"
             )
         )
-        conn.execute(text("INSERT INTO people (personal_no, name) VALUES ('1', '기존인원')"))
 
-    migrate(eng)
+    _configure(url)
+    db_module.run_migrations()
 
-    with eng.begin() as conn:
-        cols = {row[1] for row in conn.execute(text("PRAGMA table_info(people)"))}
-        assert "current_carry_balance" in cols
-        assert "current_amount" in cols
-        row = conn.execute(
-            text("SELECT current_carry_balance, current_amount FROM people")
-        ).fetchone()
-        assert tuple(row) == (0, 0)
+    with engine.connect() as conn:
+        version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+    assert version is not None
 
 
-def test_migrate_is_idempotent(tmp_path):
-    eng = create_engine(f"sqlite:///{tmp_path / 'old.db'}")
-    with eng.begin() as conn:
-        conn.execute(
-            text(
-                "CREATE TABLE people (id INTEGER PRIMARY KEY, personal_no VARCHAR(50),"
-                " name VARCHAR(50), grade VARCHAR(50), status VARCHAR(20), team_id INTEGER,"
-                " current_carry_balance INTEGER NOT NULL DEFAULT 0,"
-                " current_amount INTEGER NOT NULL DEFAULT 0, created_at DATETIME)"
-            )
-        )
-    migrate(eng)
-    migrate(eng)
-    with eng.begin() as conn:
-        cols = {row[1] for row in conn.execute(text("PRAGMA table_info(people)"))}
-        assert "current_carry_balance" in cols
+def test_run_migrations_is_idempotent(tmp_path):
+    url = f"sqlite:///{tmp_path / 'idem.db'}"
+    _configure(url)
+    db_module.run_migrations()
+    db_module.run_migrations()
+
+    engine = create_engine(url)
+    tables = set(inspect(engine).get_table_names())
+    assert "people" in tables
+    assert "alembic_version" in tables

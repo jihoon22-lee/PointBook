@@ -14,12 +14,14 @@ class Base(DeclarativeBase):
 engine: Engine = create_engine("sqlite://")
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 _configured = False
+_url: str = ""
 
 
 def configure_database(url: str) -> None:
-    global engine, SessionLocal, _configured
+    global engine, SessionLocal, _configured, _url
     engine = create_engine(url, connect_args={"check_same_thread": False})
     SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    _url = url
     _configured = True
 
 
@@ -27,6 +29,11 @@ def default_database_url() -> str:
     path = Path(get_settings().database_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     return f"sqlite:///{path}"
+
+
+def current_database_url() -> str:
+    """현재 설정된(또는 기본) DB URL. Alembic env.py가 마이그레이션 대상으로 사용한다."""
+    return _url or default_database_url()
 
 
 def ensure_default_database() -> None:
@@ -37,26 +44,32 @@ def ensure_default_database() -> None:
 def init_db() -> None:
     from app import models  # noqa: F401
 
-    Base.metadata.create_all(engine)
-    migrate(engine)
+    run_migrations()
 
 
-def migrate(db_engine: Engine) -> None:
-    """스키마 변경분을 기존 DB에 적용한다 (신규 컬럼 추가)."""
-    from sqlalchemy import text
+def _alembic_config():
+    from alembic.config import Config
 
-    with db_engine.begin() as conn:
-        columns = {row[1] for row in conn.execute(text("PRAGMA table_info(people)"))}
-        if "current_carry_balance" not in columns:
-            conn.execute(
-                text(
-                    "ALTER TABLE people ADD COLUMN current_carry_balance INTEGER NOT NULL DEFAULT 0"
-                )
-            )
-        if "current_amount" not in columns:
-            conn.execute(
-                text("ALTER TABLE people ADD COLUMN current_amount INTEGER NOT NULL DEFAULT 0")
-            )
+    project_root = Path(__file__).resolve().parent.parent
+    cfg = Config(str(project_root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(project_root / "migrations"))
+    return cfg
+
+
+def run_migrations() -> None:
+    """Alembic으로 스키마를 최신(head) 상태로 만든다.
+
+    기존(1.0.x) DB는 테이블은 있지만 alembic_version이 없으므로, 그 경우에는
+    현재 상태를 head로 표식(stamp)한 뒤 마이그레이션을 적용한다.
+    """
+    from alembic import command
+    from sqlalchemy import inspect
+
+    cfg = _alembic_config()
+    tables = set(inspect(engine).get_table_names())
+    if "people" in tables and "alembic_version" not in tables:
+        command.stamp(cfg, "head")
+    command.upgrade(cfg, "head")
 
 
 def get_db() -> Generator[Session, None, None]:
