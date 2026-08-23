@@ -14,9 +14,9 @@ import httpx
 from app.ai.base import VisionProvider
 from app.services.sync import RequestRow
 
-PROMPT = """이미지 속 요청서 표를 읽어라. 표 컬럼은 순번, 팀, 이름, 계급, 금액, 개인번호, 비고 순서이다.
+PROMPT = """이미지 속 요청서 표를 읽어라. 표 컬럼은 순번, 팀, 이름, 계급, 금액, 개인번호, 포인트번호, 비고 순서이다.
 헤더 행은 제외하고 데이터 행만 추출해라. 각 행을 다음 키를 가진 JSON 객체로 변환해라:
-{"personal_no": "개인번호(문자열)", "name": "이름", "team": "팀", "grade": "계급", "amount": 금액(숫자, 콤마 제거), "note": "비고"}
+{"point_no": "포인트번호(문자열, 선행 0 보존)", "personal_no": "개인번호(문자열)", "name": "이름", "team": "팀", "grade": "계급", "amount": 금액(숫자, 콤마 제거), "note": "비고"}
 결과는 JSON 배열 하나만 출력하고, 설명이나 코드펜스(markdown)는 붙이지 마라."""
 
 MIME_BY_EXT: dict[str, str] = {
@@ -101,6 +101,7 @@ class GeminiProvider(VisionProvider):
                 continue
             rows.append(
                 RequestRow(
+                    point_no=str(item.get("point_no", "")).strip(),
                     personal_no=str(item.get("personal_no", "")).strip(),
                     name=str(item.get("name", "")).strip(),
                     team=str(item.get("team", "")).strip(),

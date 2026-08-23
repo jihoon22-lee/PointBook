@@ -1,3 +1,4 @@
+import pytest
 from sqlalchemy import select
 
 from app.models import Person
@@ -13,8 +14,22 @@ from app.services.sync import (
 from tests.factories import make_person, make_team
 
 
-def _row(personal_no="1001", name="홍길동", team="1팀", grade="소방위", amount=50000):
-    return RequestRow(personal_no=personal_no, name=name, team=team, grade=grade, amount=amount)
+def _row(
+    personal_no="1001",
+    name="홍길동",
+    team="1팀",
+    grade="소방위",
+    amount=50000,
+    point_no=None,
+):
+    return RequestRow(
+        point_no=point_no or personal_no.zfill(8),
+        personal_no=personal_no,
+        name=name,
+        team=team,
+        grade=grade,
+        amount=amount,
+    )
 
 
 def test_analyze_new_person(client, db):
@@ -73,9 +88,36 @@ def test_analyze_no_team_change(client, db):
     assert change.team_changed is False
 
 
-def test_analyze_duplicate_rows_count_once(client, db):
-    analysis = analyze(db, [_row(), _row()])
-    assert len(analysis.changes) == 1
+def test_analyze_duplicate_point_numbers_are_rejected(client, db):
+    with pytest.raises(ValueError, match="중복"):
+        analyze(db, [_row(point_no="0000 0001"), _row(point_no="0000-0001")])
+
+
+def test_analyze_uses_point_number_when_profile_changes(client, db):
+    person = make_person(db, "1001", "이전이름", point_no="00000001")
+    analysis = analyze(
+        db,
+        [_row(personal_no="2002", name="새이름", point_no="0000 0001")],
+    )
+
+    change = analysis.changes[0]
+    assert change.action == ACTION_KEPT
+    assert change.person_id == person.id
+    assert change.profile_changed is True
+
+
+def test_analyze_does_not_deactivate_shared_account(client, db):
+    shared = make_person(
+        db,
+        personal_no="",
+        name="1팀 공용",
+        point_no="00000009",
+        account_type="shared",
+    )
+
+    analysis = analyze(db, [_row()])
+
+    assert all(change.person_id != shared.id for change in analysis.changes)
 
 
 def test_apply_new_person_creates(client, db):
@@ -123,6 +165,21 @@ def test_apply_keeps_grade_default(client, db):
     db.commit()
     db.refresh(person)
     assert person.grade == "소방경"
+
+
+def test_apply_updates_profile_for_matching_point_number(client, db):
+    person = make_person(db, "1001", "이전이름", point_no="00000001")
+    analysis = analyze(
+        db,
+        [_row(personal_no="2002", name="새이름", grade="소방장", point_no="00000001")],
+    )
+    apply_analysis(db, analysis)
+    db.commit()
+    db.refresh(person)
+
+    assert person.name == "새이름"
+    assert person.personal_no == "2002"
+    assert person.grade == "소방장"
 
 
 def test_apply_new_person_no_team(client, db):

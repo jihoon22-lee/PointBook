@@ -3,7 +3,7 @@
 {% block content %}
 <h1>요청서 검수 · 확정</h1>
 {% if error %}<p class="alert alert-error">{{ error }}</p>{% endif %}
-<p class="muted">AI가 추출한 목록을 확인·수정한 뒤, 아래에서 모든 처리 대상 인원의 <strong>이월 잔액</strong>을 입력하고 확정하세요.</p>
+<p class="muted">AI가 추출한 목록을 확인·수정한 뒤, 각 행의 <strong>이월 잔액</strong>을 입력하고 확정하세요.</p>
 
 <form method="post" action="/monthly/confirm">
   <div class="toolbar">
@@ -19,17 +19,20 @@
     <div class="table-wrap">
       <table id="rows">
         <thead>
-          <tr><th>개인번호</th><th>이름</th><th>팀</th><th>계급</th><th>금액</th><th>비고</th><th></th></tr>
+          <tr><th>포인트번호</th><th>개인번호</th><th>이름</th><th>팀</th><th>계급</th><th>금액</th><th>비고</th><th>이월 잔액</th><th></th></tr>
         </thead>
         <tbody>
         {% for row in rows %}
           <tr>
+            <td><input type="text" name="point_no_{{ loop.index0 }}" value="{{ row.point_no|point_no }}" class="row-input"></td>
             <td><input type="text" name="personal_no_{{ loop.index0 }}" value="{{ row.personal_no }}" class="row-input"></td>
             <td><input type="text" name="name_{{ loop.index0 }}" value="{{ row.name }}" class="row-input"></td>
             <td><input type="text" name="team_{{ loop.index0 }}" value="{{ row.team }}" class="row-input"></td>
             <td><input type="text" name="grade_{{ loop.index0 }}" value="{{ row.grade }}" class="row-input"></td>
             <td><input type="text" name="amount_{{ loop.index0 }}" value="{{ row.amount }}" class="row-input"></td>
             <td><input type="text" name="note_{{ loop.index0 }}" value="{{ row.note }}" class="row-input"></td>
+            {% set pt = prev_totals.get(row.point_no, 0) %}
+            <td><input type="number" name="carry_{{ loop.index0 }}" min="0" step="1" class="row-input" placeholder="{% if pt %}직전 잔액: {{ pt|number_format }}원{% else %}이월 잔액{% endif %}" required></td>
             <td><button type="button" class="btn btn-sm btn-danger row-del">삭제</button></td>
           </tr>
         {% endfor %}
@@ -62,25 +65,24 @@
     {% endif %}
   </div>
 
+  {% if groups['deactivated'] %}
   <div class="card">
-    <h2>이월 잔액 입력 (처리 대상 전체 인원)</h2>
-    <p class="muted">비재직 전환 대상자·신규 인원을 포함한 모든 인원의 당월 기준 남은 포인트 잔액을 입력하세요. (각 인원의 직전 총 잔액이 안내됩니다)</p>
+    <h2>비재직 전환 대상 이월 잔액</h2>
+    <p class="muted">요청서에서 빠진 인원의 당월 기준 남은 포인트 잔액을 입력하세요.</p>
     <div class="balance-grid">
-      {% for c in analysis.changes %}
+      {% for c in groups['deactivated'] %}
       <label class="balance-item">
         <span>
-          {% if c.action == 'new' %}<span class="badge" style="background:#c0392b">신규</span>
-          {% elif c.action == 'returned' %}<span class="badge" style="background:#16a085">복귀</span>
-          {% elif c.action == 'deactivated' %}<span class="badge badge-inactive">비재직</span>
-          {% else %}<span class="badge" style="background:#4a7dbd">재직</span>{% endif %}
-          {{ c.name }} ({{ c.personal_no }})
+          <span class="badge badge-inactive">비재직</span>
+          {{ c.name }} ({{ c.point_no|point_no }})
         </span>
-        {% set pt = prev_totals.get(c.personal_no ~ '|' ~ c.name, 0) %}
-        <input type="number" name="carry_{{ c.personal_no }}|{{ c.name }}" min="0" step="100" placeholder="{% if pt %}직전 잔액: {{ pt|number_format }}원{% else %}이월 잔액{% endif %}">
+        {% set pt = prev_totals.get(c.point_no, 0) %}
+        <input type="number" name="deactivated_carry_{{ c.point_no }}" min="0" step="1" placeholder="{% if pt %}직전 잔액: {{ pt|number_format }}원{% else %}이월 잔액{% endif %}" required>
       </label>
       {% endfor %}
     </div>
   </div>
+  {% endif %}
 
   <button type="submit" class="btn btn-primary" onclick="return confirm('이 내용으로 확정할까요? 확정 후 해당 월은 수정하려면 개별 수정을 이용해야 합니다.')">확정 · 동기화</button>
   <a class="btn" href="/monthly">취소</a>
@@ -91,7 +93,7 @@
   var table = document.getElementById('rows');
   function rowInputs(tr) {
     var inputs = tr.querySelectorAll('input');
-    var names = ['personal_no', 'name', 'team', 'grade', 'amount', 'note'];
+    var names = ['point_no', 'personal_no', 'name', 'team', 'grade', 'amount', 'note', 'carry'];
     var result = {};
     for (var i = 0; i < names.length; i++) result[names[i]] = inputs[i];
     return result;
@@ -100,17 +102,20 @@
     var rows = table.tBodies[0].rows;
     for (var i = 0; i < rows.length; i++) {
       var ins = rowInputs(rows[i]);
+      ins.point_no.name = 'point_no_' + i;
       ins.personal_no.name = 'personal_no_' + i;
       ins.name.name = 'name_' + i;
       ins.team.name = 'team_' + i;
       ins.grade.name = 'grade_' + i;
       ins.amount.name = 'amount_' + i;
       ins.note.name = 'note_' + i;
+      ins.carry.name = 'carry_' + i;
     }
   }
   function addRow() {
     var tr = document.createElement('tr');
-    tr.innerHTML = '<td><input type="text" class="row-input"></td>'.repeat(6) +
+    tr.innerHTML = '<td><input type="text" class="row-input"></td>'.repeat(7) +
+      '<td><input type="number" min="0" step="1" class="row-input" placeholder="이월 잔액" required></td>' +
       '<td><button type="button" class="btn btn-sm btn-danger row-del">삭제</button></td>';
     table.tBodies[0].appendChild(tr);
     reindex();

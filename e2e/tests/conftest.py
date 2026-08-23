@@ -37,11 +37,15 @@ def monthly_flow(
     page: Page, personal_no: str, name: str, amount: str, carry: str, month: str = "2099-01"
 ) -> None:
     """붙여넣기 → 검수 → 확정까지의 월간 처리 전체 흐름."""
+    point_no = personal_no.zfill(8)
     page.goto(f"{BASE_URL}/monthly")
     page.fill('input[name="month"]', month)
-    page.fill('textarea[name="pasted"]', f"1팀\t{name}\t소방위\t{amount}\t{personal_no}\t")
+    page.fill(
+        'textarea[name="pasted"]',
+        f"1팀\t{name}\t소방위\t{amount}\t{personal_no}\t{point_no}",
+    )
     page.click('.card button[type="submit"]')
     page.wait_for_selector("text=요청서 검수")
-    page.fill(f'input[name="carry_{personal_no}|{name}"]', carry)
+    page.fill(f'input[name="carry_{point_no}"]', carry)
     page.locator('button:has-text("확정 · 동기화")').last.click()
     page.wait_for_selector("text=처리가 완료되었습니다", timeout=15000)

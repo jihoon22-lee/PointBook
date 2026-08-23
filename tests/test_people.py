@@ -15,6 +15,7 @@ def test_create_person(auth_client, db):
     resp = auth_client.post(
         "/people/new",
         data={
+            "point_no": "0000 0001",
             "personal_no": "1001",
             "name": "홍길동",
             "grade": "소방위",
@@ -26,24 +27,61 @@ def test_create_person(auth_client, db):
     assert resp.status_code == 303
     assert "홍길동" in auth_client.get("/people").text
     assert "구조대" in auth_client.get("/people").text
+    assert "0000 0001" in auth_client.get("/people").text
 
 
 def test_create_person_missing_fields(auth_client):
-    resp = auth_client.post("/people/new", data={"personal_no": "", "name": ""})
+    resp = auth_client.post("/people/new", data={"point_no": "", "personal_no": "", "name": ""})
     assert resp.status_code == 400
-    assert "개인번호와 이름은 필수" in resp.text
+    assert "포인트번호" in resp.text
 
 
-def test_create_person_duplicate_key(auth_client, db):
-    make_person(db, "1001", "홍길동")
-    resp = auth_client.post("/people/new", data={"personal_no": "1001", "name": "홍길동"})
+def test_create_person_duplicate_point_number(auth_client, db):
+    make_person(db, "1001", "홍길동", point_no="00000001")
+    resp = auth_client.post(
+        "/people/new",
+        data={"point_no": "0000-0001", "personal_no": "S1002", "name": "다른사람"},
+    )
     assert resp.status_code == 400
     assert "이미 등록된 인원" in resp.text
 
 
+def test_create_person_allows_duplicate_personal_number_and_name(auth_client, db):
+    make_person(db, "S0815", "동명이인", point_no="00000001")
+    resp = auth_client.post(
+        "/people/new",
+        data={
+            "point_no": "00000002",
+            "personal_no": "S0815",
+            "name": "동명이인",
+            "account_type": "person",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+
+def test_create_shared_account_without_personal_number(auth_client, db):
+    resp = auth_client.post(
+        "/people/new",
+        data={
+            "point_no": "00000009",
+            "personal_no": "",
+            "name": "1팀 공용",
+            "account_type": "shared",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    shared = db.scalar(select(Person).where(Person.point_no == "00000009"))
+    assert shared is not None
+    assert shared.personal_no is None
+    assert shared.account_type == "shared"
+
+
 def test_people_filter_status(auth_client, db):
     make_person(db, "1001", "재직자")
-    make_person(db, "1002", "퇴직자", status="inactive")
+    make_person(db, "S1002", "퇴직자", status="inactive")
     resp = auth_client.get("/people?status=inactive")
     assert "퇴직자" in resp.text
     assert "재직자" not in resp.text
@@ -56,7 +94,7 @@ def test_people_filter_team(auth_client, db):
     team_a = make_team(db, "A팀")
     team_b = make_team(db, "B팀")
     make_person(db, "1001", "갑", team=team_a)
-    make_person(db, "1002", "을", team=team_b)
+    make_person(db, "S1002", "을", team=team_b)
     resp = auth_client.get(f"/people?team_id={team_b.id}")
     assert "을" in resp.text
     assert "갑" not in resp.text
@@ -64,10 +102,18 @@ def test_people_filter_team(auth_client, db):
 
 def test_people_search(auth_client, db):
     make_person(db, "1001", "홍길동")
-    make_person(db, "1002", "김철수")
+    make_person(db, "S1002", "김철수")
     resp = auth_client.get("/people?q=김철수")
     assert "김철수" in resp.text
     assert "홍길동" not in resp.text
+
+
+def test_people_search_by_formatted_point_number(auth_client, db):
+    make_person(db, "1001", "홍길동", point_no="12345678")
+    make_person(db, "S1002", "김철수", point_no="00000002")
+    resp = auth_client.get("/people?q=1234%205678")
+    assert "홍길동" in resp.text
+    assert "김철수" not in resp.text
 
 
 def test_person_detail(auth_client, db):
@@ -90,6 +136,7 @@ def test_edit_person_team_and_status(auth_client, db):
     resp = auth_client.post(
         f"/people/{person.id}/edit",
         data={
+            "point_no": "00001001",
             "personal_no": "1001",
             "name": "홍길동",
             "grade": "소방경",
@@ -105,12 +152,12 @@ def test_edit_person_team_and_status(auth_client, db):
     assert person.grade == "소방경"
 
 
-def test_edit_person_duplicate_key_rejected(auth_client, db):
-    make_person(db, "1001", "홍길동")
-    other = make_person(db, "1002", "김철수")
+def test_edit_person_duplicate_point_number_rejected(auth_client, db):
+    make_person(db, "1001", "홍길동", point_no="00000001")
+    other = make_person(db, "S1002", "김철수", point_no="00000002")
     resp = auth_client.post(
         f"/people/{other.id}/edit",
-        data={"personal_no": "1001", "name": "홍길동"},
+        data={"point_no": "0000 0001", "personal_no": "S1002", "name": "김철수"},
     )
     assert resp.status_code == 400
     assert "이미 등록된 인원" in resp.text
@@ -118,7 +165,9 @@ def test_edit_person_duplicate_key_rejected(auth_client, db):
 
 def test_edit_person_missing(auth_client):
     resp = auth_client.post(
-        "/people/9999/edit", data={"personal_no": "1", "name": "x"}, follow_redirects=False
+        "/people/9999/edit",
+        data={"point_no": "00000001", "personal_no": "1", "name": "x"},
+        follow_redirects=False,
     )
     assert resp.status_code == 303
 
@@ -165,6 +214,7 @@ def test_create_person_team_less(auth_client, db):
     resp = auth_client.post(
         "/people/new",
         data={
+            "point_no": "00002001",
             "personal_no": "2001",
             "name": "팀없는사람",
             "grade": "",
@@ -182,6 +232,7 @@ def test_edit_person_team_less(auth_client, db):
     resp = auth_client.post(
         f"/people/{person.id}/edit",
         data={
+            "point_no": person.point_no,
             "personal_no": "1001",
             "name": "홍길동",
             "grade": "",
@@ -221,6 +272,7 @@ def test_create_person_with_balance(auth_client, db):
     resp = auth_client.post(
         "/people/new",
         data={
+            "point_no": "00003001",
             "personal_no": "3001",
             "name": "잔액있는사람",
             "grade": "",
@@ -243,6 +295,7 @@ def test_edit_person_balance(auth_client, db):
     resp = auth_client.post(
         f"/people/{person.id}/edit",
         data={
+            "point_no": person.point_no,
             "personal_no": "1001",
             "name": "홍길동",
             "grade": "",
@@ -264,6 +317,7 @@ def test_edit_person_updates_current_without_snapshot(auth_client, db):
     resp = auth_client.post(
         f"/people/{person.id}/edit",
         data={
+            "point_no": person.point_no,
             "personal_no": "1001",
             "name": "홍길동",
             "grade": "",
@@ -298,6 +352,7 @@ def test_edit_person_preserves_earlier_records(auth_client, db):
     resp = auth_client.post(
         f"/people/{person.id}/edit",
         data={
+            "point_no": person.point_no,
             "personal_no": "1001",
             "name": "홍길동",
             "grade": "",

@@ -35,10 +35,10 @@ def seed_month(page: Page, month: str) -> None:
     """김소방(101)의 해당 월 스냅샷을 생성한다."""
     page.goto(f"{BASE_URL}/monthly")
     page.fill('input[name="month"]', month)
-    page.fill('textarea[name="pasted"]', "1팀\t김소방\t소방경\t50000\t101\t")
+    page.fill('textarea[name="pasted"]', "1팀\t김소방\t소방경\t50000\t101\t00000101")
     page.click('.card button[type="submit"]')
     page.wait_for_selector("text=요청서 검수")
-    page.fill('input[name="carry_101|김소방"]', "10000")
+    page.fill('input[name="carry_00000101"]', "10000")
     page.locator('button:has-text("확정 · 동기화")').last.click()
     page.wait_for_selector("text=처리가 완료되었습니다")
 
@@ -109,10 +109,10 @@ def main() -> None:
         seed_month(page, "2099-07")
         page.goto(f"{BASE_URL}/monthly")
         page.fill('input[name="month"]', "2099-08")
-        page.fill('textarea[name="pasted"]', "1팀\t김소방\t소방경\t50000\t101\t")
+        page.fill('textarea[name="pasted"]', "1팀\t김소방\t소방경\t50000\t101\t00000101")
         page.click('.card button[type="submit"]')
         page.wait_for_selector("text=요청서 검수")
-        placeholder = page.get_attribute('input[name="carry_101|김소방"]', "placeholder")
+        placeholder = page.get_attribute('input[name="carry_00000101"]', "placeholder")
         verify(
             "검수 화면",
             [("직전 잔액 안내 표시", lambda: "직전 잔액" in (placeholder or ""))],
@@ -128,7 +128,7 @@ def main() -> None:
             " if (!row) return 'no-row';"
             " const r = row.getBoundingClientRect();"
             " const el = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);"
-            " return el ? el.tagName : 'none'; })()"
+            " return el && el.closest('td') ? 'TD' : (el ? el.tagName : 'none'); })()"
         )
         verify(
             "테이블 헤더 오버랩 방지",

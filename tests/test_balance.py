@@ -18,8 +18,8 @@ def test_compute_usage_normal():
     assert compute_usage(prev_total=10000, carry_balance=4000) == 6000
 
 
-def test_compute_usage_clamped_at_zero():
-    assert compute_usage(prev_total=3000, carry_balance=5000) == 0
+def test_compute_usage_preserves_negative_value():
+    assert compute_usage(prev_total=3000, carry_balance=5000) == -2000
 
 
 def test_compute_total():
@@ -96,6 +96,21 @@ def test_recompute_record(client, db):
     recompute_record(record, prev_total=30000)
     assert record.usage == 10000
     assert record.total == 20000
+
+
+def test_recompute_record_preserves_negative_usage(client, db):
+    person = make_person(db, "1001", "홍길동")
+    snapshot = create_monthly_snapshot(db, "2026-07", [])
+    record = BalanceRecord(
+        snapshot_id=snapshot.id,
+        person_id=person.id,
+        carry_balance=40000,
+        amount=0,
+        usage=0,
+        total=0,
+    )
+    recompute_record(record, prev_total=30000)
+    assert record.usage == -10000
 
 
 def test_create_monthly_snapshot_duplicate_month(client, db):

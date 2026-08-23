@@ -16,7 +16,7 @@
       <option value="{{ team.id }}" {% if team_id == team.id %}selected{% endif %}>{{ team.name }}</option>
       {% endfor %}
     </select>
-    <input type="text" name="q" value="{{ q }}" placeholder="이름 또는 개인번호 검색">
+    <input type="text" name="q" value="{{ q }}" placeholder="이름·개인번호·포인트번호 검색">
     <button type="submit" class="btn">검색</button>
   </form>
   <div class="spacer"></div>
@@ -27,21 +27,23 @@
   <table>
     <thead>
       <tr>
-        <th>이름</th><th>개인번호</th><th>팀</th><th>계급</th><th>상태</th><th></th>
+        <th>이름</th><th>포인트번호</th><th>개인번호</th><th>구분</th><th>팀</th><th>계급</th><th>상태</th><th></th>
       </tr>
     </thead>
     <tbody>
     {% for p in persons %}
       <tr>
         <td><a href="/people/{{ p.id }}">{{ p.name }}</a></td>
-        <td>{{ p.personal_no }}</td>
+        <td>{{ p.point_no|point_no }}</td>
+        <td>{{ p.personal_no or '-' }}</td>
+        <td>{{ '공용' if p.account_type == 'shared' else '일반' }}</td>
         <td>{% if p.team %}<span class="badge" style="background: {{ p.team.color }}">{{ p.team.name }}</span>{% else %}<span class="muted">-</span>{% endif %}</td>
         <td>{{ p.grade or '-' }}</td>
         <td>{% if p.status == 'active' %}<span class="badge badge-active">재직</span>{% else %}<span class="badge badge-inactive">비재직</span>{% endif %}</td>
         <td><a class="btn btn-sm" href="/people/{{ p.id }}/edit">수정</a></td>
       </tr>
     {% else %}
-      <tr><td colspan="6" class="muted">조건에 맞는 인원이 없습니다.</td></tr>
+      <tr><td colspan="8" class="muted">조건에 맞는 인원이 없습니다.</td></tr>
     {% endfor %}
     </tbody>
   </table>

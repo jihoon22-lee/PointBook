@@ -16,7 +16,7 @@ class MonthSummary:
 
 
 def _summarize(snapshot: MonthlySnapshot) -> MonthSummary:
-    records = snapshot.records
+    records = [r for r in snapshot.records if r.person.account_type == "person"]
     return MonthSummary(
         month=snapshot.month,
         count=len(records),
@@ -29,7 +29,7 @@ def _summarize(snapshot: MonthlySnapshot) -> MonthSummary:
 def month_summary(db: Session, month: str) -> MonthSummary:
     snapshot = db.scalar(
         select(MonthlySnapshot)
-        .options(selectinload(MonthlySnapshot.records))
+        .options(selectinload(MonthlySnapshot.records).selectinload(BalanceRecord.person))
         .where(MonthlySnapshot.month == month)
     )
     if snapshot is None:
@@ -41,7 +41,7 @@ def trend(db: Session) -> list[MonthSummary]:
     snapshots = list(
         db.scalars(
             select(MonthlySnapshot)
-            .options(selectinload(MonthlySnapshot.records))
+            .options(selectinload(MonthlySnapshot.records).selectinload(BalanceRecord.person))
             .order_by(MonthlySnapshot.month)
         ).all()
     )
@@ -84,6 +84,8 @@ def team_summary(db: Session, month: str) -> list[TeamStat]:
     )
     for record in snapshot.records:
         person = record.person
+        if person.account_type != "person":
+            continue
         stat = team_map.get(person.team_id, team_map[None])
         stat.count += 1
         stat.total_amount += record.amount
@@ -95,7 +97,8 @@ def team_summary(db: Session, month: str) -> list[TeamStat]:
 @dataclass
 class PersonStat:
     person_id: int
-    personal_no: str
+    point_no: str
+    personal_no: str | None
     name: str
     team_name: str
     team_color: str
@@ -116,6 +119,7 @@ def person_summary(db: Session, month: str) -> list[PersonStat]:
         .join(Person, Person.id == BalanceRecord.person_id)
         .options(selectinload(BalanceRecord.person).selectinload(Person.team))
         .where(BalanceRecord.snapshot_id == snapshot.id)
+        .where(Person.account_type == "person")
         .order_by(Person.name)
     ).all()
     result: list[PersonStat] = []
@@ -124,6 +128,7 @@ def person_summary(db: Session, month: str) -> list[PersonStat]:
         result.append(
             PersonStat(
                 person_id=person.id,
+                point_no=person.point_no,
                 personal_no=person.personal_no,
                 name=person.name,
                 team_name=person.team.name if person.team else "",

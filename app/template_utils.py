@@ -6,6 +6,7 @@ from fastapi.responses import Response
 from fastapi.templating import Jinja2Templates
 
 from app._version import __version__
+from app.services.identifiers import format_point_no
 
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 
@@ -21,6 +22,7 @@ def number_format(value: int | None) -> str:
 
 
 templates.env.filters["number_format"] = number_format
+templates.env.filters["point_no"] = format_point_no
 
 
 def render(

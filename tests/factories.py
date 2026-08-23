@@ -17,13 +17,17 @@ def make_person(
     grade: str = "소방위",
     team: Team | None = None,
     status: str = "active",
+    point_no: str | None = None,
+    account_type: str = "person",
 ) -> Person:
     person = Person(
+        point_no=point_no or personal_no.zfill(8),
         personal_no=personal_no,
         name=name,
         grade=grade,
         team_id=team.id if team else None,
         status=status,
+        account_type=account_type,
     )
     db.add(person)
     db.commit()

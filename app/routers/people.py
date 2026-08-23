@@ -1,3 +1,5 @@
+import re
+
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import func, or_, select
@@ -6,7 +8,8 @@ from sqlalchemy.orm import Session
 from app.auth import require_login
 from app.db import get_db
 from app.models import Person, Team
-from app.services.balance import last_record_for_person, previous_total, recompute_record
+from app.services.balance import last_record_for_person, previous_total_or_none, recompute_record
+from app.services.identifiers import normalize_point_no
 from app.services.parsing import _to_int
 from app.template_utils import render
 
@@ -19,8 +22,8 @@ def _load_teams(db: Session) -> list[Team]:
     return list(db.scalars(select(Team).order_by(Team.name)).all())
 
 
-def _person_by_key(db: Session, personal_no: str, name: str) -> Person | None:
-    return db.scalar(select(Person).where(Person.personal_no == personal_no, Person.name == name))
+def _person_by_point_no(db: Session, point_no: str) -> Person | None:
+    return db.scalar(select(Person).where(Person.point_no == point_no))
 
 
 def _parse_optional_int(value: str) -> int | None:
@@ -51,7 +54,14 @@ def list_people(
         filters.append(Person.team_id == team_id_int)
     if q.strip():
         pattern = f"%{q.strip()}%"
-        filters.append(or_(Person.name.like(pattern), Person.personal_no.like(pattern)))
+        compact_point_no = re.sub(r"[\s-]+", "", q.strip())
+        filters.append(
+            or_(
+                Person.name.like(pattern),
+                Person.personal_no.like(pattern),
+                Person.point_no.like(f"%{compact_point_no}%"),
+            )
+        )
 
     stmt = select(Person)
     if filters:
@@ -97,8 +107,10 @@ def new_person(request: Request, db: Session = Depends(get_db)) -> Response:
 @router.post("/new")
 def create_person(
     request: Request,
+    point_no: str = Form(""),
     personal_no: str = Form(""),
     name: str = Form(""),
+    account_type: str = Form("person"),
     grade: str = Form(""),
     team_id: str = Form(""),
     status: str = Form("active"),
@@ -108,30 +120,47 @@ def create_person(
 ) -> Response:
     personal_no = personal_no.strip()
     name = name.strip()
+    account_type = account_type if account_type in ("person", "shared") else "person"
     team_id_int = _parse_optional_int(team_id)
-    if not personal_no or not name:
+    try:
+        normalized_point_no = normalize_point_no(point_no)
+    except ValueError as exc:
         return render(
             request,
             "person_form.html",
-            {"teams": _load_teams(db), "error": "개인번호와 이름은 필수입니다."},
+            {"teams": _load_teams(db), "error": str(exc)},
             400,
         )
-    if _person_by_key(db, personal_no, name) is not None:
+    if not name or (account_type == "person" and not personal_no):
         return render(
             request,
             "person_form.html",
             {
                 "teams": _load_teams(db),
-                "error": f"'{name}' ({personal_no}) 은(는) 이미 등록된 인원입니다.",
+                "error": "포인트번호와 이름은 필수입니다. 일반 인원은 개인번호도 필요합니다.",
+            },
+            400,
+        )
+    if _person_by_point_no(db, normalized_point_no) is not None:
+        return render(
+            request,
+            "person_form.html",
+            {
+                "teams": _load_teams(db),
+                "error": f"포인트번호 {normalized_point_no} 은(는) 이미 등록된 인원입니다.",
             },
             400,
         )
     person = Person(
-        personal_no=personal_no,
+        point_no=normalized_point_no,
+        personal_no=personal_no or None,
         name=name,
-        grade=grade.strip(),
+        grade=grade.strip() if account_type == "person" else "",
         team_id=team_id_int,
-        status=status if status in ("active", "inactive") else "active",
+        status=(status if status in ("active", "inactive") else "active")
+        if account_type == "person"
+        else "active",
+        account_type=account_type,
         current_carry_balance=_to_int(carry_balance),
         current_amount=_to_int(amount),
     )
@@ -161,8 +190,10 @@ def edit_person_form(person_id: int, request: Request, db: Session = Depends(get
 def edit_person(
     person_id: int,
     request: Request,
+    point_no: str = Form(""),
     personal_no: str = Form(""),
     name: str = Form(""),
+    account_type: str = Form("person"),
     grade: str = Form(""),
     team_id: str = Form(""),
     status: str = Form("active"),
@@ -175,19 +206,33 @@ def edit_person(
         return RedirectResponse("/people", status_code=303)
     personal_no = personal_no.strip()
     name = name.strip()
+    account_type = account_type if account_type in ("person", "shared") else "person"
     team_id_int = _parse_optional_int(team_id)
-    if not personal_no or not name:
+    try:
+        normalized_point_no = normalize_point_no(point_no)
+    except ValueError as exc:
         return render(
             request,
             "person_form.html",
             {
                 "person": person,
                 "teams": _load_teams(db),
-                "error": "개인번호와 이름은 필수입니다.",
+                "error": str(exc),
             },
             400,
         )
-    duplicate = _person_by_key(db, personal_no, name)
+    if not name or (account_type == "person" and not personal_no):
+        return render(
+            request,
+            "person_form.html",
+            {
+                "person": person,
+                "teams": _load_teams(db),
+                "error": "포인트번호와 이름은 필수입니다. 일반 인원은 개인번호도 필요합니다.",
+            },
+            400,
+        )
+    duplicate = _person_by_point_no(db, normalized_point_no)
     if duplicate is not None and duplicate.id != person.id:
         return render(
             request,
@@ -195,15 +240,21 @@ def edit_person(
             {
                 "person": person,
                 "teams": _load_teams(db),
-                "error": f"'{name}' ({personal_no}) 은(는) 이미 등록된 인원입니다.",
+                "error": f"포인트번호 {normalized_point_no} 은(는) 이미 등록된 인원입니다.",
             },
             400,
         )
-    person.personal_no = personal_no
+    person.point_no = normalized_point_no
+    person.personal_no = personal_no or None
     person.name = name
-    person.grade = grade.strip()
+    person.grade = grade.strip() if account_type == "person" else ""
     person.team_id = team_id_int
-    person.status = status if status in ("active", "inactive") else "active"
+    person.status = (
+        (status if status in ("active", "inactive") else "active")
+        if account_type == "person"
+        else "active"
+    )
+    person.account_type = account_type
     carry = _to_int(carry_balance)
     amt = _to_int(amount)
     person.current_carry_balance = carry
@@ -215,6 +266,6 @@ def edit_person(
     if record is not None:
         record.carry_balance = carry
         record.amount = amt
-        recompute_record(record, previous_total(db, person.id, record.snapshot.month))
+        recompute_record(record, previous_total_or_none(db, person.id, record.snapshot.month))
     db.commit()
     return RedirectResponse(f"/people/{person.id}", status_code=303)
