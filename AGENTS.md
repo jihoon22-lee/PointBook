@@ -31,6 +31,7 @@
 
 - 백엔드: **Python(FastAPI + Uvicorn)**, 패키지 관리 **uv** (lockfile로 재현성 보장)
 - DB: **SQLite + SQLAlchemy 2.x** (파일 기반, `data/pointbook.db`)
+- 운영: **Docker Compose 단일 앱 컨테이너** + 호스트 `data/` bind mount
 - 프론트: **Jinja2 서버 렌더링 + 바닐라 JS + 반응형 CSS** (빌드 단계 없음)
 - 인증: 세션 쿠키 기반 단일 관리자 계정 (werkzeug 해시)
 - AI: **VisionProvider 인터페이스 추상화** + **Gemini 구현체**(REST, `GEMINI_MODEL`) + 개발용
@@ -61,7 +62,11 @@
 ```bash
 uv sync --group dev        # 의존성 설치 (uv.lock 기준)
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000   # 개발 서버 (WSL)
-scripts/run.sh             # 상시 구동 (백그라운드, data/server.pid·log) — scripts/stop.sh로 중지
+scripts/run.sh             # 운영 Docker Compose 빌드·기동 (127.0.0.1:8002, healthy 대기)
+scripts/stop.sh            # PointBook Compose 서버 중지
+scripts/deploy.sh          # main 최신화·이미지 빌드·DB 백업·Compose 재기동
+docker compose ps          # 운영 컨테이너 상태
+docker compose logs -f app # 운영 서버 로그
 uv run pytest              # 단위 테스트
 uv run pytest --cov=app --cov-report=term-missing --cov-fail-under=85  # 커버리지 확인
 uv run ruff check .        # 린트
@@ -74,13 +79,14 @@ uv run alembic upgrade head        # 스키마 마이그레이션 (기동 시 �
 uv run alembic check               # 모델-마이그레이션 드리프트 확인
 uv run python -m scripts.backup    # DB 수동 백업 (data/backups/)
 docker compose -f e2e/compose.yml up --build --abort-on-container-exit --exit-code-from e2e  # E2E (구버전 Chromium)
+bash e2e/production-smoke.sh  # 운영 Compose health·SQLite 재시작 영속성
 ```
 
 ## CI / 머지 워크플로 (GitHub Actions)
 
 - PR 기준 CI job: `lint`(ruff check+format) → `typecheck`(mypy) → `test`
   (pytest + coverage **85% 이상**) → `migrations`(alembic upgrade+check) → `security`(pip-audit)
-  → `secret-scan`(gitleaks) → `e2e` (구버전 Chromium Playwright, `e2e/` 존재 시)
+  → `secret-scan`(gitleaks) → `e2e` (구버전 Chromium Playwright + 운영 Compose 스모크)
 - 각 단계 완료 후: **계획 대비 자체 검토 → PR(한글, 리뷰 가능 상태) → CI 전체 통과
   → squash merge**. `main`에 직접 푸시 금지
 - **Ruleset "main-protection" 활성화** (public 전환 이후, SoolJang 저장소와 동일 구성):

@@ -1,0 +1,35 @@
+name: pointbook
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: pointbook:${POINTBOOK_VERSION:-local}
+    init: true
+    user: "${POINTBOOK_UID:-1000}:${POINTBOOK_GID:-1000}"
+    restart: unless-stopped
+    env_file:
+      - path: ${POINTBOOK_ENV_FILE:-.env}
+        required: false
+    environment:
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme}
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-change-me}
+      AI_PROVIDER: ${AI_PROVIDER:-mock}
+      DATABASE_PATH: /app/data/pointbook.db
+    volumes:
+      - "${POINTBOOK_DATA_DIR:-./data}:/app/data"
+    ports:
+      - "127.0.0.1:${POINTBOOK_PORT:-8002}:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/login')"
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    stop_grace_period: 30s
