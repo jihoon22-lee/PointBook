@@ -58,7 +58,7 @@
         <td>{{ p.point_no|point_no }}</td>
         <td>{{ p.personal_no or '-' }}</td>
         <td>{{ '공용' if p.account_type == 'shared' else '일반' }}</td>
-        <td>{% if p.team %}<span class="badge" style="background: {{ p.team.color }}">{{ p.team.name }}</span>{% else %}<span class="muted">-</span>{% endif %}</td>
+        <td>{% if p.team %}<span class="badge" style="background: {{ p.team.color }}; color: {{ p.team.color|contrast_color }}">{{ p.team.name }}</span>{% else %}<span class="muted">-</span>{% endif %}</td>
         <td>{{ p.grade or '-' }}</td>
         <td>{% if p.status == 'active' %}<span class="badge badge-active">재직</span>{% else %}<span class="badge badge-inactive">비재직</span>{% endif %}</td>
         <td><strong>{{ (p.current_carry_balance + p.current_amount)|number_format }}원</strong></td>

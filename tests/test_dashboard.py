@@ -60,6 +60,59 @@ def test_month_summary_sums_signed_usage(client, db):
     assert stats.month_summary(db, "2026-07").total_usage == -2000
 
 
+def test_month_summary_counts_active_and_newly_inactive_people_only(client, db):
+    active = make_person(db, "101", "재직자")
+    newly_inactive = make_person(db, "102", "신규비재직")
+    already_inactive = make_person(db, "103", "기존비재직", status="inactive")
+    create_monthly_snapshot(
+        db,
+        "2026-07",
+        [
+            BalanceRecord(person_id=active.id, carry_balance=0, amount=1000, usage=0, total=1000),
+            BalanceRecord(
+                person_id=newly_inactive.id,
+                carry_balance=0,
+                amount=1000,
+                usage=0,
+                total=1000,
+            ),
+            BalanceRecord(
+                person_id=already_inactive.id,
+                carry_balance=100,
+                amount=0,
+                usage=0,
+                total=100,
+            ),
+        ],
+    )
+    create_monthly_snapshot(
+        db,
+        "2026-08",
+        [
+            BalanceRecord(person_id=active.id, carry_balance=0, amount=1000, usage=0, total=1000),
+            BalanceRecord(
+                person_id=newly_inactive.id,
+                carry_balance=1000,
+                amount=0,
+                usage=0,
+                total=1000,
+            ),
+            BalanceRecord(
+                person_id=already_inactive.id,
+                carry_balance=100,
+                amount=0,
+                usage=0,
+                total=100,
+            ),
+        ],
+    )
+
+    summary = stats.month_summary(db, "2026-08")
+
+    assert summary.count == 2
+    assert [item.count for item in stats.trend(db)] == [2, 2]
+
+
 def test_trend_orders_ascending(client, db):
     make_person(db, "101", "김소방")
     create_monthly_snapshot(

@@ -15,11 +15,28 @@ class MonthSummary:
     total_balance: int
 
 
-def _summarize(snapshot: MonthlySnapshot) -> MonthSummary:
+def _summarize(
+    snapshot: MonthlySnapshot,
+    previous_snapshot: MonthlySnapshot | None = None,
+) -> MonthSummary:
     records = [r for r in snapshot.records if r.person.account_type == "person"]
+    previous_amounts = (
+        {
+            record.person_id: record.amount
+            for record in previous_snapshot.records
+            if record.person.account_type == "person"
+        }
+        if previous_snapshot is not None
+        else {}
+    )
+    processed_count = sum(
+        record.amount != 0
+        or (record.amount == 0 and previous_amounts.get(record.person_id, 0) != 0)
+        for record in records
+    )
     return MonthSummary(
         month=snapshot.month,
-        count=len(records),
+        count=processed_count,
         total_amount=sum(r.amount for r in records),
         total_usage=sum(r.usage for r in records),
         total_balance=sum(r.total for r in records),
@@ -34,7 +51,14 @@ def month_summary(db: Session, month: str) -> MonthSummary:
     )
     if snapshot is None:
         return MonthSummary(month=month, count=0, total_amount=0, total_usage=0, total_balance=0)
-    return _summarize(snapshot)
+    previous_snapshot = db.scalar(
+        select(MonthlySnapshot)
+        .options(selectinload(MonthlySnapshot.records).selectinload(BalanceRecord.person))
+        .where(MonthlySnapshot.month < month)
+        .order_by(MonthlySnapshot.month.desc())
+        .limit(1)
+    )
+    return _summarize(snapshot, previous_snapshot)
 
 
 def trend(db: Session) -> list[MonthSummary]:
@@ -45,7 +69,10 @@ def trend(db: Session) -> list[MonthSummary]:
             .order_by(MonthlySnapshot.month)
         ).all()
     )
-    return [_summarize(s) for s in snapshots]
+    return [
+        _summarize(snapshot, snapshots[index - 1] if index > 0 else None)
+        for index, snapshot in enumerate(snapshots)
+    ]
 
 
 def available_months(db: Session) -> list[str]:

@@ -13,7 +13,7 @@
   </th>
 {%- endmacro %}
 <div class="toolbar">
-  <h1><span class="badge" style="background: {{ team.color }}">{{ team.name }}</span></h1>
+  <h1><span class="badge" style="background: {{ team.color }}; color: {{ team.color|contrast_color }}">{{ team.name }}</span></h1>
   <div class="spacer"></div>
   <a class="btn" href="/teams">팀 목록</a>
 </div>

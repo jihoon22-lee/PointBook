@@ -397,6 +397,15 @@ def test_people_shows_each_person_current_total_balance(auth_client, db):
     assert "19,134원" in resp.text
 
 
+def test_people_default_order_puts_active_people_first(auth_client, db):
+    make_person(db, "1001", "가비재직", status="inactive")
+    make_person(db, "1002", "하재직", status="active")
+
+    resp = auth_client.get("/people")
+
+    assert resp.text.index("하재직") < resp.text.index("가비재직")
+
+
 def test_people_sorting_applies_to_name_and_total_balance(auth_client, db):
     lower = make_person(db, "1001", "가인원")
     lower.current_carry_balance = 100

@@ -21,7 +21,7 @@
 {% else %}
 <div class="summary-grid">
   <div class="summary-card">
-    <div class="label">{{ selected }} 재직·처리 인원</div>
+    <div class="label">{{ selected }} 재직·비재직 전환 인원</div>
     <div class="value">{{ summary.count }}명</div>
   </div>
   <div class="summary-card">
@@ -54,7 +54,7 @@
       <tbody>
       {% for t in teams %}
         <tr>
-          <td><span class="badge" style="background: {{ t.color }}">{{ t.name }}</span></td>
+          <td><span class="badge" style="background: {{ t.color }}; color: {{ t.color|contrast_color }}">{{ t.name }}</span></td>
           <td>{{ t.count }}명</td>
           <td>{{ t.total_amount|number_format }}</td>
           <td>{{ t.total_usage|number_format }}</td>
@@ -83,7 +83,7 @@
           <td><a href="/people/{{ p.person_id }}">{{ p.name }}</a>{% if p.status == 'inactive' %} <span class="badge badge-inactive">비재직</span>{% endif %}</td>
           <td>{{ p.point_no|point_no }}</td>
           <td>{{ p.personal_no or '-' }}</td>
-          <td>{% if p.team_name %}<span class="badge" style="background: {{ p.team_color }}">{{ p.team_name }}</span>{% else %}-{% endif %}</td>
+          <td>{% if p.team_name %}<span class="badge" style="background: {{ p.team_color }}; color: {{ p.team_color|contrast_color }}">{{ p.team_name }}</span>{% else %}-{% endif %}</td>
           <td>{{ p.grade or '-' }}</td>
           <td>{{ p.carry_balance|number_format }}</td>
           <td>{{ p.amount|number_format }}</td>

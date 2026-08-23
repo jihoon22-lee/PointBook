@@ -181,6 +181,17 @@ def test_create_team_rejects_invalid_color(auth_client, db):
     assert "위험팀" not in auth_client.get("/teams").text
 
 
+def test_team_badges_choose_readable_text_for_light_and_dark_colors(auth_client, db):
+    light = make_team(db, "밝은팀", "#ffffff")
+    dark = make_team(db, "어두운팀", "#000000")
+
+    light_page = auth_client.get(f"/teams/{light.id}")
+    dark_page = auth_client.get(f"/teams/{dark.id}")
+
+    assert 'style="background: #ffffff; color: #111827"' in light_page.text
+    assert 'style="background: #000000; color: #ffffff"' in dark_page.text
+
+
 def test_team_detail_sorting_applies_to_name_and_total_balance(auth_client, db):
     team = make_team(db, "구조대")
     lower = make_person(db, "1001", "가인원", team=team)
