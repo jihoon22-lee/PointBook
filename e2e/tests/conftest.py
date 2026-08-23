@@ -46,6 +46,8 @@ def monthly_flow(
     )
     page.click('.card button[type="submit"]')
     page.wait_for_selector("text=요청서 검수")
-    page.fill(f'input[name="carry_{point_no}"]', carry)
+    page.fill('input[name="carry_0"]', carry)
+    for deactivated_carry in page.locator('input[name^="deactivated_carry_"]').all():
+        deactivated_carry.fill("0")
     page.locator('button:has-text("확정 · 동기화")').last.click()
     page.wait_for_selector("text=처리가 완료되었습니다", timeout=15000)

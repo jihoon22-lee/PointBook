@@ -24,13 +24,17 @@ def _seed(page: Page) -> None:
     """인원 3명 + 2099-07 월간 처리 확정."""
     page.goto(f"{BASE_URL}/monthly")
     page.fill('input[name="month"]', "2099-07")
-    pasted = "1팀\t김소방\t소방경\t50000\t101\t\n2팀\t이소방\t소방위\t40000\t102\t비고\n1팀\t박소방\t소방사\t30000\t103\t"
+    pasted = (
+        "1팀\t김소방\t소방경\t50000\t101\t00000101\n"
+        "2팀\t이소방\t소방위\t40000\t102\t00000102\t비고\n"
+        "1팀\t박소방\t소방사\t30000\t103\t00000103"
+    )
     page.fill('textarea[name="pasted"]', pasted)
     page.click('.card button[type="submit"]')
     page.wait_for_selector("text=요청서 검수")
-    page.fill('input[name="carry_101|김소방"]', "10000")
-    page.fill('input[name="carry_102|이소방"]', "5000")
-    page.fill('input[name="carry_103|박소방"]', "2000")
+    page.fill('input[name="carry_0"]', "10000")
+    page.fill('input[name="carry_1"]', "5000")
+    page.fill('input[name="carry_2"]', "2000")
     page.locator('button:has-text("확정 · 동기화")').last.click()
     page.wait_for_selector("text=처리가 완료되었습니다")
 
@@ -62,7 +66,7 @@ def main() -> None:
         page.goto(f"{BASE_URL}/monthly")
         _shot(page, "05-monthly")
         page.goto(f"{BASE_URL}/monthly")
-        page.fill('textarea[name="pasted"]', "1팀\t김소방\t소방경\t50000\t101\t")
+        page.fill('textarea[name="pasted"]', "1팀\t김소방\t소방경\t50000\t101\t00000101")
         page.click('.card button[type="submit"]')
         page.wait_for_selector("text=요청서 검수")
         _shot(page, "06-review")
@@ -80,7 +84,7 @@ def main() -> None:
         page.goto(f"{BASE_URL}/people")
         _shot(page, "10-mobile-people")
         page.goto(f"{BASE_URL}/monthly")
-        page.fill('textarea[name="pasted"]', "1팀\t김소방\t소방경\t50000\t101\t")
+        page.fill('textarea[name="pasted"]', "1팀\t김소방\t소방경\t50000\t101\t00000101")
         page.click('.card button[type="submit"]')
         page.wait_for_selector("text=요청서 검수")
         _shot(page, "11-mobile-review")

@@ -38,7 +38,7 @@ def seed_month(page: Page, month: str) -> None:
     page.fill('textarea[name="pasted"]', "1팀\t김소방\t소방경\t50000\t101\t00000101")
     page.click('.card button[type="submit"]')
     page.wait_for_selector("text=요청서 검수")
-    page.fill('input[name="carry_00000101"]', "10000")
+    page.fill('input[name="carry_0"]', "10000")
     page.locator('button:has-text("확정 · 동기화")').last.click()
     page.wait_for_selector("text=처리가 완료되었습니다")
 
@@ -112,7 +112,7 @@ def main() -> None:
         page.fill('textarea[name="pasted"]', "1팀\t김소방\t소방경\t50000\t101\t00000101")
         page.click('.card button[type="submit"]')
         page.wait_for_selector("text=요청서 검수")
-        placeholder = page.get_attribute('input[name="carry_00000101"]', "placeholder")
+        placeholder = page.get_attribute('input[name="carry_0"]', "placeholder")
         verify(
             "검수 화면",
             [("직전 잔액 안내 표시", lambda: "직전 잔액" in (placeholder or ""))],
