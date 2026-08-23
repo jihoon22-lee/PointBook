@@ -5,6 +5,8 @@ cd "$(dirname "$0")/.."
 
 export POINTBOOK_PORT="${POINTBOOK_PORT:-${PORT:-8002}}"
 export POINTBOOK_DATA_DIR="${POINTBOOK_DATA_DIR:-./data}"
+export POINTBOOK_UID="${POINTBOOK_UID:-$(id -u)}"
+export POINTBOOK_GID="${POINTBOOK_GID:-$(id -g)}"
 
 mkdir -p "$POINTBOOK_DATA_DIR"
 if [ ! -w "$POINTBOOK_DATA_DIR" ]; then

@@ -6,6 +6,8 @@ cd "$(dirname "$0")/.."
 
 export PATH="$PATH:/snap/bin"
 export POINTBOOK_PORT="${POINTBOOK_PORT:-${DEPLOY_PORT:-8002}}"
+export POINTBOOK_UID="${POINTBOOK_UID:-$(id -u)}"
+export POINTBOOK_GID="${POINTBOOK_GID:-$(id -g)}"
 
 echo "== deploy: 코드 최신화 =="
 git fetch origin main --quiet

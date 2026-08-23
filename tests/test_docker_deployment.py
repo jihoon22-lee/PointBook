@@ -9,6 +9,7 @@ def test_production_compose_preserves_sqlite_and_is_session_independent():
 
     assert app["restart"] == "unless-stopped"
     assert app["init"] is True
+    assert app["user"] == "${POINTBOOK_UID:-1000}:${POINTBOOK_GID:-1000}"
     assert "127.0.0.1:${POINTBOOK_PORT:-8002}:8000" in app["ports"]
     assert "${POINTBOOK_DATA_DIR:-./data}:/app/data" in app["volumes"]
     assert app["environment"]["DATABASE_PATH"] == "/app/data/pointbook.db"
@@ -39,6 +40,8 @@ def test_production_smoke_uses_isolated_project_data_and_cleanup():
     assert "COMPOSE_PROJECT_NAME" in script
     assert "POINTBOOK_DATA_DIR" in script
     assert "POINTBOOK_PORT" in script
+    assert 'export POINTBOOK_UID="$(id -u)"' in script
+    assert 'export POINTBOOK_GID="$(id -g)"' in script
     assert "docker compose down" in script
     assert "docker compose restart app" in script
     assert "pointbook_smoke_marker" in script

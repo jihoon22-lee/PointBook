@@ -13,6 +13,8 @@ def test_deploy_builds_before_stop_and_backs_up_before_compose_start():
 
     assert build_position < stop_position < backup_position < start_position
     assert "scripts/stop.sh || true" not in script
+    assert 'POINTBOOK_UID="${POINTBOOK_UID:-$(id -u)}"' in script
+    assert 'POINTBOOK_GID="${POINTBOOK_GID:-$(id -g)}"' in script
 
 
 def test_run_starts_compose_and_waits_for_health():
@@ -33,6 +35,8 @@ def test_run_creates_missing_host_data_directory_before_compose(tmp_path):
 set -euo pipefail
 if [ "$1" = "compose" ] && [ "$2" = "up" ]; then
   test -d "$POINTBOOK_DATA_DIR" || exit 91
+  test "$POINTBOOK_UID" = "$(id -u)" || exit 92
+  test "$POINTBOOK_GID" = "$(id -g)" || exit 93
 elif [ "$1" = "compose" ] && [ "$2" = "ps" ]; then
   echo fake-container
 elif [ "$1" = "inspect" ]; then
@@ -43,7 +47,10 @@ fi
     )
     docker.chmod(0o755)
     data_dir = tmp_path / "fresh-data"
-    env = os.environ | {
+    env = os.environ.copy()
+    env.pop("POINTBOOK_UID", None)
+    env.pop("POINTBOOK_GID", None)
+    env |= {
         "PATH": f"{bin_dir}:{os.environ['PATH']}",
         "POINTBOOK_DATA_DIR": str(data_dir),
     }

@@ -22,7 +22,7 @@ flowchart LR
 ```
 
 - **클라이언트**: 빌드 단계 없는 서버 렌더링 HTML + 바닐라 JS — Win7 Chrome 109·갤럭시 호환
-- **서버**: FastAPI + Uvicorn 단일 앱 컨테이너, Docker Compose 자동 재시작 (`scripts/run.sh`)
+- **서버**: FastAPI + Uvicorn 단일 앱 컨테이너, 호스트 UID/GID로 비루트 실행, Docker Compose 자동 재시작 (`scripts/run.sh`)
 - **저장소**: 호스트 `data/`를 `/app/data`로 bind mount한 SQLite 단일 파일
 - **AI**: `VisionProvider` 인터페이스로 추상화 — Gemini 구현체 제공, 프로바이더 교체는 `AI_PROVIDER` 설정만 변경
 - **캐시**: 모든 HTML 응답에 `Cache-Control: no-store` 미들웨어 적용 (스테일 페이지 방지, 정적 파일은 캐시 유지)

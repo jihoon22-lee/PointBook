@@ -7,6 +7,7 @@ services:
       dockerfile: Dockerfile
     image: pointbook:${POINTBOOK_VERSION:-local}
     init: true
+    user: "${POINTBOOK_UID:-1000}:${POINTBOOK_GID:-1000}"
     restart: unless-stopped
     env_file:
       - path: ${POINTBOOK_ENV_FILE:-.env}
