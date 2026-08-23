@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse, Response
-from sqlalchemy import case, func, select
+from sqlalchemy import and_, case, func, select
 from sqlalchemy.orm import Session
 
 from app.auth import require_login
@@ -30,7 +30,10 @@ def _team_summaries(db: Session) -> list[TeamSummary]:
             func.sum(case((Person.status == "active", 1), else_=0)),
             func.sum(case((Person.status == "inactive", 1), else_=0)),
         )
-        .outerjoin(Person, Person.team_id == Team.id)
+        .outerjoin(
+            Person,
+            and_(Person.team_id == Team.id, Person.account_type == "person"),
+        )
         .group_by(Team.id)
         .order_by(Team.name)
     ).all()
@@ -62,7 +65,7 @@ def team_detail(team_id: int, request: Request, db: Session = Depends(get_db)) -
     members = list(
         db.scalars(
             select(Person)
-            .where(Person.team_id == team.id)
+            .where(Person.team_id == team.id, Person.account_type == "person")
             .order_by(case((Person.status == "active", 0), else_=1), Person.name, Person.id)
         ).all()
     )
