@@ -9,9 +9,10 @@
 flowchart LR
     U1["사용자 (관리자)<br/>Windows 7 · Chrome 109"]
     U2["사용자 (관리자)<br/>Android 갤럭시"]
-    U1 -->|"HTTP (내부망)"| D
-    U2 -->|"HTTP (내부망)"| D
-    D["Docker Compose<br/>127.0.0.1:8002"] --> S
+    U1 -->|"localhost 또는 Tailscale"| H
+    U2 -->|"Tailscale Serve"| H
+    H["WSL 호스트<br/>127.0.0.1:8002<br/>(Tailscale 프록시 선택)"] --> D
+    D["Docker Compose<br/>app 서비스"] --> S
     S["FastAPI + Uvicorn<br/>app 컨테이너"]
     S --> T["Jinja2 서버 렌더링<br/>+ 바닐라 JS + CSS"]
     S --> DB[("SQLite<br/>data/pointbook.db")]

@@ -4,6 +4,13 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 export POINTBOOK_PORT="${POINTBOOK_PORT:-${PORT:-8002}}"
+export POINTBOOK_DATA_DIR="${POINTBOOK_DATA_DIR:-./data}"
+
+mkdir -p "$POINTBOOK_DATA_DIR"
+if [ ! -w "$POINTBOOK_DATA_DIR" ]; then
+  echo "오류: PointBook 데이터 디렉터리에 쓸 수 없습니다: $POINTBOOK_DATA_DIR" >&2
+  exit 1
+fi
 
 docker compose up -d --build app
 

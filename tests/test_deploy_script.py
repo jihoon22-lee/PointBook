@@ -1,3 +1,5 @@
+import os
+import subprocess
 from pathlib import Path
 
 
@@ -20,6 +22,43 @@ def test_run_starts_compose_and_waits_for_health():
     assert "Health.Status" in script
     assert '"unhealthy"' in script
     assert "docker compose logs" in script
+
+
+def test_run_creates_missing_host_data_directory_before_compose(tmp_path):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    docker = bin_dir / "docker"
+    docker.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+if [ "$1" = "compose" ] && [ "$2" = "up" ]; then
+  test -d "$POINTBOOK_DATA_DIR" || exit 91
+elif [ "$1" = "compose" ] && [ "$2" = "ps" ]; then
+  echo fake-container
+elif [ "$1" = "inspect" ]; then
+  echo healthy
+fi
+""",
+        encoding="utf-8",
+    )
+    docker.chmod(0o755)
+    data_dir = tmp_path / "fresh-data"
+    env = os.environ | {
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "POINTBOOK_DATA_DIR": str(data_dir),
+    }
+
+    result = subprocess.run(
+        ["bash", "scripts/run.sh"],
+        cwd=Path.cwd(),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert data_dir.is_dir()
 
 
 def test_stop_targets_only_pointbook_compose_and_owned_legacy_pid():
