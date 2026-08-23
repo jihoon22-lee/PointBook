@@ -9,7 +9,7 @@ services:
     init: true
     restart: unless-stopped
     env_file:
-      - path: .env
+      - path: ${POINTBOOK_ENV_FILE:-.env}
         required: false
     environment:
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}

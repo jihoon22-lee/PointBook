@@ -87,6 +87,8 @@ jobs:
         if: hashFiles('e2e/**') != ''
         working-directory: e2e
         run: docker compose -f compose.yml up --build --abort-on-container-exit --exit-code-from e2e
+      - name: Run production Compose smoke test
+        run: bash e2e/production-smoke.sh
 
   quality-gate:
     name: Quality gate
