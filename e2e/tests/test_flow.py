@@ -15,6 +15,7 @@ def test_login_page_and_auth(page):
 def test_create_person(page):
     login(page)
     page.goto(f"{BASE_URL}/people/new")
+    page.fill('input[name="point_no"]', "0000 0777")
     page.fill('input[name="personal_no"]', "777")
     page.fill('input[name="name"]', "E2E인원")
     page.fill('input[name="grade"]', "소방사")
@@ -22,6 +23,7 @@ def test_create_person(page):
     page.wait_for_url(f"{BASE_URL}/people/*")
     page.goto(f"{BASE_URL}/people")
     assert "E2E인원" in page.text_content("body")
+    assert "0000 0777" in page.text_content("body")
 
 
 def test_monthly_flow_paste_review_confirm(page):
@@ -37,6 +39,7 @@ def test_dashboard_shows_monthly_data(page):
     body = page.text_content("body")
     assert "E2E대시" in body
     assert "35,000원" in body
+    assert "순사용" in body
 
 
 def test_person_detail_shows_history(page):

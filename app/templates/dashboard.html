@@ -2,6 +2,7 @@
 {% block title %}대시보드 - PointBook{% endblock %}
 {% block content %}
 <h1>대시보드</h1>
+<p class="muted">양수는 포인트 순감소, 음수는 적립·이전 등으로 인한 순증가입니다.</p>
 
 <div class="toolbar">
   <form method="get" action="/dashboard">
@@ -28,7 +29,7 @@
     <div class="value">{{ summary.total_amount|number_format }}원</div>
   </div>
   <div class="summary-card">
-    <div class="label">총 사용 금액</div>
+    <div class="label">순사용 합계</div>
     <div class="value">{{ summary.total_usage|number_format }}원</div>
   </div>
   <div class="summary-card">
@@ -39,7 +40,7 @@
 
 <div class="card">
   <h2>월별 추이</h2>
-  <canvas id="trend-chart" height="120" aria-label="월별 충전·사용·잔액 차트"></canvas>
+  <canvas id="trend-chart" height="120" aria-label="월별 충전·순사용·잔액 차트"></canvas>
   <script id="trend-data" type="application/json">{{ chart|tojson }}</script>
 </div>
 
@@ -48,7 +49,7 @@
   <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>팀</th><th>인원</th><th>충전</th><th>사용</th><th>잔액</th></tr>
+        <tr><th>팀</th><th>인원</th><th>충전</th><th>순사용</th><th>잔액</th></tr>
       </thead>
       <tbody>
       {% for t in teams %}
@@ -73,14 +74,15 @@
     <table id="person-stats">
       <thead>
         <tr>
-          <th data-sort="name">이름</th><th>개인번호</th><th data-sort="team">팀</th><th>계급</th><th data-sort="carry">이월 잔액</th><th data-sort="amount">충전</th><th data-sort="usage">사용</th><th data-sort="total">총 잔액</th>
+          <th data-sort="name">이름</th><th>포인트번호</th><th>개인번호</th><th data-sort="team">팀</th><th>계급</th><th data-sort="carry">이월 잔액</th><th data-sort="amount">충전</th><th data-sort="usage">순사용</th><th data-sort="total">총 잔액</th>
         </tr>
       </thead>
       <tbody>
       {% for p in persons %}
         <tr>
           <td><a href="/people/{{ p.person_id }}">{{ p.name }}</a>{% if p.status == 'inactive' %} <span class="badge badge-inactive">비재직</span>{% endif %}</td>
-          <td>{{ p.personal_no }}</td>
+          <td>{{ p.point_no|point_no }}</td>
+          <td>{{ p.personal_no or '-' }}</td>
           <td>{% if p.team_name %}<span class="badge" style="background: {{ p.team_color }}">{{ p.team_name }}</span>{% else %}-{% endif %}</td>
           <td>{{ p.grade or '-' }}</td>
           <td>{{ p.carry_balance|number_format }}</td>

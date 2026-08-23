@@ -7,13 +7,13 @@ from tests.factories import make_person, make_team
 def _confirm(client, month, rows, carries):
     data = {"month": month}
     for i, row in enumerate(rows):
-        data[f"personal_no_{i}"] = row[0]
-        data[f"name_{i}"] = row[1]
-        data[f"team_{i}"] = row[2]
-        data[f"grade_{i}"] = row[3]
-        data[f"amount_{i}"] = str(row[4])
-    for key, value in carries.items():
-        data[f"carry_{key}"] = str(value)
+        data[f"point_no_{i}"] = row[0]
+        data[f"personal_no_{i}"] = row[1]
+        data[f"name_{i}"] = row[2]
+        data[f"team_{i}"] = row[3]
+        data[f"grade_{i}"] = row[4]
+        data[f"amount_{i}"] = str(row[5])
+        data[f"carry_{i}"] = str(carries[row[0]])
     resp = client.post("/monthly/confirm", data=data, follow_redirects=False)
     assert resp.status_code == 303
 
@@ -40,6 +40,24 @@ def test_month_summary_with_records(client, db):
     assert summary.total_amount == 50000
     assert summary.total_usage == 2000
     assert summary.total_balance == 51000
+
+
+def test_month_summary_sums_signed_usage(client, db):
+    person = make_person(db, "101", "김소방")
+    create_monthly_snapshot(
+        db,
+        "2026-07",
+        [
+            BalanceRecord(
+                person_id=person.id,
+                carry_balance=3000,
+                amount=1000,
+                usage=-2000,
+                total=4000,
+            )
+        ],
+    )
+    assert stats.month_summary(db, "2026-07").total_usage == -2000
 
 
 def test_trend_orders_ascending(client, db):
@@ -114,6 +132,27 @@ def test_person_summary_no_snapshot(client, db):
     assert stats.person_summary(db, "2026-07") == []
 
 
+def test_person_summary_excludes_shared_accounts(client, db):
+    person = make_person(db, "101", "일반")
+    shared = make_person(
+        db,
+        "",
+        "공용",
+        point_no="00000009",
+        account_type="shared",
+    )
+    create_monthly_snapshot(
+        db,
+        "2026-07",
+        [
+            BalanceRecord(person_id=person.id, carry_balance=0, amount=1000, usage=0, total=1000),
+            BalanceRecord(person_id=shared.id, carry_balance=0, amount=9000, usage=0, total=9000),
+        ],
+    )
+
+    assert [item.name for item in stats.person_summary(db, "2026-07")] == ["일반"]
+
+
 def test_dashboard_empty_state(auth_client):
     resp = auth_client.get("/dashboard")
     assert resp.status_code == 200
@@ -124,8 +163,8 @@ def test_dashboard_with_data(auth_client, db):
     _confirm(
         auth_client,
         "2026-07",
-        [("101", "김소방", "1팀", "소방경", 50000)],
-        {"101|김소방": 10000},
+        [("00000001", "101", "김소방", "1팀", "소방경", 50000)],
+        {"00000001": 10000},
     )
     resp = auth_client.get("/dashboard")
     assert resp.status_code == 200
@@ -141,14 +180,14 @@ def test_dashboard_month_select(auth_client, db):
     _confirm(
         auth_client,
         "2026-06",
-        [("101", "김소방", "1팀", "소방경", 50000)],
-        {"101|김소방": 10000},
+        [("00000001", "101", "김소방", "1팀", "소방경", 50000)],
+        {"00000001": 10000},
     )
     _confirm(
         auth_client,
         "2026-07",
-        [("101", "김소방", "1팀", "소방경", 60000)],
-        {"101|김소방": 5000},
+        [("00000001", "101", "김소방", "1팀", "소방경", 60000)],
+        {"00000001": 5000},
     )
     resp = auth_client.get("/dashboard?month=2026-06")
     assert "65,000원" not in resp.text
@@ -160,8 +199,8 @@ def test_dashboard_invalid_month_falls_back(auth_client, db):
     _confirm(
         auth_client,
         "2026-07",
-        [("101", "김소방", "1팀", "소방경", 50000)],
-        {"101|김소방": 10000},
+        [("00000001", "101", "김소방", "1팀", "소방경", 50000)],
+        {"00000001": 10000},
     )
     resp = auth_client.get("/dashboard?month=2099-01")
     assert resp.status_code == 200

@@ -20,13 +20,14 @@ class Team(Base):
 
 class Person(Base):
     __tablename__ = "people"
-    __table_args__ = (UniqueConstraint("personal_no", "name", name="uq_person_key"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    personal_no: Mapped[str] = mapped_column(String(50), index=True)
+    point_no: Mapped[str] = mapped_column(String(8), unique=True, index=True)
+    personal_no: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(50))
     grade: Mapped[str] = mapped_column(String(50), default="")
     status: Mapped[str] = mapped_column(String(20), default="active", index=True)
+    account_type: Mapped[str] = mapped_column(String(20), default="person", index=True)
     team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"), nullable=True)
     current_carry_balance: Mapped[int] = mapped_column(Integer, default=0)
     current_amount: Mapped[int] = mapped_column(Integer, default=0)

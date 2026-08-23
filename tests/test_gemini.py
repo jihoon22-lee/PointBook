@@ -26,7 +26,7 @@ def test_extract_table_success(monkeypatch):
 
             def json(self):
                 return _ok_response_json(
-                    '[{"personal_no": "101", "name": "김소방", "team": "1팀", "grade": "소방경", "amount": 50000, "note": ""}]'
+                    '[{"point_no": "0000 0001", "personal_no": "101", "name": "김소방", "team": "1팀", "grade": "소방경", "amount": 50000, "note": ""}]'
                 )
 
             @property
@@ -39,6 +39,7 @@ def test_extract_table_success(monkeypatch):
     rows = _provider().extract_table(b"fake-image", "req.png")
     assert len(rows) == 1
     assert rows[0].personal_no == "101"
+    assert rows[0].point_no == "00000001"
     assert rows[0].name == "김소방"
     assert rows[0].amount == 50000
     assert "generateContent" in captured["url"]
@@ -54,7 +55,7 @@ def test_extract_table_strips_code_fence(monkeypatch):
 
             def json(self):
                 return _ok_response_json(
-                    '```json\n[{"personal_no": "102", "name": "이소방", "amount": 30000}]\n```'
+                    '```json\n[{"point_no": "00000002", "personal_no": "102", "name": "이소방", "amount": 30000}]\n```'
                 )
 
             @property
@@ -155,16 +156,23 @@ def test_missing_api_key():
 
 def test_parse_rows_amount_variants():
     rows = GeminiProvider._parse_rows(
-        '[{"personal_no": "1", "name": "가", "amount": "50,000원"},'
-        '{"personal_no": "2", "name": "나", "amount": 30000},'
-        '{"personal_no": "3", "name": "다", "amount": ""}]'
+        '[{"point_no": "00000001", "personal_no": "1", "name": "가", "amount": "50,000원"},'
+        '{"point_no": "00000002", "personal_no": "2", "name": "나", "amount": 30000},'
+        '{"point_no": "00000003", "personal_no": "3", "name": "다", "amount": ""}]'
     )
     assert [r.amount for r in rows] == [50000, 30000, 0]
 
 
 def test_parse_rows_skips_non_dict():
-    rows = GeminiProvider._parse_rows('[{"personal_no": "1", "name": "가"}, "junk"]')
+    rows = GeminiProvider._parse_rows(
+        '[{"point_no": "00000001", "personal_no": "1", "name": "가"}, "junk"]'
+    )
     assert len(rows) == 1
+
+
+def test_parse_rows_rejects_missing_point_number():
+    with pytest.raises(ValueError, match="포인트번호"):
+        GeminiProvider._parse_rows('[{"personal_no": "1", "name": "가"}]')
 
 
 def test_mime_type_from_filename(monkeypatch):

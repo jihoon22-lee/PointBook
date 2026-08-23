@@ -1,7 +1,7 @@
 # PointBook
 
 소방서 포인트 충전 요청서(엑셀)를 웹에서 관리하는 서비스. 매달 소방서가 보내는
-포인트 충전 요청서(테이블 형식: 순번, 팀, 이름, 계급, 금액, 개인번호, 비고)를
+포인트 충전 요청서(테이블 형식: 순번, 팀, 이름, 계급, 금액, 개인번호, 포인트번호, 비고)를
 웹에서 관리·조회한다.
 
 ## 문서
@@ -14,9 +14,9 @@
 
 - **월간 요청서 처리**: 사진 업로드 → AI 테이블 인식 → 검수·수정 → 확정 시
   DB 전체 인원과 대조 동기화 (재직 유지/복귀, 비재직 전환, 신규 추가, 팀 변경)
-- **잔액 계산**: 매달 처리 대상 전체 인원의 이월 잔액 입력 → 사용 합계·총 잔액 자동 계산
+- **잔액 계산**: 매달 처리 대상 전체 인원의 이월 잔액 입력 → 부호 있는 순사용·총 잔액 자동 계산
   (비재직자의 잔액은 보존되어 복귀 시 이어짐)
-- **인원·팀 관리**: 개인번호+이름 고유, 개별 수정(상태/팀/금액), 팀 마스터(색상 구분)
+- **인원·팀 관리**: 8자리 포인트번호를 고유 식별자로 사용하고, 일반 인원과 공용 계정을 함께 관리
 - **대시보드**: 월별 사용량·금액/잔액 통계 (전체/팀별/개인별), 월별 이력 조회
 - **자동 백업**: 월간 확정 전 DB 자동 백업 (`data/backups/`), 보관 개수 제한
 - **설정**: 관리자 비밀번호 변경 (`/settings`)
@@ -42,6 +42,7 @@ cp .env.example .env            # ADMIN_USERNAME / ADMIN_PASSWORD / SECRET_KEY �
 uv run python -m scripts.init_db  # 최초 1회 (관리자 계정 생성)
 scripts/run.sh                  # 백그라운드 실행 (PID·로그는 data/)
 scripts/stop.sh                 # 중지
+scripts/deploy.sh               # main 최신화·의존성·DB 백업·재시작
 ```
 
 - 접속: **Windows(호스트) 브라우저**는 `http://localhost:8000` 으로 바로 접속 가능 (WSL2 localhost 포워딩 내장)
@@ -89,6 +90,20 @@ docker compose -f e2e/compose.yml up --build --abort-on-container-exit --exit-co
 ```bash
 uv run python -m scripts.import_excel --file 기존파일.xlsx [--month 2026-07]
 ```
+
+고정 형식의 누적 장부는 먼저 dry-run 결과를 확인하고 적용한다. 원본 `.xlsx`와 실제
+DB·백업은 `data/` 등 gitignore 경로에만 두며 커밋하지 않는다.
+
+```bash
+uv run python -m scripts.import_ledger --file 누적장부.xlsx --dry-run
+uv run python -m scripts.import_ledger --file 누적장부.xlsx --apply
+```
+
+- dry-run은 실제 DB 대신 임시 복사본에 스키마 마이그레이션을 적용하므로 원본 DB를 바꾸지 않는다.
+- `--apply`는 기존 DB를 먼저 백업하고, 전체 계정·월·기록을 한 트랜잭션으로 저장한다.
+- 이력 없는 테스트 계정 정확히 2개를 교체하려면
+  `--replace-empty-history-people`를 추가한다. 다른 개수나 일부 매칭 계정이 있으면 중단한다.
+- 실패하거나 월별 이력이 이미 존재하면 덮어쓰지 않고 전체 적용을 중단한다.
 
 ## DB 마이그레이션·백업
 

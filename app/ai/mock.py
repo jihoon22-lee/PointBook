@@ -5,9 +5,30 @@ from app.ai.base import VisionProvider
 from app.services.sync import RequestRow
 
 DEFAULT_ROWS = [
-    {"personal_no": "101", "name": "김소방", "team": "1팀", "grade": "소방경", "amount": 50000},
-    {"personal_no": "102", "name": "이소방", "team": "1팀", "grade": "소방위", "amount": 50000},
-    {"personal_no": "103", "name": "박소방", "team": "2팀", "grade": "소방사", "amount": 30000},
+    {
+        "point_no": "00000001",
+        "personal_no": "101",
+        "name": "김소방",
+        "team": "1팀",
+        "grade": "소방경",
+        "amount": 50000,
+    },
+    {
+        "point_no": "00000002",
+        "personal_no": "102",
+        "name": "이소방",
+        "team": "1팀",
+        "grade": "소방위",
+        "amount": 50000,
+    },
+    {
+        "point_no": "00000003",
+        "personal_no": "103",
+        "name": "박소방",
+        "team": "2팀",
+        "grade": "소방사",
+        "amount": 30000,
+    },
 ]
 
 
@@ -27,6 +48,7 @@ class MockProvider(VisionProvider):
         )
         return [
             RequestRow(
+                point_no=str(r.get("point_no", "")),
                 personal_no=str(r.get("personal_no", "")),
                 name=str(r.get("name", "")),
                 team=str(r.get("team", "")),

@@ -16,6 +16,7 @@ engine: Engine = create_engine("sqlite://")
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 _configured = False
 _url: str = ""
+INITIAL_SCHEMA_REVISION = "96588aa65d2d"
 
 
 def configure_database(url: str) -> None:
@@ -70,9 +71,11 @@ def run_migrations() -> None:
     from sqlalchemy import inspect
 
     cfg = _alembic_config()
-    tables = set(inspect(engine).get_table_names())
+    inspector = inspect(engine)
+    tables = set(inspector.get_table_names())
     if "people" in tables and "alembic_version" not in tables:
-        command.stamp(cfg, "head")
+        people_columns = {column["name"] for column in inspector.get_columns("people")}
+        command.stamp(cfg, "head" if "point_no" in people_columns else INITIAL_SCHEMA_REVISION)
     command.upgrade(cfg, "head")
 
 

@@ -12,13 +12,14 @@
   <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>이름</th><th>개인번호</th><th>계급</th><th>상태</th></tr>
+        <tr><th>이름</th><th>포인트번호</th><th>개인번호</th><th>계급</th><th>상태</th></tr>
       </thead>
       <tbody>
       {% for p in members %}
         <tr>
           <td><a href="/people/{{ p.id }}">{{ p.name }}</a></td>
-          <td>{{ p.personal_no }}</td>
+          <td>{{ p.point_no|point_no }}</td>
+          <td>{{ p.personal_no or '-' }}</td>
           <td>{{ p.grade or '-' }}</td>
           <td>{% if p.status == 'active' %}<span class="badge badge-active">재직</span>{% else %}<span class="badge badge-inactive">비재직</span>{% endif %}</td>
         </tr>

@@ -2,7 +2,7 @@
 {% block title %}{{ person.name }} - PointBook{% endblock %}
 {% block content %}
 <div class="toolbar">
-  <h1>{{ person.name }} <span class="muted">({{ person.personal_no }})</span></h1>
+  <h1>{{ person.name }} <span class="muted">({{ person.point_no|point_no }})</span></h1>
   <div class="spacer"></div>
   <a class="btn" href="/people/{{ person.id }}/edit">수정</a>
   <a class="btn" href="/people">목록</a>
@@ -13,6 +13,8 @@
     <tr><th>계급</th><td>{{ person.grade or '-' }}</td></tr>
     <tr><th>팀</th><td>{% if person.team %}<span class="badge" style="background: {{ person.team.color }}">{{ person.team.name }}</span>{% else %}-{% endif %}</td></tr>
     <tr><th>상태</th><td>{% if person.status == 'active' %}<span class="badge badge-active">재직</span>{% else %}<span class="badge badge-inactive">비재직</span>{% endif %}</td></tr>
+    <tr><th>계정 구분</th><td>{{ '공용' if person.account_type == 'shared' else '일반' }}</td></tr>
+    <tr><th>개인번호</th><td>{{ person.personal_no or '-' }}</td></tr>
     <tr><th>이월 잔액</th><td>{{ person.current_carry_balance|number_format }}원</td></tr>
     <tr><th>당월 충전</th><td>{{ person.current_amount|number_format }}원</td></tr>
     <tr><th>총 잔액</th><td><strong>{{ (person.current_carry_balance + person.current_amount)|number_format }}원</strong></td></tr>
@@ -25,7 +27,7 @@
   <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>월</th><th>이월 잔액</th><th>당월 충전</th><th>사용</th><th>총 잔액</th></tr>
+        <tr><th>월</th><th>이월 잔액</th><th>당월 충전</th><th>순사용</th><th>총 잔액</th></tr>
       </thead>
       <tbody>
       {% for b in balances %}

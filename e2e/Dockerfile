@@ -1,7 +1,6 @@
-FROM mcr.microsoft.com/playwright:v1.30.0-focal
+FROM mcr.microsoft.com/playwright/python:v1.30.0-jammy
 WORKDIR /app/e2e
 COPY requirements.txt .
-RUN python3 -m ensurepip --upgrade || (apt-get update && apt-get install -y python3-pip)
 RUN python3 -m pip install --no-cache-dir -r requirements.txt
 COPY tests tests
 ENV BASE_URL=http://app:8000

@@ -14,14 +14,21 @@ def test_mock_provider_returns_rows():
 
 
 def test_mock_provider_custom_json():
-    provider = MockProvider(mock_json='[{"personal_no": "1", "name": "홍길동", "amount": 1000}]')
+    provider = MockProvider(
+        mock_json=(
+            '[{"point_no": "00000001", "personal_no": "1", "name": "홍길동", "amount": 1000}]'
+        )
+    )
     rows = provider.extract_table(b"", "x.png")
     assert len(rows) == 1
     assert rows[0].amount == 1000
 
 
 def test_parse_pasted_spec_order():
-    text = "1\t1팀\t김소방\t소방경\t50000\t101\t\n2\t2팀\t이소방\t소방위\t30000\t102\t"
+    text = (
+        "1\t1팀\t김소방\t소방경\t50000\t101\t00000001\t\n"
+        "2\t2팀\t이소방\t소방위\t30000\t102\t00000002\t"
+    )
     rows = parse_pasted(text)
     assert len(rows) == 2
     assert rows[0].personal_no == "101"
@@ -30,11 +37,11 @@ def test_parse_pasted_spec_order():
 
 
 def test_parse_pasted_six_columns():
-    text = "1팀\t김소방\t소방경\t50000\t101\t비고"
+    text = "1팀\t김소방\t소방경\t50000\t101\t00000001"
     rows = parse_pasted(text)
     assert len(rows) == 1
     assert rows[0].personal_no == "101"
-    assert rows[0].note == "비고"
+    assert rows[0].point_no == "00000001"
 
 
 def test_parse_pasted_skips_empty_and_bad_lines():
@@ -44,12 +51,12 @@ def test_parse_pasted_skips_empty_and_bad_lines():
 
 
 def test_parse_pasted_amount_with_commas():
-    rows = parse_pasted("1팀\t김소방\t소방경\t50,000원\t101\t")
+    rows = parse_pasted("1팀\t김소방\t소방경\t50,000원\t101\t00000001")
     assert rows[0].amount == 50000
 
 
 def test_parse_pasted_comma_delimited():
-    text = "1,1팀,김소방,소방경,50000,101,비고"
+    text = "1,1팀,김소방,소방경,50000,101,00000001,비고"
     rows = parse_pasted(text)
     assert len(rows) == 1
     assert rows[0].personal_no == "101"
@@ -64,7 +71,7 @@ def test_monthly_page_empty(auth_client):
 
 
 def test_upload_with_pasted_text(auth_client):
-    text = "1팀\t김소방\t소방경\t50000\t101\t"
+    text = "1팀\t김소방\t소방경\t50000\t101\t00000001"
     resp = auth_client.post("/monthly/upload", data={"month": "2026-07", "pasted": text})
     assert resp.status_code == 200
     assert "요청서 검수" in resp.text
@@ -94,12 +101,13 @@ def test_upload_with_image_uses_provider(auth_client, monkeypatch):
 def test_confirm_creates_snapshot_and_syncs(auth_client, db):
     data = {
         "month": "2026-07",
+        "point_no_0": "00000001",
         "personal_no_0": "101",
         "name_0": "김소방",
         "team_0": "1팀",
         "grade_0": "소방경",
         "amount_0": "50000",
-        "carry_101|김소방": "10000",
+        "carry_0": "10000",
     }
     resp = auth_client.post("/monthly/confirm", data=data, follow_redirects=False)
     assert resp.status_code == 303
@@ -118,16 +126,17 @@ def test_confirm_creates_snapshot_and_syncs(auth_client, db):
 def test_confirm_usage_calculation_with_previous_month(auth_client, db):
     data = {
         "month": "2026-06",
+        "point_no_0": "00000001",
         "personal_no_0": "101",
         "name_0": "김소방",
         "team_0": "1팀",
         "grade_0": "소방경",
         "amount_0": "50000",
-        "carry_101|김소방": "10000",
+        "carry_0": "10000",
     }
     auth_client.post("/monthly/confirm", data=data)
     data["month"] = "2026-07"
-    data["carry_101|김소방"] = "4000"
+    data["carry_0"] = "4000"
     resp = auth_client.post("/monthly/confirm", data=data, follow_redirects=False)
     assert resp.status_code == 303
     snapshot = db.scalar(select(MonthlySnapshot).where(MonthlySnapshot.month == "2026-07"))
@@ -139,12 +148,13 @@ def test_confirm_usage_calculation_with_previous_month(auth_client, db):
 def test_confirm_duplicate_month_rejected(auth_client, db):
     data = {
         "month": "2026-07",
+        "point_no_0": "00000001",
         "personal_no_0": "101",
         "name_0": "김소방",
         "team_0": "1팀",
         "grade_0": "소방경",
         "amount_0": "50000",
-        "carry_101|김소방": "0",
+        "carry_0": "0",
     }
     auth_client.post("/monthly/confirm", data=data)
     resp = auth_client.post("/monthly/confirm", data=data)
@@ -168,13 +178,14 @@ def test_confirm_deactivates_missing_person(auth_client, db):
     make_person(db, "999", "기존인원")
     data = {
         "month": "2026-07",
+        "point_no_0": "00000001",
         "personal_no_0": "101",
         "name_0": "김소방",
         "team_0": "1팀",
         "grade_0": "",
         "amount_0": "0",
-        "carry_101|김소방": "0",
-        "carry_999|기존인원": "3000",
+        "carry_0": "0",
+        "deactivated_carry_00000999": "3000",
     }
     auth_client.post("/monthly/confirm", data=data)
     old = db.scalar(select(Person).where(Person.personal_no == "999"))
@@ -188,12 +199,13 @@ def test_confirm_returns_balance_after_return(auth_client, db):
     make_person(db, "101", "김소방", status="inactive")
     data = {
         "month": "2026-07",
+        "point_no_0": "00000101",
         "personal_no_0": "101",
         "name_0": "김소방",
         "team_0": "1팀",
         "grade_0": "",
         "amount_0": "50000",
-        "carry_101|김소방": "7000",
+        "carry_0": "7000",
     }
     auth_client.post("/monthly/confirm", data=data)
     person = db.scalar(select(Person).where(Person.personal_no == "101"))
@@ -204,17 +216,19 @@ def test_edit_person_syncs_latest_record(auth_client, db):
     person = make_person(db, "101", "김소방")
     data = {
         "month": "2026-06",
+        "point_no_0": "00000101",
         "personal_no_0": "101",
         "name_0": "김소방",
         "team_0": "1팀",
         "grade_0": "",
         "amount_0": "50000",
-        "carry_101|김소방": "10000",
+        "carry_0": "10000",
     }
     auth_client.post("/monthly/confirm", data=data)
     resp = auth_client.post(
         f"/people/{person.id}/edit",
         data={
+            "point_no": person.point_no,
             "personal_no": "101",
             "name": "김소방",
             "grade": "",
@@ -255,6 +269,7 @@ def test_parse_row_fields_over_100_rows(auth_client):
 
     form_data = []
     for i in range(101):
+        form_data.append((f"point_no_{i}", f"{i + 1:08d}"))
         form_data.append((f"personal_no_{i}", f"10{i:03d}"))
         form_data.append((f"name_{i}", f"인원{i}"))
         form_data.append((f"team_{i}", "1팀"))
@@ -278,7 +293,10 @@ def test_review_shows_previous_balance_hint(auth_client, db):
     )
     resp = auth_client.post(
         "/monthly/upload",
-        data={"month": "2026-07", "pasted": "1팀\t김소방\t소방경\t50000\t101\t"},
+        data={
+            "month": "2026-07",
+            "pasted": "1팀\t김소방\t소방경\t50000\t101\t00000101",
+        },
     )
     assert resp.status_code == 200
     assert "직전 잔액: 50,000원" in resp.text
@@ -287,7 +305,10 @@ def test_review_shows_previous_balance_hint(auth_client, db):
 def test_review_new_person_no_hint(auth_client):
     resp = auth_client.post(
         "/monthly/upload",
-        data={"month": "2026-07", "pasted": "1팀\t신규인원\t소방경\t50000\t101\t"},
+        data={
+            "month": "2026-07",
+            "pasted": "1팀\t신규인원\t소방경\t50000\t101\t00000101",
+        },
     )
     assert resp.status_code == 200
     assert "직전 잔액" not in resp.text
@@ -313,12 +334,13 @@ def test_upload_provider_error_shows_message(auth_client, monkeypatch):
 def test_confirm_syncs_person_current_balance(auth_client, db):
     data = {
         "month": "2099-05",
+        "point_no_0": "00000001",
         "personal_no_0": "101",
         "name_0": "김소방",
         "team_0": "1팀",
         "grade_0": "",
         "amount_0": "50000",
-        "carry_101|김소방": "12000",
+        "carry_0": "12000",
     }
     auth_client.post("/monthly/confirm", data=data)
     person = db.scalar(select(Person).where(Person.personal_no == "101"))
@@ -335,14 +357,86 @@ def test_confirm_rolls_back_on_error(auth_client, db, monkeypatch):
     monkeypatch.setattr(monthly_router, "create_monthly_snapshot", boom)
     data = {
         "month": "2026-07",
+        "point_no_0": "00000001",
         "personal_no_0": "101",
         "name_0": "김소방",
         "team_0": "1팀",
         "grade_0": "소방경",
         "amount_0": "50000",
-        "carry_101|김소방": "10000",
+        "carry_0": "10000",
     }
     resp = auth_client.post("/monthly/confirm", data=data)
     assert resp.status_code == 400
     assert "테스트용 실패" in resp.text
     assert db.scalar(select(Person).where(Person.personal_no == "101")) is None
+
+
+def test_upload_rejects_row_without_point_number(auth_client):
+    resp = auth_client.post(
+        "/monthly/upload",
+        data={"month": "2026-07", "pasted": "1팀\t김소방\t소방경\t50000\t101"},
+    )
+    assert resp.status_code == 400
+    assert "포인트번호" in resp.text
+
+
+def test_confirm_rejects_normalized_duplicate_point_number(auth_client):
+    data = {
+        "month": "2026-07",
+        "point_no_0": "0000 0001",
+        "personal_no_0": "101",
+        "name_0": "김소방",
+        "team_0": "1팀",
+        "grade_0": "",
+        "amount_0": "50000",
+        "point_no_1": "0000-0001",
+        "personal_no_1": "102",
+        "name_1": "이소방",
+        "team_1": "2팀",
+        "grade_1": "",
+        "amount_1": "50000",
+    }
+    resp = auth_client.post("/monthly/confirm", data=data)
+    assert resp.status_code == 400
+    assert "중복" in resp.text
+
+
+def test_confirm_uses_row_carry_after_point_number_edit(auth_client, db):
+    data = {
+        "month": "2026-07",
+        "point_no_0": "00000002",
+        "personal_no_0": "101",
+        "name_0": "김소방",
+        "team_0": "1팀",
+        "grade_0": "소방경",
+        "amount_0": "50000",
+        "carry_0": "12345",
+    }
+
+    resp = auth_client.post("/monthly/confirm", data=data, follow_redirects=False)
+
+    assert resp.status_code == 303
+    person = db.scalar(select(Person).where(Person.point_no == "00000002"))
+    assert person is not None
+    snapshot = db.scalar(select(MonthlySnapshot).where(MonthlySnapshot.month == "2026-07"))
+    assert snapshot is not None
+    record = next(record for record in snapshot.records if record.person_id == person.id)
+    assert record.carry_balance == 12345
+
+
+def test_confirm_rejects_missing_row_carry(auth_client, db):
+    data = {
+        "month": "2026-07",
+        "point_no_0": "00000001",
+        "personal_no_0": "101",
+        "name_0": "김소방",
+        "team_0": "1팀",
+        "grade_0": "소방경",
+        "amount_0": "50000",
+    }
+
+    resp = auth_client.post("/monthly/confirm", data=data)
+
+    assert resp.status_code == 400
+    assert "이월 잔액" in resp.text
+    assert db.scalar(select(MonthlySnapshot).where(MonthlySnapshot.month == "2026-07")) is None

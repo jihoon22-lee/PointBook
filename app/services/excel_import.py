@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.models import BalanceRecord, MonthlySnapshot, Person
 from app.services.balance import compute_total, create_monthly_snapshot
+from app.services.identifiers import normalize_point_no
 from app.services.sync import RequestRow
 from app.services.teams import get_or_create_team
 
@@ -23,6 +24,7 @@ HEADER_SYNONYMS: dict[str, list[str]] = {
     "grade": ["계급", "직급"],
     "amount": ["금액", "충전", "충전금액", "포인트"],
     "personal_no": ["개인번호", "번호"],
+    "point_no": ["포인트번호", "포인트 번호"],
     "note": ["비고", "메모", "특이사항"],
     "balance": ["잔액", "이월", "이월잔액", "전월잔액"],
 }
@@ -35,11 +37,13 @@ class ImportRow:
     grade: str
     amount: int
     personal_no: str
+    point_no: str
     note: str
     balance: int = 0
 
     def to_request_row(self) -> RequestRow:
         return RequestRow(
+            point_no=self.point_no,
             personal_no=self.personal_no,
             name=self.name,
             team=self.team,
@@ -76,14 +80,18 @@ def _build_row(columns: dict[str, int], values: list[str]) -> ImportRow | None:
 
     name = value("name")
     personal_no = value("personal_no")
+    point_no = value("point_no")
     if not name or not personal_no:
         return None
+    if not point_no:
+        raise ValueError("포인트번호가 없는 요청서 행이 있습니다.")
     return ImportRow(
         team=value("team"),
         name=name,
         grade=value("grade"),
         amount=_cell_int(value("amount")),
         personal_no=personal_no,
+        point_no=normalize_point_no(point_no),
         note=value("note"),
         balance=_cell_int(value("balance")),
     )
@@ -96,6 +104,7 @@ def read_rows(path: Path) -> list[ImportRow]:
         return []
     rows: list[ImportRow] = []
     columns: dict[str, int] = {}
+    found_person_header = False
 
     for row in sheet.iter_rows():
         values = [str(c.value or "").strip() for c in row]
@@ -107,12 +116,17 @@ def read_rows(path: Path) -> list[ImportRow]:
                 if idx is not None:
                     columns[key] = idx
             if "name" in columns and "personal_no" in columns:
+                found_person_header = True
+                if "point_no" not in columns:
+                    raise ValueError("요청서에 포인트번호 열이 없습니다.")
                 continue
             columns = {}
         else:
             row = _build_row(columns, values)
             if row is not None:
                 rows.append(row)
+    if not found_person_header:
+        return []
     return rows
 
 
@@ -130,15 +144,14 @@ def import_excel(db: Session, path: Path, month: str) -> ImportResult:
     created = 0
     existing = 0
     for row in imported:
-        person = db.scalar(
-            select(Person).where(Person.personal_no == row.personal_no, Person.name == row.name)
-        )
+        person = db.scalar(select(Person).where(Person.point_no == row.point_no))
         if person is not None:
             existing += 1
             continue
         team = get_or_create_team(db, row.team) if row.team else None
         db.add(
             Person(
+                point_no=row.point_no,
                 personal_no=row.personal_no,
                 name=row.name,
                 grade=row.grade,
@@ -151,17 +164,13 @@ def import_excel(db: Session, path: Path, month: str) -> ImportResult:
         created += 1
 
     persons = (
-        db.scalars(
-            select(Person).where(Person.personal_no.in_([r.personal_no for r in imported]))
-        ).all()
+        db.scalars(select(Person).where(Person.point_no.in_([r.point_no for r in imported]))).all()
         if imported
         else []
     )
     records: list[BalanceRecord] = []
     for row in imported:
-        person = next(
-            (p for p in persons if p.personal_no == row.personal_no and p.name == row.name), None
-        )
+        person = next((p for p in persons if p.point_no == row.point_no), None)
         if person is None:
             continue
         records.append(

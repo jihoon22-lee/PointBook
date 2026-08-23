@@ -5,8 +5,12 @@ from app.models import BalanceRecord, MonthlySnapshot, Person
 
 
 def compute_usage(prev_total: int, carry_balance: int) -> int:
-    """매달 사용한 합계 = 지난 달 기록의 총 잔액 − 이번 달 입력한 이월 잔액. 0 미만은 0."""
-    return max(0, prev_total - carry_balance)
+    """순사용 = 지난 달 기록의 총 잔액 − 이번 달 입력한 이월 잔액.
+
+    개인 결제 뒤 포인트 적립이나 계정 간 이전으로 잔액이 늘어난 경우에는
+    음수가 정상적인 값이므로 그대로 보존한다.
+    """
+    return prev_total - carry_balance
 
 
 def compute_total(amount: int, carry_balance: int) -> int:
@@ -14,18 +18,23 @@ def compute_total(amount: int, carry_balance: int) -> int:
     return amount + carry_balance
 
 
-def previous_total(db: Session, person_id: int, month: str) -> int:
-    """해당 인원의 month 이전 가장 최근 월별 기록의 총 잔액. 없으면 0.
+def previous_total_or_none(db: Session, person_id: int, month: str) -> int | None:
+    """해당 인원의 month 이전 가장 최근 월별 기록의 총 잔액. 없으면 None.
 
     단일 조인 쿼리로 조회해 월간 확정 시 인원×월 이중 순회(N+1)를 피한다.
     """
-    total = db.scalar(
+    return db.scalar(
         select(BalanceRecord.total)
         .join(MonthlySnapshot, MonthlySnapshot.id == BalanceRecord.snapshot_id)
         .where(MonthlySnapshot.month < month, BalanceRecord.person_id == person_id)
         .order_by(MonthlySnapshot.month.desc())
         .limit(1)
     )
+
+
+def previous_total(db: Session, person_id: int, month: str) -> int:
+    """해당 인원의 month 이전 가장 최근 월별 기록의 총 잔액. 없으면 0."""
+    total = previous_total_or_none(db, person_id, month)
     return total if total is not None else 0
 
 
@@ -40,22 +49,22 @@ def build_balance_records(
     for person_id in sorted(set(carry_map) | set(amount_map)):
         carry = carry_map.get(person_id, 0)
         amount = amount_map.get(person_id, 0)
-        prev = previous_total(db, person_id, month)
+        prev = previous_total_or_none(db, person_id, month)
         records.append(
             BalanceRecord(
                 person_id=person_id,
                 carry_balance=carry,
                 amount=amount,
-                usage=compute_usage(prev, carry),
+                usage=compute_usage(prev, carry) if prev is not None else 0,
                 total=compute_total(amount, carry),
             )
         )
     return records
 
 
-def recompute_record(record: BalanceRecord, prev_total: int) -> None:
+def recompute_record(record: BalanceRecord, prev_total: int | None) -> None:
     """개별 수정 후 잔액 기록 재계산 (사용 합계·총 잔액)."""
-    record.usage = compute_usage(prev_total, record.carry_balance)
+    record.usage = compute_usage(prev_total, record.carry_balance) if prev_total is not None else 0
     record.total = compute_total(record.amount, record.carry_balance)
 
 

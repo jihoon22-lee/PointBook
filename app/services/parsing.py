@@ -1,10 +1,9 @@
 """붙여넣기/엑셀 텍스트에서 요청서 행을 파싱한다.
 
 기본 형식(탭/콤마 구분):
-- 7컬럼: 순번, 팀, 이름, 계급, 금액, 개인번호, 비고
-- 6컬럼: 첫 컬럼이 숫자면 순번 없는 요청서(순번,팀,이름,계급,금액,개인번호),
-  아니면 (팀,이름,계급,금액,개인번호,비고)
-- 5컬럼: (팀,이름,계급,금액,개인번호)
+- 8컬럼: 순번, 팀, 이름, 계급, 금액, 개인번호, 포인트번호, 비고
+- 7컬럼: 순번 포함·비고 없음 또는 순번 없음·비고 있음
+- 6컬럼: 팀, 이름, 계급, 금액, 개인번호, 포인트번호
 
 구분자 우선순위는 탭 → 콤마. 금액에 콤마(50,000)가 들어간 요청서는
 콤마 구분자와 충돌할 수 있으므로 **탭 구분(엑셀 복사)을 권장**한다.
@@ -23,8 +22,12 @@ def _to_int(value: str) -> int:
 
 def _split_columns(line: str) -> list[str]:
     if "\t" in line:
-        return [c.strip() for c in line.split("\t") if c.strip()]
-    return [c.strip() for c in line.split(",") if c.strip()]
+        columns = [c.strip() for c in line.split("\t")]
+    else:
+        columns = [c.strip() for c in line.split(",")]
+    while columns and not columns[-1]:
+        columns.pop()
+    return columns
 
 
 def parse_pasted(text: str) -> list[RequestRow]:
@@ -36,21 +39,26 @@ def parse_pasted(text: str) -> list[RequestRow]:
         cols = _split_columns(line)
         if not cols:
             continue
-        team = name = grade = amount = personal_no = note = ""
-        if len(cols) == 7 and cols[0].isdigit():
-            _, team, name, grade, amount, personal_no, note = cols
-        elif len(cols) == 6 and cols[0].isdigit():
-            _, team, name, grade, amount, personal_no = cols
+        team = name = grade = amount = personal_no = point_no = note = ""
+        if len(cols) == 8 and cols[0].isdigit():
+            _, team, name, grade, amount, personal_no, point_no, note = cols
+        elif len(cols) == 7 and cols[0].isdigit():
+            _, team, name, grade, amount, personal_no, point_no = cols
+        elif len(cols) == 7:
+            team, name, grade, amount, personal_no, point_no, note = cols
         elif len(cols) == 6:
-            team, name, grade, amount, personal_no, note = cols
-        elif len(cols) == 5:
-            team, name, grade, amount, personal_no = cols
+            team, name, grade, amount, personal_no, point_no = cols
+        elif len(cols) in (5, 7, 8):
+            raise ValueError("포인트번호가 없는 요청서 행이 있습니다.")
         else:
             continue
         if not personal_no or not name:
             continue
+        if not point_no:
+            raise ValueError("포인트번호가 없는 요청서 행이 있습니다.")
         rows.append(
             RequestRow(
+                point_no=point_no,
                 personal_no=personal_no,
                 name=name,
                 team=team,

@@ -37,7 +37,7 @@ PointBook/
 │   ├── _version.py         # 버전 단일 소스 (__version__)
 │   ├── auth.py             # 세션 인증 — require_login 가드
 │   ├── logging.py          # 공통 로거 (시작·보안·확정·백업 이벤트, 민감정보 미기록)
-│   ├── template_utils.py   # Jinja2 템플릿 객체 + number_format 필터
+│   ├── template_utils.py   # Jinja2 템플릿 객체 + 금액/포인트번호 표시 필터
 │   ├── routers/            # 라우터 (URL → 렌더링/리다이렉트)
 │   │   ├── auth.py         #   로그인/로그아웃 (+ 레이트리밋)
 │   │   ├── home.py         #   홈 (카드 메뉴)
@@ -53,6 +53,8 @@ PointBook/
 │   │   ├── teams.py        #   팀 자동 생성 (get_or_create_team)
 │   │   ├── parsing.py      #   붙여넣기 텍스트 파싱
 │   │   ├── excel_import.py #   엑셀 이관 (openpyxl)
+│   │   ├── ledger_import.py#   누적 장부 파싱·검증·트랜잭션 이관
+│   │   ├── identifiers.py  #   8자리 포인트번호 정규화·표시
 │   │   ├── dates.py        #   KST 시간대 current_month
 │   │   ├── backup.py       #   DB 자동 백업 + 보관 개수 제한
 │   │   └── rate_limit.py   #   로그인 브루트포스 방지 (인메모리)
@@ -68,6 +70,7 @@ PointBook/
 ├── scripts/
 │   ├── init_db.py          # 관리자 계정 생성
 │   ├── import_excel.py     # 기존 엑셀 → DB 이관 (빈 DB 전용)
+│   ├── import_ledger.py    # 누적 장부 dry-run/apply CLI
 │   ├── backup.py           # DB 수동 백업
 │   ├── run.sh              # WSL 상시 구동 (백그라운드, PID/로그)
 │   └── stop.sh             # 서버 중지
@@ -99,10 +102,12 @@ erDiagram
     }
     PERSON {
         int id PK
-        string personal_no
+        string point_no UK "8자리 업무 식별자"
+        string personal_no "공용 계정은 NULL"
         string name
         string grade
         string status "active|inactive"
+        string account_type "person|shared"
         int team_id FK
     }
     MONTHLY_SNAPSHOT {
@@ -115,7 +120,7 @@ erDiagram
         int person_id FK
         int carry_balance "이월 잔액 (입력)"
         int amount "당월 충전 금액"
-        int usage "매달 사용 합계 (계산)"
+        int usage "부호 있는 순사용 (계산)"
         int total "총 잔액 (계산)"
     }
 ```
@@ -123,7 +128,7 @@ erDiagram
 | 테이블 | 설명 |
 |---|---|
 | `teams` | 팀 마스터. 요청서에서 새 팀이 나오면 자동 생성, 이름·색상 관리 |
-| `people` | 인원. **고유값 = (personal_no, name)**. 삭제 없음 — 비재직은 `status=inactive` |
+| `people` | 일반 인원·공용 계정. **고유값 = `point_no`**. 공용은 `personal_no=NULL`, 항상 active |
 | `monthly_snapshots` | 월간 처리 단위. `month`(YYYY-MM) 중복 불가 |
 | `balance_records` | 인원×월별 잔액 기록. `(snapshot_id, person_id)` 유일 |
 | `admin_users` | 관리자 계정 (werkzeug 해시) |
@@ -136,7 +141,7 @@ erDiagram
 
 ```mermaid
 flowchart TD
-    A["요청서 행 리스트<br/>(AI 추출·검수 후)"] --> B{"DB에 동일 키<br/>(개인번호+이름) 존재?"}
+    A["요청서 행 리스트<br/>(AI 추출·검수 후)"] --> B{"동일 포인트번호<br/>계정 존재?"}
     B -- "없음" --> C["신규 (new)<br/>재직자 추가"]
     B -- "있음 · 비재직" --> D["복귀 (returned)<br/>재직 전환"]
     B -- "있음 · 재직" --> E["유지 (kept)"]
@@ -151,7 +156,8 @@ flowchart TD
 
 - `analyze(db, rows) → SyncAnalysis`: **DB를 변경하지 않고** 변경 계획만 계산 (검수 화면의 예상 표시용, dry-run)
 - `apply_analysis(db, analysis)`: 계획을 실제 반영 (신규 추가·비재직 전환·복귀·팀 변경 — 새 팀은 마스터에 자동 생성)
-- 중복 행(동일 키)은 1건으로 처리, `request_count`는 요청서 인원 수
+- 정규화한 포인트번호 중복은 오류로 거부하며, 같은 포인트번호의 이름·개인번호 변경은 기존 계정에 반영한다.
+- 공용 계정은 요청서 누락으로 비재직 전환하지 않는다.
 
 ### 4-2. 잔액 계산 (`app/services/balance.py`)
 
@@ -159,7 +165,7 @@ flowchart TD
 
 | 항목 | 공식 |
 |---|---|
-| 매달 사용한 합계 | `지난 달 기록의 총 잔액 − 이번 달 입력한 이월 잔액` (0 미만은 0) |
+| 순사용 | `가장 최근 이전 기록의 총 잔액 − 이번 달 입력한 이월 잔액` |
 | 총 잔액 | `이번 달 들어온 금액 + 이번 달 입력한 이월 잔액` |
 
 ```mermaid
@@ -175,6 +181,7 @@ flowchart LR
 - `previous_total()`: 해당 인원의 직전 월 기록의 총 잔액 (비재직자 잔액 보존 확인에도 사용)
 - `create_monthly_snapshot()`: 월 스냅샷 + 인원별 기록을 **단일 트랜잭션**으로 저장, 중복 월 거부
 - `recompute_record()`: 개별 수정 후 사용 합계·총 잔액 재계산
+- 순사용이 양수면 포인트 순감소, 음수면 적립·이전 등에 따른 순증가이며 음수를 그대로 보존한다.
 
 ## 5. 주요 흐름
 
@@ -189,7 +196,7 @@ sequenceDiagram
     participant DB as SQLite
     U->>M: 요청서 사진 업로드 또는 표 붙여넣기
     M->>AI: extract_table(이미지)
-    AI-->>M: RequestRow[] (개인번호·이름·팀·계급·금액·비고)
+    AI-->>M: RequestRow[] (포인트번호·개인번호·이름·팀·계급·금액·비고)
     M->>S: analyze(rows) — dry-run
     S-->>M: SyncAnalysis (신규/복귀/유지·팀변경/비재직 예상)
     M-->>U: 검수 화면 — 행 수정 + 변경 예상 + 이월 잔액 입력(직전 잔액 안내)
@@ -291,3 +298,14 @@ flowchart LR
 - **백업**: SQLite 단일 파일 특성상 파일 복사가 곧 백업. 월간 확정 커밋 전에
   `data/backups/pointbook-<타임스탬프>.db`를 생성하고 `BACKUP_KEEP`(기본 30)개만 유지한다.
   수동 백업은 `scripts/backup.py`로 가능하며, 복구는 서버 중지 후 파일 복사로 끝난다.
+- **배포 백업**: `scripts/deploy.sh`는 실행 중인 서버의 종료를 확인한 뒤 DB를 복사하고,
+  종료 실패 시 배포를 중단한다. 그 뒤 새 `main` 코드로 기동하며 스키마 마이그레이션을 적용한다.
+
+### 누적 장부 이관
+
+`ledger_import.py`는 2024-05~2026-08의 고정 열 매핑과 상세행만 읽고 원본 집계행은
+사용하지 않는다. dry-run과 apply가 같은 파서·불변식 검증을 사용하며 출력에는 건수,
+월, 금액, 오류 셀 좌표만 남긴다. apply는 백업 성공 후 계정·28개 스냅샷·잔액 기록을
+한 트랜잭션으로 저장하고 사후 합계를 다시 검사한 뒤에만 commit한다.
+`--replace-empty-history-people`는 스냅샷·잔액 기록이 없고 전체 기존 계정이 미매칭
+테스트 계정 정확히 2개일 때만 삭제 계획을 생성한다.
