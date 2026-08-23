@@ -154,6 +154,29 @@ def create_team(
     return RedirectResponse("/teams", status_code=303)
 
 
+@router.post("/{team_id}/color")
+def update_team_color(
+    team_id: int,
+    request: Request,
+    color: str = Form(...),
+    db: Session = Depends(get_db),
+) -> Response:
+    team = db.get(Team, team_id)
+    if team is None:
+        return RedirectResponse("/teams", status_code=303)
+    color = color.strip().lower()
+    if COLOR_PATTERN.fullmatch(color) is None:
+        return render(
+            request,
+            "teams.html",
+            _team_page_context(db, "올바른 색상을 선택해 주세요."),
+            400,
+        )
+    team.color = color
+    db.commit()
+    return RedirectResponse("/teams", status_code=303)
+
+
 @router.post("/{team_id}/delete")
 def delete_team(team_id: int, db: Session = Depends(get_db)) -> Response:
     team = db.get(Team, team_id)

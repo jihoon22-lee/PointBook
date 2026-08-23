@@ -14,7 +14,13 @@
         {% set team = summary.team %}
         <tr>
           <td><a href="/teams/{{ team.id }}">{{ team.name }}</a></td>
-          <td><span class="swatch" style="background: {{ team.color }}" title="{{ team.color }}"></span> <code class="muted">{{ team.color }}</code></td>
+          <td>
+            <form class="team-color-form" method="post" action="/teams/{{ team.id }}/color">
+              <input class="color-picker color-picker-compact" type="color" name="color" value="{{ team.color }}" required aria-label="{{ team.name }} 색상">
+              <code class="muted">{{ team.color }}</code>
+              <button type="submit" class="btn btn-sm" aria-label="{{ team.name }} 색상 저장">색상 저장</button>
+            </form>
+          </td>
           <td>
             <span>전체 {{ summary.total_count }}명</span>
             <span class="badge badge-active">재직 {{ summary.active_count }}명</span>
