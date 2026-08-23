@@ -9,9 +9,10 @@
 flowchart LR
     U1["사용자 (관리자)<br/>Windows 7 · Chrome 109"]
     U2["사용자 (관리자)<br/>Android 갤럭시"]
-    U1 -->|"HTTP (내부망)"| S
-    U2 -->|"HTTP (내부망)"| S
-    S["FastAPI + Uvicorn<br/>(WSL 상시 구동)"]
+    U1 -->|"HTTP (내부망)"| D
+    U2 -->|"HTTP (내부망)"| D
+    D["Docker Compose<br/>127.0.0.1:8002"] --> S
+    S["FastAPI + Uvicorn<br/>app 컨테이너"]
     S --> T["Jinja2 서버 렌더링<br/>+ 바닐라 JS + CSS"]
     S --> DB[("SQLite<br/>data/pointbook.db")]
     S --> AI["VisionProvider<br/>(Gemini · Mock)"]
@@ -20,8 +21,8 @@ flowchart LR
 ```
 
 - **클라이언트**: 빌드 단계 없는 서버 렌더링 HTML + 바닐라 JS — Win7 Chrome 109·갤럭시 호환
-- **서버**: FastAPI + Uvicorn, WSL 환경에서 백그라운드 구동 (`scripts/run.sh`)
-- **저장소**: SQLite 단일 파일 — 백업·이관이 파일 복사로 끝남
+- **서버**: FastAPI + Uvicorn 단일 앱 컨테이너, Docker Compose 자동 재시작 (`scripts/run.sh`)
+- **저장소**: 호스트 `data/`를 `/app/data`로 bind mount한 SQLite 단일 파일
 - **AI**: `VisionProvider` 인터페이스로 추상화 — Gemini 구현체 제공, 프로바이더 교체는 `AI_PROVIDER` 설정만 변경
 - **캐시**: 모든 HTML 응답에 `Cache-Control: no-store` 미들웨어 적용 (스테일 페이지 방지, 정적 파일은 캐시 유지)
 
@@ -29,6 +30,8 @@ flowchart LR
 
 ```
 PointBook/
+├── Dockerfile              # 운영 앱 이미지 (uv lockfile, 비루트 사용자)
+├── docker-compose.yml      # 운영 서버(포트·데이터·health·restart)
 ├── app/
 │   ├── main.py             # FastAPI 앱 생성, 라우터 등록, lifespan(DB 초기화·보안 경고)
 │   ├── config.py           # 환경설정 (pydantic-settings, .env) + 보안 경고 검사
@@ -72,10 +75,11 @@ PointBook/
 │   ├── import_excel.py     # 기존 엑셀 → DB 이관 (빈 DB 전용)
 │   ├── import_ledger.py    # 누적 장부 dry-run/apply CLI
 │   ├── backup.py           # DB 수동 백업
-│   ├── run.sh              # WSL 상시 구동 (백그라운드, PID/로그)
-│   └── stop.sh             # 서버 중지
+│   ├── run.sh              # 운영 Compose 빌드·기동·healthy 대기
+│   ├── stop.sh             # Compose/소유권 확인 legacy 서버 중지
+│   └── deploy.sh           # 이미지 빌드·중지·DB 백업·기동·상태 확인
 ├── tests/                  # pytest 단위 테스트 (커버리지 85%+)
-├── e2e/                    # 구버전 Chromium(≈Chrome 110) Playwright E2E (Docker)
+├── e2e/                    # 구버전 Chromium E2E + 운영 Compose 영속성 스모크
 ├── docs/                   # 아키텍처·사용 가이드
 └── .github/workflows/ci.yml# CI (lint/typecheck/test/migrations/security/secret-scan/e2e)
 ```
@@ -297,9 +301,11 @@ flowchart LR
   `migrations/env.py`가 `app` 설정의 DB URL을 주입하므로 테스트·개발·운영이 같은 대상을 쓴다.
 - **백업**: SQLite 단일 파일 특성상 파일 복사가 곧 백업. 월간 확정 커밋 전에
   `data/backups/pointbook-<타임스탬프>.db`를 생성하고 `BACKUP_KEEP`(기본 30)개만 유지한다.
-  수동 백업은 `scripts/backup.py`로 가능하며, 복구는 서버 중지 후 파일 복사로 끝난다.
-- **배포 백업**: `scripts/deploy.sh`는 실행 중인 서버의 종료를 확인한 뒤 DB를 복사하고,
-  종료 실패 시 배포를 중단한다. 그 뒤 새 `main` 코드로 기동하며 스키마 마이그레이션을 적용한다.
+  호스트 `data/`가 bind mount되므로 컨테이너 교체 뒤에도 DB와 백업이 유지된다. 수동 백업은
+  `scripts/backup.py`로 가능하며, 복구는 Compose 서버 중지 후 파일 복사로 끝난다.
+- **배포 백업**: `scripts/deploy.sh`는 새 이미지를 먼저 빌드하고 PointBook 컨테이너 또는
+  소유권이 확인된 legacy Uvicorn의 종료를 확인한 뒤 DB를 복사한다. 종료 실패 시 배포를
+  중단하며, 새 컨테이너의 healthcheck와 호스트 `/login` 응답이 모두 성공해야 완료된다.
 
 ### 누적 장부 이관
 

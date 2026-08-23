@@ -26,13 +26,16 @@ SECRET_KEY=긴-임의-문자열      # 세션 서명 키
 ### 1-2. DB 초기화·서버 실행
 
 ```bash
-uv run python -m scripts.init_db   # 관리자 계정 생성 (최초 1회)
-scripts/run.sh                     # 서버 상시 구동 (백그라운드)
+scripts/run.sh                     # 이미지 빌드 + Docker Compose 상시 실행
+docker compose ps                  # 상태·health 확인
+docker compose logs -f app         # 서버 로그 확인
 ```
 
-- 접속: Windows(호스트) 브라우저에서 `http://localhost:8000`
+- 최초 실행 시 컨테이너가 DB 마이그레이션과 관리자 계정 생성을 자동 수행한다.
+- 기존 `data/pointbook.db`는 `/app/data/pointbook.db`에 연결돼 그대로 사용된다.
+- 접속: Windows(호스트) 브라우저에서 `http://localhost:8002`
 - 중지: `scripts/stop.sh`
-- 다른 포트: `PORT=8001 scripts/run.sh`
+- 다른 포트: `POINTBOOK_PORT=8001 scripts/run.sh`
 - **스키마 마이그레이션은 자동**: 서버 기동 시 Alembic이 최신 스키마로 자동 적용한다
   (기존 1.0.x DB는 최초 1회 자동 기준점 설정). 수동으로는 `uv run alembic upgrade head`
 
@@ -171,46 +174,26 @@ AI가 뽑은 목록을 눈으로 확인한다:
 
 | 대상 | 방법 |
 |---|---|
-| Windows(호스트) 브라우저 | `http://localhost:8000` — 별도 설정 불필요 |
-| 갤럭시 실기기 | 아래 설정 중 하나 |
-| Windows 7 PC (다른 PC) | 아래 설정 중 하나 + `http://<윈도우PC IP>:8000` |
+| Windows(호스트) 브라우저 | `http://localhost:8002` — 별도 설정 불필요 |
+| 갤럭시 실기기 | Tailscale serve URL 사용 |
+| Windows 7 PC (다른 PC) | Tailscale serve URL 사용 |
 
-**방법 A — `.wslconfig`** (C:\Users\<사용자>\.wslconfig):
+운영 Compose는 `127.0.0.1:8002`에만 바인딩하므로 다른 기기는 아래 Tailscale serve
+방식을 사용한다. LAN 직접 노출이 필요한 개발 시나리오는 운영 컨테이너와 분리한다.
 
-```ini
-[wsl2]
-networkingMode=mirrored
-```
+### 4-1. Tailscale serve 사용
 
-**방법 B — 포트 프록시** (관리자 PowerShell, WSL IP는 `hostname -I`):
-
-```powershell
-netsh interface portproxy add v4tov4 listenport=8000 listenaddress=0.0.0.0 connectport=8000 connectaddress=<WSL IP>
-netsh advfirewall firewall add rule name="PointBook" dir=in action=allow protocol=TCP localport=8000
-```
-
-> 안드로이드 에뮬레이터는 `http://10.0.2.2:8000`.
-
-### 4-1. Tailscale serve 사용 시 주의 (포트 점유)
-
-Tailscale serve(`https://main.tail30f401.ts.net:8002` 등)를 설정하면 **serve 리스너가
-백엔드 서버가 죽어도 해당 포트를 계속 점유**한다. stop.sh로 PointBook을 내려도
-`scripts/run.sh` 재실행 시 "포트 사용 중" 오류가 날 수 있다.
-
-해결 절차:
+운영 Compose는 PointBook을 `127.0.0.1:8002`에만 바인딩하므로 Tailscale serve가 이
+주소를 안전하게 프록시할 수 있다. PointBook 컨테이너를 중지해도 serve 설정은 유지된다.
 
 ```bash
-tailscale serve status                  # 원인 확인 (8002 프록시 설정 확인)
-tailscale serve --https=8002 off        # 8002 서빙만 해제 (다른 서빙은 유지)
-scripts/run.sh                          # PointBook 기동
+scripts/run.sh
+tailscale serve --bg https+8002 http://127.0.0.1:8002
+tailscale serve status
 ```
 
-- serve 리스너는 `0.0.0.0:8002` 바인딩과 충돌하므로, **serve를 다시 켤 때는 PointBook을
-  127.0.0.1로만 바인딩**해야 한다:
-  ```bash
-  HOST=127.0.0.1 scripts/run.sh
-  tailscale serve --bg https+8002 http://127.0.0.1:8002
-  ```
+- 서버 상태는 `docker compose ps`, 로그는 `docker compose logs -f app`으로 확인한다.
+- serve만 해제하려면 `tailscale serve --https=8002 off`를 사용한다.
 
 ### 4-2. 외부망(매장 PC 등) 접속 — Tailscale Funnel
 

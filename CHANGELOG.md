@@ -4,6 +4,29 @@
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-08-23
+
+PointBook 서버를 Codex 실행 세션과 분리하고 기존 SQLite 데이터를 그대로 보존하는 Docker Compose 운영 전환.
+
+### 추가
+
+- 단일 앱 컨테이너 운영용 `Dockerfile`과 `docker-compose.yml`
+- 컨테이너 자동 재시작, localhost 전용 포트, healthcheck, 정상 종료 유예 설정
+- 실제 DB·포트와 격리된 Compose 스모크 및 SQLite 재시작 영속성 검사
+
+### 변경
+
+- `scripts/run.sh`, `scripts/stop.sh`, `scripts/deploy.sh`를 Docker Compose 운영 흐름으로 전환
+- CI 구버전 Chromium E2E 이후 운영 Compose 스모크 실행
+- 서버 로그와 상태 확인을 Docker Compose 명령으로 통일
+
+### 안전성
+
+- `data/pointbook.db`와 백업은 호스트 bind mount에 유지하며 이미지에 포함하지 않음
+- 배포 이미지를 서버 중지 전에 빌드하고, PointBook만 중지한 뒤 SQLite 사전 백업 생성
+- 기존 PID 방식 서버는 명령줄과 작업 디렉터리가 현재 저장소와 일치할 때만 종료
+- PostgreSQL 전환이나 데이터 변환 없이 기존 SQLite 스키마와 이력을 그대로 보존
+
 ## [1.2.3] - 2026-08-23
 
 기존 팀의 소속 인원을 유지한 채 구분 색을 바로 바꿀 수 있도록 팀 관리 화면을 개선한 핫픽스.

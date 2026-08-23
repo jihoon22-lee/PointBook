@@ -26,6 +26,7 @@
 ## 기술 스택
 
 Python FastAPI + SQLite(SQLAlchemy 2.x) + Alembic(마이그레이션) + Jinja2/바닐라 JS + 세션 인증.
+운영 서버는 Docker Compose 단일 앱 컨테이너로 실행하고 기존 `data/`를 bind mount한다.
 AI는 VisionProvider 인터페이스로 추상화 — Gemini(사진 테이블 인식)와 개발용 Mock 구현체를 제공한다.
 
 ## 개발 환경 (WSL)
@@ -40,34 +41,33 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8000   # 서버 실행 (개발
 ## 실행 · 배포 (WSL 상시 구동)
 
 ```bash
-cp .env.example .env            # ADMIN_USERNAME / ADMIN_PASSWORD / SECRET_KEY 설정
-uv run python -m scripts.init_db  # 최초 1회 (관리자 계정 생성)
-scripts/run.sh                  # 백그라운드 실행 (PID·로그는 data/)
-scripts/stop.sh                 # 중지
-scripts/deploy.sh               # main 최신화·의존성·DB 백업·재시작
+cp .env.example .env           # ADMIN_USERNAME / ADMIN_PASSWORD / SECRET_KEY 설정
+scripts/run.sh                 # 이미지 빌드 + Docker Compose 상시 실행
+docker compose ps              # 상태·health 확인
+docker compose logs -f app     # 서버 로그
+scripts/stop.sh                # PointBook 컨테이너 중지
+scripts/deploy.sh              # main 최신화·이미지 빌드·DB 백업·재시작
 ```
 
-- 접속: **Windows(호스트) 브라우저**는 `http://localhost:8000` 으로 바로 접속 가능 (WSL2 localhost 포워딩 내장)
+- 기존 `data/pointbook.db`와 `data/backups/`는 컨테이너 `/app/data`에 연결되므로
+  이미지나 컨테이너를 교체해도 그대로 유지된다.
+- 접속: **Windows(호스트) 브라우저**는 `http://localhost:8002`로 접속한다.
+- 운영 포트 변경: `POINTBOOK_PORT=8001 scripts/run.sh`
 - 기본 접속은 HTTP(내부망). HTTPS 필요 시 uvicorn에 인증서 옵션을 추가해 TLS 1.2로 전환:
   `uv run uvicorn app.main:app --host 0.0.0.0 --port 8443 --ssl-keyfile key.pem --ssl-certfile cert.pem`
 
-### 갤럭시 실기기·Win7 접속 (WSL2 외부 노출)
+### 갤럭시 실기기·Win7 접속
 
-방법 A — `.wslconfig` (C:\Users\<사용자>\.wslconfig)에 mirrored 모드:
+운영 컨테이너는 보안을 위해 `127.0.0.1:8002`에만 바인딩한다. 다른 기기에서는
+Tailscale serve로 이 주소를 프록시한 뒤 tailnet URL로 접속한다.
 
-```ini
-[wsl2]
-networkingMode=mirrored
+```bash
+tailscale serve --bg https+8002 http://127.0.0.1:8002
+tailscale serve status
 ```
 
-방법 B — 포트 프록시 + 방화벽 (관리자 PowerShell, WSL IP 확인: `hostname -I`):
-
-```powershell
-netsh interface portproxy add v4tov4 listenport=8000 listenaddress=0.0.0.0 connectport=8000 connectaddress=<WSL IP>
-netsh advfirewall firewall add rule name="PointBook" dir=in action=allow protocol=TCP localport=8000
-```
-
-이후 갤럭시는 `http://<윈도우PC IP>:8000` 으로 접속 (안드로이드 에뮬레이터는 `10.0.2.2:8000`).
+Android 에뮬레이터나 개발용 LAN 직접 노출이 필요할 때는 운영 Compose 대신 개발 서버를
+별도 포트·바인딩으로 실행한다.
 
 ## 테스트
 
@@ -83,6 +83,7 @@ E2E(구버전 Chromium ~Chrome 110, Docker):
 
 ```bash
 docker compose -f e2e/compose.yml up --build --abort-on-container-exit --exit-code-from e2e
+bash e2e/production-smoke.sh       # 운영 Compose health·SQLite 영속성
 ```
 
 ## 엑셀 이관
@@ -119,7 +120,8 @@ uv run python -m scripts.backup   # DB 수동 백업 (data/backups/)
 ```
 
 - 월간 확정 시 `data/backups/`에 DB가 자동 백업된다 (보관 개수 `BACKUP_KEEP`, 기본 30)
-- 복구: 서버 중지 후 원하는 백업 파일을 `data/pointbook.db`로 복사
+- 복구: `scripts/stop.sh`로 컨테이너를 중지한 뒤 원하는 백업 파일을
+  `data/pointbook.db`로 복사하고 `scripts/run.sh` 실행
 
 ## CI
 
