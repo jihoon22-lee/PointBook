@@ -382,3 +382,65 @@ def test_people_pagination(auth_client, db):
     assert "페이지 2 / 2" in resp.text
     assert "인원00" not in resp.text
     assert "인원54" in resp.text
+
+
+def test_people_shows_each_person_current_total_balance(auth_client, db):
+    person = make_person(db, "1001", "홍길동")
+    person.current_carry_balance = 12_345
+    person.current_amount = 6_789
+    db.commit()
+
+    resp = auth_client.get("/people")
+
+    assert resp.status_code == 200
+    assert "총잔액" in resp.text
+    assert "19,134원" in resp.text
+
+
+def test_people_sorting_applies_to_name_and_total_balance(auth_client, db):
+    lower = make_person(db, "1001", "가인원")
+    lower.current_carry_balance = 100
+    lower.current_amount = 0
+    higher = make_person(db, "1002", "하인원")
+    higher.current_carry_balance = 300
+    higher.current_amount = 200
+    db.commit()
+
+    by_name_desc = auth_client.get("/people?sort=name&dir=desc")
+    by_total_asc = auth_client.get("/people?sort=total&dir=asc")
+
+    assert by_name_desc.text.index("하인원") < by_name_desc.text.index("가인원")
+    assert by_total_asc.text.index("가인원") < by_total_asc.text.index("하인원")
+
+
+def test_people_all_information_headers_are_sortable(auth_client, db):
+    make_person(db)
+
+    resp = auth_client.get("/people?status=active&team_id=&q=홍&sort=name&dir=asc")
+
+    assert resp.status_code == 200
+    for sort_key in (
+        "name",
+        "point_no",
+        "personal_no",
+        "account_type",
+        "team",
+        "grade",
+        "status",
+        "total",
+    ):
+        assert f"sort={sort_key}" in resp.text
+    assert "정렬 중: 오름차순" in resp.text
+
+
+def test_people_pagination_preserves_filters_and_sort(auth_client, db):
+    for i in range(51):
+        make_person(db, str(2000 + i), f"정렬인원{i:02d}")
+
+    resp = auth_client.get("/people?status=active&q=정렬&sort=name&dir=desc")
+
+    assert resp.status_code == 200
+    assert "페이지 1 / 2" in resp.text
+    assert "sort=name&dir=desc&page=2" in resp.text
+    assert "status=active" in resp.text
+    assert "q=%EC%A0%95%EB%A0%AC" in resp.text

@@ -40,14 +40,10 @@
     <label>팀 이름
       <input type="text" name="name" required maxlength="50" placeholder="예: 1팀, 구조대">
     </label>
-    <label>색상</label>
-    <div class="swatch-grid" role="radiogroup" aria-label="팀 색상 선택">
-      {% for c in colors %}
-      <label class="swatch-option" title="{{ c }}">
-        <input type="radio" name="color" value="{{ c }}" {% if loop.first %}checked{% endif %}>
-        <span class="swatch swatch-lg" style="background: {{ c }}"></span>
-      </label>
-      {% endfor %}
+    <label for="team-color">색상</label>
+    <div class="color-picker-field">
+      <input class="color-picker" type="color" id="team-color" name="color" value="{{ selected_color }}" required aria-describedby="team-color-help">
+      <span id="team-color-help" class="muted">색상 칸을 눌러 팔레트에서 원하는 팀 색상을 선택하세요.</span>
     </div>
     <button type="submit" class="btn btn-primary">추가</button>
   </form>

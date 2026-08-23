@@ -1,10 +1,23 @@
 {% extends "base.html" %}
 {% block title %}인원 관리 - PointBook{% endblock %}
 {% block content %}
+{% macro sortable_header(key, label) -%}
+  {% set active_sort = sort == key %}
+  {% set next_direction = 'desc' if active_sort and direction == 'asc' else 'asc' %}
+  <th class="sortable-th" aria-sort="{{ direction ~ 'ending' if active_sort else 'none' }}">
+    <a class="sortable-header" href="/people?status={{ status|urlencode }}&team_id={{ team_id if team_id else '' }}&q={{ q|urlencode }}&sort={{ key }}&dir={{ next_direction }}&page=1">
+      <span>{{ label }}</span>
+      <span class="sort-indicator{% if not active_sort %} sort-indicator-idle{% endif %}" aria-hidden="true">{% if active_sort %}{{ '▲' if direction == 'asc' else '▼' }}{% else %}⇅{% endif %}</span>
+      <span class="sr-only">{% if active_sort %}정렬 중: {{ '오름차순' if direction == 'asc' else '내림차순' }}{% else %}정렬 가능{% endif %}</span>
+    </a>
+  </th>
+{%- endmacro %}
 <h1>인원 관리</h1>
 
 <div class="toolbar">
   <form method="get" action="/people" class="toolbar">
+    <input type="hidden" name="sort" value="{{ sort }}">
+    <input type="hidden" name="dir" value="{{ direction }}">
     <select name="status" onchange="this.form.submit()">
       <option value="" {% if status == '' %}selected{% endif %}>전체 상태</option>
       <option value="active" {% if status == 'active' %}selected{% endif %}>재직</option>
@@ -27,7 +40,15 @@
   <table>
     <thead>
       <tr>
-        <th>이름</th><th>포인트번호</th><th>개인번호</th><th>구분</th><th>팀</th><th>계급</th><th>상태</th><th></th>
+        {{ sortable_header('name', '이름') }}
+        {{ sortable_header('point_no', '포인트번호') }}
+        {{ sortable_header('personal_no', '개인번호') }}
+        {{ sortable_header('account_type', '구분') }}
+        {{ sortable_header('team', '팀') }}
+        {{ sortable_header('grade', '계급') }}
+        {{ sortable_header('status', '상태') }}
+        {{ sortable_header('total', '총잔액') }}
+        <th></th>
       </tr>
     </thead>
     <tbody>
@@ -40,10 +61,11 @@
         <td>{% if p.team %}<span class="badge" style="background: {{ p.team.color }}">{{ p.team.name }}</span>{% else %}<span class="muted">-</span>{% endif %}</td>
         <td>{{ p.grade or '-' }}</td>
         <td>{% if p.status == 'active' %}<span class="badge badge-active">재직</span>{% else %}<span class="badge badge-inactive">비재직</span>{% endif %}</td>
+        <td><strong>{{ (p.current_carry_balance + p.current_amount)|number_format }}원</strong></td>
         <td><a class="btn btn-sm" href="/people/{{ p.id }}/edit">수정</a></td>
       </tr>
     {% else %}
-      <tr><td colspan="8" class="muted">조건에 맞는 인원이 없습니다.</td></tr>
+      <tr><td colspan="9" class="muted">조건에 맞는 인원이 없습니다.</td></tr>
     {% endfor %}
     </tbody>
   </table>
@@ -52,11 +74,11 @@
 {% if pages > 1 %}
 <div class="pagination">
   {% if page > 1 %}
-  <a class="btn btn-sm" href="/people?status={{ status|urlencode }}&team_id={{ team_id if team_id else '' }}&q={{ q|urlencode }}&page={{ page - 1 }}">이전</a>
+  <a class="btn btn-sm" href="/people?status={{ status|urlencode }}&team_id={{ team_id if team_id else '' }}&q={{ q|urlencode }}&sort={{ sort }}&dir={{ direction }}&page={{ page - 1 }}">이전</a>
   {% endif %}
   <span class="muted">페이지 {{ page }} / {{ pages }} (총 {{ total }}명)</span>
   {% if page < pages %}
-  <a class="btn btn-sm" href="/people?status={{ status|urlencode }}&team_id={{ team_id if team_id else '' }}&q={{ q|urlencode }}&page={{ page + 1 }}">다음</a>
+  <a class="btn btn-sm" href="/people?status={{ status|urlencode }}&team_id={{ team_id if team_id else '' }}&q={{ q|urlencode }}&sort={{ sort }}&dir={{ direction }}&page={{ page + 1 }}">다음</a>
   {% endif %}
 </div>
 {% endif %}
