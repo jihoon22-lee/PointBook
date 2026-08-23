@@ -31,17 +31,17 @@ def _relative_luminance(hex_color: str) -> float:
 
 
 def contrast_color(background: str) -> str:
-    """팀 배경색과 더 높은 WCAG 대비를 내는 흰색/진한 남색을 반환한다."""
+    """팀 배경색과 더 높은 WCAG 대비를 내는 흰색/검정을 반환한다."""
     if len(background) != 7 or not background.startswith("#"):
         return "#ffffff"
     try:
         background_luminance = _relative_luminance(background)
     except ValueError:
         return "#ffffff"
-    dark_luminance = _relative_luminance("#111827")
+    dark_luminance = _relative_luminance("#000000")
     contrast_with_dark = (background_luminance + 0.05) / (dark_luminance + 0.05)
     contrast_with_white = 1.05 / (background_luminance + 0.05)
-    return "#111827" if contrast_with_dark >= contrast_with_white else "#ffffff"
+    return "#000000" if contrast_with_dark >= contrast_with_white else "#ffffff"
 
 
 templates.env.filters["number_format"] = number_format
