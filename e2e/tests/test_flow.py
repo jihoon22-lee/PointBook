@@ -50,3 +50,22 @@ def test_person_detail_shows_history(page):
     assert "월별 포인트 이력" in page.text_content("body")
     assert "2099-03" in page.text_content("body")
     assert "20,000" in page.text_content("body")
+
+
+def test_team_views_show_status_counts_active_first_and_total_balance(page):
+    login(page)
+    monthly_flow(page, "781", "가비재직", "10000", "1000", month="2099-04")
+    monthly_flow(page, "782", "하재직", "17000", "3000", month="2099-05")
+
+    page.goto(f"{BASE_URL}/teams")
+    team_row = page.locator('tbody tr:has-text("1팀")').first
+    team_text = team_row.inner_text()
+    assert "전체" in team_text
+    assert "재직 1명" in team_text
+    assert "비재직" in team_text
+
+    team_row.locator('a:has-text("1팀")').click()
+    assert "총잔액" in page.locator("thead").inner_text()
+    assert page.locator("tbody tr td:first-child").first.inner_text().strip() == "하재직"
+    active_row = page.locator('tbody tr:has-text("하재직")')
+    assert active_row.locator("td:nth-child(6)").inner_text().strip() == "20,000원"
