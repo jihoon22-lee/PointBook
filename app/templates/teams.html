@@ -10,11 +10,16 @@
     <table>
       <thead><tr><th>팀</th><th>색상</th><th>인원</th><th></th></tr></thead>
       <tbody>
-      {% for team in teams %}
+      {% for summary in team_summaries %}
+        {% set team = summary.team %}
         <tr>
           <td><a href="/teams/{{ team.id }}">{{ team.name }}</a></td>
           <td><span class="swatch" style="background: {{ team.color }}" title="{{ team.color }}"></span> <code class="muted">{{ team.color }}</code></td>
-          <td>{{ team.persons|length }}명</td>
+          <td>
+            <span>전체 {{ summary.total_count }}명</span>
+            <span class="badge badge-active">재직 {{ summary.active_count }}명</span>
+            <span class="badge badge-inactive">비재직 {{ summary.inactive_count }}명</span>
+          </td>
           <td>
             <form method="post" action="/teams/{{ team.id }}/delete" onsubmit="return confirm('팀 \'{{ team.name }}\' 을(를) 삭제할까요? (소속 인원은 팀 없음으로 변경됩니다)')">
               <button type="submit" class="btn btn-sm btn-danger">삭제</button>

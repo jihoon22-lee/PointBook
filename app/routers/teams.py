@@ -1,6 +1,8 @@
+from dataclasses import dataclass
+
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse, Response
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.auth import require_login
@@ -12,10 +14,44 @@ from app.template_utils import render
 router = APIRouter(prefix="/teams", dependencies=[Depends(require_login)], tags=["teams"])
 
 
+@dataclass(frozen=True)
+class TeamSummary:
+    team: Team
+    total_count: int
+    active_count: int
+    inactive_count: int
+
+
+def _team_summaries(db: Session) -> list[TeamSummary]:
+    rows = db.execute(
+        select(
+            Team,
+            func.count(Person.id),
+            func.sum(case((Person.status == "active", 1), else_=0)),
+            func.sum(case((Person.status == "inactive", 1), else_=0)),
+        )
+        .outerjoin(Person, Person.team_id == Team.id)
+        .group_by(Team.id)
+        .order_by(Team.name)
+    ).all()
+    return [
+        TeamSummary(
+            team=team,
+            total_count=total_count,
+            active_count=active_count,
+            inactive_count=inactive_count,
+        )
+        for team, total_count, active_count, inactive_count in rows
+    ]
+
+
 @router.get("")
 def list_teams(request: Request, db: Session = Depends(get_db)) -> Response:
-    teams = db.scalars(select(Team).order_by(Team.name)).all()
-    return render(request, "teams.html", {"teams": teams, "colors": TEAM_COLORS})
+    return render(
+        request,
+        "teams.html",
+        {"team_summaries": _team_summaries(db), "colors": TEAM_COLORS},
+    )
 
 
 @router.get("/{team_id}")
@@ -27,7 +63,7 @@ def team_detail(team_id: int, request: Request, db: Session = Depends(get_db)) -
         db.scalars(
             select(Person)
             .where(Person.team_id == team.id)
-            .order_by(Person.status.desc(), Person.name)
+            .order_by(case((Person.status == "active", 0), else_=1), Person.name, Person.id)
         ).all()
     )
     return render(request, "team_detail.html", {"team": team, "members": members})
@@ -42,20 +78,22 @@ def create_team(
 ) -> Response:
     name = name.strip()
     if not name:
-        teams = db.scalars(select(Team).order_by(Team.name)).all()
-        return render(
-            request,
-            "teams.html",
-            {"teams": teams, "colors": TEAM_COLORS, "error": "팀 이름을 입력해 주세요."},
-            400,
-        )
-    if db.scalar(select(Team).where(Team.name == name)) is not None:
-        teams = db.scalars(select(Team).order_by(Team.name)).all()
         return render(
             request,
             "teams.html",
             {
-                "teams": teams,
+                "team_summaries": _team_summaries(db),
+                "colors": TEAM_COLORS,
+                "error": "팀 이름을 입력해 주세요.",
+            },
+            400,
+        )
+    if db.scalar(select(Team).where(Team.name == name)) is not None:
+        return render(
+            request,
+            "teams.html",
+            {
+                "team_summaries": _team_summaries(db),
                 "colors": TEAM_COLORS,
                 "error": f"팀 '{name}' 은(는) 이미 존재합니다.",
             },

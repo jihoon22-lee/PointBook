@@ -87,6 +87,44 @@ def test_team_list_links_to_detail(auth_client, db):
     assert f'href="/teams/{team.id}"' in resp.text
 
 
+def test_team_list_separates_total_active_and_inactive_counts(auth_client, db):
+    team = make_team(db, "구조대")
+    make_person(db, "1001", "재직자", team=team)
+    make_person(db, "1002", "비재직자", team=team, status="inactive")
+
+    resp = auth_client.get("/teams")
+
+    assert resp.status_code == 200
+    assert "전체 2명" in resp.text
+    assert "재직 1명" in resp.text
+    assert "비재직 1명" in resp.text
+
+
+def test_team_detail_orders_active_members_before_inactive_members(auth_client, db):
+    team = make_team(db, "구조대")
+    make_person(db, "1001", "가비재직", team=team, status="inactive")
+    make_person(db, "1002", "하재직", team=team)
+
+    resp = auth_client.get(f"/teams/{team.id}")
+
+    assert resp.status_code == 200
+    assert resp.text.index("하재직") < resp.text.index("가비재직")
+
+
+def test_team_detail_shows_each_members_current_total_balance(auth_client, db):
+    team = make_team(db, "구조대")
+    person = make_person(db, "1001", "홍길동", team=team)
+    person.current_carry_balance = 12_345
+    person.current_amount = 6_789
+    db.commit()
+
+    resp = auth_client.get(f"/teams/{team.id}")
+
+    assert resp.status_code == 200
+    assert "총잔액" in resp.text
+    assert "19,134원" in resp.text
+
+
 def test_team_create_color_swatch(auth_client, db):
     resp = auth_client.get("/teams")
     assert 'type="radio" name="color"' in resp.text
