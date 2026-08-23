@@ -170,6 +170,51 @@ def test_team_create_uses_free_color_picker(auth_client, db):
     assert 'type="radio" name="color"' not in resp.text
 
 
+def test_team_list_shows_color_editor_for_existing_team(auth_client, db):
+    team = make_team(db, "1팀", "#c0392b")
+
+    resp = auth_client.get("/teams")
+
+    assert resp.status_code == 200
+    assert f'action="/teams/{team.id}/color"' in resp.text
+    assert 'type="color"' in resp.text
+    assert 'value="#c0392b"' in resp.text
+    assert "색상 저장" in resp.text
+    assert 'aria-label="1팀 색상 저장"' in resp.text
+
+
+def test_existing_team_color_can_be_changed_without_releasing_members(auth_client, db):
+    team = make_team(db, "1팀", "#c0392b")
+    person = make_person(db, team=team)
+
+    resp = auth_client.post(
+        f"/teams/{team.id}/color",
+        data={"color": "#2563eb"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/teams"
+    db.refresh(team)
+    db.refresh(person)
+    assert team.color == "#2563eb"
+    assert person.team_id == team.id
+
+
+def test_existing_team_color_rejects_invalid_value(auth_client, db):
+    team = make_team(db, "1팀", "#c0392b")
+
+    resp = auth_client.post(
+        f"/teams/{team.id}/color",
+        data={"color": "red; background-image: url(evil)"},
+    )
+
+    assert resp.status_code == 400
+    assert "올바른 색상" in resp.text
+    db.refresh(team)
+    assert team.color == "#c0392b"
+
+
 def test_create_team_rejects_invalid_color(auth_client, db):
     resp = auth_client.post(
         "/teams",
