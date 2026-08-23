@@ -162,7 +162,7 @@ Expected: Compose 명령 부재로 FAIL.
 
 `scripts/run.sh`은 `docker compose up -d --build app` 후 `docker compose ps -q app`의 컨테이너 ID를 구하고 `docker inspect --format '{{.State.Health.Status}}'`를 최대 60초 확인한다. `healthy`면 성공하고 `unhealthy`, 컨테이너 종료, 시간 초과는 로그 안내와 함께 실패한다.
 
-`scripts/stop.sh`은 Compose `app` 서비스가 존재하면 `docker compose stop app`만 호출한다. `data/server.pid`가 있으면 PID의 명령줄에 `uvicorn app.main:app`과 현재 저장소 경로가 모두 포함되는지 확인한 뒤에만 종료하고, 확인할 수 없으면 임의로 kill하지 않고 실패한다.
+`scripts/stop.sh`은 Compose `app` 서비스가 존재하면 `docker compose stop app`만 호출한다. `data/server.pid`가 있으면 PID의 명령줄에 `uvicorn app.main:app`이 포함되고 `/proc/<PID>/cwd`가 현재 저장소와 같은지 각각 확인한 뒤에만 종료한다. 어느 하나라도 확인할 수 없으면 임의로 kill하지 않고 실패한다.
 
 `scripts/deploy.sh`은 새 이미지를 먼저 빌드한 후 stop → backup → `docker compose up -d app` → healthy 대기 → 호스트 `/login` HTTP 200 순서로 수행한다. 성공한 경우에만 완료 메시지를 출력한다.
 
