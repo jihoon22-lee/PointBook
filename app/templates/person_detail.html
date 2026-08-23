@@ -11,7 +11,7 @@
 <div class="card">
   <table>
     <tr><th>계급</th><td>{{ person.grade or '-' }}</td></tr>
-    <tr><th>팀</th><td>{% if person.team %}<span class="badge" style="background: {{ person.team.color }}">{{ person.team.name }}</span>{% else %}-{% endif %}</td></tr>
+    <tr><th>팀</th><td>{% if person.team %}<span class="badge" style="background: {{ person.team.color }}; color: {{ person.team.color|contrast_color }}">{{ person.team.name }}</span>{% else %}-{% endif %}</td></tr>
     <tr><th>상태</th><td>{% if person.status == 'active' %}<span class="badge badge-active">재직</span>{% else %}<span class="badge badge-inactive">비재직</span>{% endif %}</td></tr>
     <tr><th>계정 구분</th><td>{{ '공용' if person.account_type == 'shared' else '일반' }}</td></tr>
     <tr><th>개인번호</th><td>{{ person.personal_no or '-' }}</td></tr>

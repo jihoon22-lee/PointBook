@@ -1,9 +1,10 @@
 import re
+from typing import Any
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import RedirectResponse, Response
-from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy import case, func, or_, select
+from sqlalchemy.orm import Session, selectinload
 
 from app.auth import require_login
 from app.db import get_db
@@ -16,6 +17,9 @@ from app.template_utils import render
 router = APIRouter(prefix="/people", dependencies=[Depends(require_login)], tags=["people"])
 
 PAGE_SIZE = 50
+PEOPLE_SORT_KEYS = frozenset(
+    {"name", "point_no", "personal_no", "account_type", "team", "grade", "status", "total"}
+)
 
 
 def _load_teams(db: Session) -> list[Team]:
@@ -37,15 +41,40 @@ def _parse_optional_int(value: str) -> int | None:
         return None
 
 
+def _people_order(sort_key: str, direction: str) -> list[Any]:
+    total_balance = Person.current_carry_balance + Person.current_amount
+    expressions = {
+        "name": Person.name,
+        "point_no": Person.point_no,
+        "personal_no": Person.personal_no,
+        "account_type": case((Person.account_type == "person", 0), else_=1),
+        "team": Team.name,
+        "grade": Person.grade,
+        "status": case((Person.status == "active", 0), else_=1),
+        "total": total_balance,
+    }
+    expression = expressions[sort_key]
+    order: list[Any] = []
+    if sort_key in {"personal_no", "team", "grade"}:
+        order.append(case((expression.is_(None), 1), else_=0))
+    order.append(expression.desc() if direction == "desc" else expression.asc())
+    order.extend((Person.name.asc(), Person.id.asc()))
+    return order
+
+
 @router.get("")
 def list_people(
     request: Request,
     status: str = "",
     team_id: str = "",
     q: str = "",
+    sort: str = "status",
+    direction: str = Query("asc", alias="dir"),
     page: int = 1,
     db: Session = Depends(get_db),
 ) -> Response:
+    sort = sort if sort in PEOPLE_SORT_KEYS else "status"
+    direction = direction if direction in {"asc", "desc"} else "asc"
     team_id_int = _parse_optional_int(team_id)
     filters = []
     if status in ("active", "inactive"):
@@ -63,7 +92,7 @@ def list_people(
             )
         )
 
-    stmt = select(Person)
+    stmt = select(Person).outerjoin(Team).options(selectinload(Person.team))
     if filters:
         stmt = stmt.where(*filters)
     total = (
@@ -78,7 +107,7 @@ def list_people(
     page = max(1, min(page, pages))
     persons = list(
         db.scalars(
-            stmt.order_by(Person.status.desc(), Person.team_id, Person.name)
+            stmt.order_by(*_people_order(sort, direction))
             .offset((page - 1) * PAGE_SIZE)
             .limit(PAGE_SIZE)
         ).all()
@@ -92,6 +121,8 @@ def list_people(
             "status": status,
             "team_id": team_id_int,
             "q": q,
+            "sort": sort,
+            "direction": direction,
             "page": page,
             "pages": pages,
             "total": total,

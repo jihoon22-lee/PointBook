@@ -1,8 +1,19 @@
 {% extends "base.html" %}
 {% block title %}{{ team.name }} - PointBook{% endblock %}
 {% block content %}
+{% macro sortable_header(key, label) -%}
+  {% set active_sort = sort == key %}
+  {% set next_direction = 'desc' if active_sort and direction == 'asc' else 'asc' %}
+  <th class="sortable-th" aria-sort="{{ direction ~ 'ending' if active_sort else 'none' }}">
+    <a class="sortable-header" href="/teams/{{ team.id }}?sort={{ key }}&dir={{ next_direction }}">
+      <span>{{ label }}</span>
+      <span class="sort-indicator{% if not active_sort %} sort-indicator-idle{% endif %}" aria-hidden="true">{% if active_sort %}{{ '▲' if direction == 'asc' else '▼' }}{% else %}⇅{% endif %}</span>
+      <span class="sr-only">{% if active_sort %}정렬 중: {{ '오름차순' if direction == 'asc' else '내림차순' }}{% else %}정렬 가능{% endif %}</span>
+    </a>
+  </th>
+{%- endmacro %}
 <div class="toolbar">
-  <h1><span class="badge" style="background: {{ team.color }}">{{ team.name }}</span></h1>
+  <h1><span class="badge" style="background: {{ team.color }}; color: {{ team.color|contrast_color }}">{{ team.name }}</span></h1>
   <div class="spacer"></div>
   <a class="btn" href="/teams">팀 목록</a>
 </div>
@@ -12,7 +23,14 @@
   <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>이름</th><th>포인트번호</th><th>개인번호</th><th>계급</th><th>상태</th><th>총잔액</th></tr>
+        <tr>
+          {{ sortable_header('name', '이름') }}
+          {{ sortable_header('point_no', '포인트번호') }}
+          {{ sortable_header('personal_no', '개인번호') }}
+          {{ sortable_header('grade', '계급') }}
+          {{ sortable_header('status', '상태') }}
+          {{ sortable_header('total', '총잔액') }}
+        </tr>
       </thead>
       <tbody>
       {% for p in members %}

@@ -163,7 +163,60 @@ def test_team_detail_shows_each_members_current_total_balance(auth_client, db):
     assert "19,134원" in resp.text
 
 
-def test_team_create_color_swatch(auth_client, db):
+def test_team_create_uses_free_color_picker(auth_client, db):
     resp = auth_client.get("/teams")
-    assert 'type="radio" name="color"' in resp.text
-    assert 'class="swatch' in resp.text
+    assert 'type="color"' in resp.text
+    assert 'name="color"' in resp.text
+    assert 'type="radio" name="color"' not in resp.text
+
+
+def test_create_team_rejects_invalid_color(auth_client, db):
+    resp = auth_client.post(
+        "/teams",
+        data={"name": "위험팀", "color": "red; background-image: url(evil)"},
+    )
+
+    assert resp.status_code == 400
+    assert "올바른 색상" in resp.text
+    assert "위험팀" not in auth_client.get("/teams").text
+
+
+def test_team_badges_choose_readable_text_for_light_mid_and_dark_colors(auth_client, db):
+    light = make_team(db, "밝은팀", "#ffffff")
+    mid = make_team(db, "중간팀", "#808080")
+    dark = make_team(db, "어두운팀", "#000000")
+
+    light_page = auth_client.get(f"/teams/{light.id}")
+    mid_page = auth_client.get(f"/teams/{mid.id}")
+    dark_page = auth_client.get(f"/teams/{dark.id}")
+
+    assert 'style="background: #ffffff; color: #000000"' in light_page.text
+    assert 'style="background: #808080; color: #000000"' in mid_page.text
+    assert 'style="background: #000000; color: #ffffff"' in dark_page.text
+
+
+def test_team_detail_sorting_applies_to_name_and_total_balance(auth_client, db):
+    team = make_team(db, "구조대")
+    lower = make_person(db, "1001", "가인원", team=team)
+    lower.current_carry_balance = 100
+    higher = make_person(db, "1002", "하인원", team=team)
+    higher.current_carry_balance = 500
+    db.commit()
+
+    by_name_desc = auth_client.get(f"/teams/{team.id}?sort=name&dir=desc")
+    by_total_asc = auth_client.get(f"/teams/{team.id}?sort=total&dir=asc")
+
+    assert by_name_desc.text.index("하인원") < by_name_desc.text.index("가인원")
+    assert by_total_asc.text.index("가인원") < by_total_asc.text.index("하인원")
+
+
+def test_team_detail_all_information_headers_are_sortable(auth_client, db):
+    team = make_team(db, "구조대")
+    make_person(db, team=team)
+
+    resp = auth_client.get(f"/teams/{team.id}")
+
+    assert resp.status_code == 200
+    for sort_key in ("name", "point_no", "personal_no", "grade", "status", "total"):
+        assert f"sort={sort_key}" in resp.text
+    assert "정렬 중: 오름차순" in resp.text
