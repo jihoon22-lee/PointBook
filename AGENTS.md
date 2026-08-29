@@ -108,8 +108,8 @@ bash e2e/production-smoke.sh  # 운영 Compose health·SQLite 재시작 영속�
 
 ## 작업 컨벤션
 
-- 작업 위치는 `/mnt/e/projects/PointBook`(Windows 드라이브 마운트)라 파일 IO와 git이 느리다.
-  대용량 생성물을 저장소에 커밋하지 않는다
+- 작업 위치는 `/home/jihoon/projects/PointBook`(WSL ext4)이다. 대용량 생성물은 저장소에
+  커밋하지 않고, 운영 SQLite와 환경 파일은 Git 밖의 `data/`·`.env` 경계를 유지한다
 - Conventional Commits(`type(scope): subject`) 사용, `feature/<task-slug>` 브랜치,
   `main`에 직접 푸시 금지. PR은 명시적으로 미완료인 경우 외에는 review 가능한 상태로 생성
 - README, PR 설명, 커밋 메시지 등 사용자가 읽는 내용은 **한글 우선**, 기술 식별자와

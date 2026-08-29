@@ -10,7 +10,7 @@
 ### 1-1. WSL에서 설치·초기화
 
 ```bash
-cd /mnt/e/projects/PointBook
+cd /home/jihoon/projects/PointBook
 uv sync --group dev                     # 의존성 설치 (최초 1회)
 cp .env.example .env                    # 환경설정 파일 생성
 ```
