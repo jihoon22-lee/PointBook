@@ -16,6 +16,8 @@ clone하고, Git 밖의 운영 환경 파일과 SQLite 데이터만 새 ext4 작
 - `.env`는 값을 출력하지 않고 byte-for-byte 복사했으며 target mode를 `0600`으로 제한했다.
 - `data/`의 SQLite 본 DB, 7개 DB 백업, import 원본과 로그를 그대로 복사하고 target directory와
   file mode를 각각 `0700`, `0600`으로 제한했다.
+- README·가이드·deploy가 직접 실행하는 운영 shell entrypoint와 E2E script의 tracked mode를
+  ext4에서도 실행 가능한 `100755`로 고정했다.
 - `.venv`, coverage, pytest/mypy/ruff/Playwright cache는 복사하지 않고 target에서 재생성한다.
 
 ### 2. Runtime path contract
@@ -36,12 +38,14 @@ clone하고, Git 밖의 운영 환경 파일과 SQLite 데이터만 새 ext4 작
 - `uv run ruff check .`, `uv run ruff format --check .`: PASS(77 files)
 - `uv run mypy app scripts`: PASS
 - `uv run pytest` 및 coverage gate: PASS(249 tests, coverage 93.61%)
+- tracked shell entrypoint executable mode와 `bash -n`: PASS(4/4)
 - Compose runtime smoke는 기존 named volume을 새 source path에서 재연결한 뒤 최종 확인한다.
 
 ## Files Modified
 
 - `AGENTS.md` — 현재 WSL-native 작업 경로와 Git 밖 데이터 경계
 - `docs/usage-guide.md` — clone 후 실행 경로
+- `e2e/production-smoke.sh`, `scripts/{deploy,run,stop}.sh` — ext4 executable mode
 - `workthrough/2026-08-29-wsl-project-migration.md` — 이관 경계와 검증 기록
 
 ## Notes
