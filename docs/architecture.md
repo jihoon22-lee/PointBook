@@ -45,7 +45,7 @@ PointBook/
 │   ├── routers/            # 라우터 (URL → 렌더링/리다이렉트)
 │   │   ├── auth.py         #   로그인/로그아웃 (+ 레이트리밋)
 │   │   ├── home.py         #   홈 (카드 메뉴)
-│   │   ├── people.py       #   인원 목록(페이지네이션)·추가·수정·상세·개별 잔액 수정
+│   │   ├── people.py       #   인원 목록·현재 프로필 승인·상세
 │   │   ├── teams.py        #   팀 마스터 추가/삭제 + 팀 상세(소속 인원)
 │   │   ├── monthly.py      #   월간 처리: 업로드(검증) → 검수 → 확정(트랜잭션+백업)
 │   │   ├── dashboard.py    #   대시보드 (월 선택)
@@ -175,7 +175,7 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    A["이월 잔액 입력 (carry)"] --> C{"직전 월 기록?"}
+    A["이월 잔액 입력 (carry)"] --> C{"직전 실제 관측?"}
     B["당월 금액 (amount)<br/>(요청서에서)"]
     C -- "있음" --> D["사용 = 직전 총 잔액 − carry"]
     C -- "없음" --> E["사용 = 0"]
@@ -183,10 +183,10 @@ flowchart LR
     E --> F
 ```
 
-- `previous_total()`: 해당 인원의 직전 월 기록의 총 잔액 (비재직자 잔액 보존 확인에도 사용)
+- `previous_total()`: 해당 인원의 직전 실제 월간/별도 관측 총 잔액 (비재직자 잔액 보존 확인에도 사용)
 - `create_monthly_snapshot()`: 월 스냅샷 + 인원별 기록을 **단일 트랜잭션**으로 저장, 중복 월 거부
 - `recompute_record()`: 개별 수정 후 사용 합계·총 잔액 재계산
-- 순사용이 양수면 포인트 순감소, 음수면 적립·이전 등에 따른 순증가이며 음수를 그대로 보존한다.
+- 순사용이 양수면 포인트 순감소, 음수면 관측 사이 순증가이며 원인을 추정하지 않고 그대로 보존한다.
 
 ## 5. 주요 흐름
 
@@ -214,29 +214,27 @@ sequenceDiagram
 ```
 
 - 업로드 실패(인식된 인원 없음) 시 오류 안내 후 재시도
-- 확정 후 해당 월은 재처리 불가 — 변경은 개별 수정으로만
+- 확정된 월의 새 일반 확정은 차단하며 변경은 전용 정정 승인으로 처리한다.
 - 확정 커밋 전 `backup_database()`가 직전 상태를 `data/backups/`에 자동 백업 (보관 개수 제한)
 - 동기화·잔액 계산·스냅샷 저장은 단일 트랜잭션이며, 실패 시 롤백 후 친절한 오류 페이지 표시
 
-### 5-2. 개별 인원 수정
+### 5-2. 기본 정보·장부 정정의 승인
 
-```mermaid
-sequenceDiagram
-    participant U as 사용자
-    participant P as /people 라우터
-    participant B as balance 서비스
-    participant DB as SQLite
-    U->>P: 인원 상세 진입
-    P-->>U: 기본 정보 + 월별 이력
-    U->>P: 상태/팀/계급 변경 (수정 폼)
-    P->>DB: person 갱신 (고유값 중복 검증)
-    U->>P: 잔액 개별 수정 (carry/amount)
-    P->>B: recompute_record(직전 총 잔액 기준)
-    B->>DB: 사용·총잔액 재계산 후 저장
-```
+현재 프로필은 `profiles.py`, 과거 정정·현재 관측은 `ledger.py`의 서명된 `LedgerPlan`으로
+검토한다. `BEGIN IMMEDIATE` 안에서 기준과 payload를 재계산해 승인 토큰·장부 버전을
+확인한다. 첫 DML 전에 백업하고 변경과 `LedgerOperation`을 같은 트랜잭션으로 반영한다.
+같은 작업 키·payload는 같은 결과를 반환하며 다른 payload 또는 오래된 버전은 409다.
 
-- 요청서와 무관한 개인 변동(한 명만 잔액 변경 등)에 사용
-- 비재직 처리된 인원의 잔액은 보존 — 복귀 시 이어서 계산
+`BalanceRecord.profile_data/note/provenance/observed_at`에 당시 정보를 고정하고
+`BalanceRevision`에 원본과 정정판을 보존한다. `BalanceAdjustment`는 현재 확인 잔액의
+별도 관측이며 월간 충전과 구분한다. 감사·revision·보정 테이블은 UPDATE/DELETE trigger로
+변경을 거부한다. 기존 기록은 `master_at_migration` 출처와 시각 NULL을 사용하며 원래
+작성자·시각을 만들지 않는다.
+
+과거 total 정정은 다음 실제 월간 기록의 usage에만 영향을 주며 중간 명시적 보정 관측을
+존중한다. 이후 입력 carry/amount는 유지하고 현재값은 최신 유효 관측에 맞춘다.
+읽기 전용 `integrity.py` 검사는 계산식·관측 연결·현재값·FK·월/당시 정보 형식을 검사한다.
+계산 복구는 오류를 포함한 일관된 사전 사본을 별도 보존하고 승인 계획·재검사·감사를 남긴다.
 
 ### 5-3. 인증
 
@@ -334,3 +332,15 @@ AI 호출은 제한된 thread executor에서 실행한다. timeout 뒤에도 실
 계속 점유해 반복 요청으로 한도를 우회하지 못한다. 이미지 형식·크기와 전체 JSON 응답을
 검증하고 불완전 행의 원문·행 위치를 검수로 전달한다. Gemini 키는 header로 보내며 외부
 오류 원문 대신 고정 메시지와 참조 ID를 제공한다. 원본 사진은 영구 저장하지 않는다.
+
+### 장부 조회와 보고서 계약
+
+`observations.py`는 UNION/window 조회로 월간 기록과 별도 관측의 마지막 값을 일괄 선택한다.
+`stats.Report`는 월간 활동과 observed/as_of 잔액, 당시 유형·팀, 미확인 관측을 구분한다.
+요청에서 잡은 operation cutoff를 월별 보고서와 추이에 공유하고 revision을 읽어 동시 정정의
+전후가 섞이지 않게 한다. HTML·향후 XLSX 출력은 이 DTO를 사용한다. 합계는 Python 정수로
+계산한다. 충전 입력은 MAX_MONEY, 이월/현재/계산 총액은 MAX_TOTAL까지 허용한다.
+
+`d14a06000001` 이전은 기존 모든 금액·현재값을 보존하며 baseline revision만 추가한다.
+감사 원장을 삭제하는 downgrade는 제공하지 않는다. 이전 앱으로 돌아갈 때에는 호환 이미지와
+검증된 이전 DB 사본으로 복원해야 하며 쓰기 재개 이후 데이터 보존 절차는 운영 문서를 따른다.

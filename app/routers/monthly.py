@@ -13,7 +13,7 @@ from app.auth import require_login
 from app.config import get_settings
 from app.db import get_db
 from app.logging import get_logger
-from app.models import Person
+from app.models import MonthlySnapshot, Person
 from app.services import stats
 from app.services.backup import backup_database
 from app.services.balance import build_balance_records, create_monthly_snapshot
@@ -51,7 +51,15 @@ def monthly_home(request: Request, db: Session = Depends(get_db)) -> Response:
         request,
         "monthly.html",
         {
-            "summary": [stats.month_summary(db, m) for m in stats.available_months(db)],
+            "summary": list(
+                reversed(stats.trend(db, account_type="all", operation_id=stats.report_cutoff(db)))
+            ),
+            "month_statuses": {
+                month: status
+                for month, status in db.execute(
+                    select(MonthlySnapshot.month, MonthlySnapshot.status)
+                )
+            },
             "month": current_month(),
             "done": request.query_params.get("done"),
             "ai_provider": get_settings().ai_provider,
@@ -71,10 +79,18 @@ def _error_response(
         "monthly.html",
         {
             "month": month,
+            "month_statuses": {
+                month: status
+                for month, status in db.execute(
+                    select(MonthlySnapshot.month, MonthlySnapshot.status)
+                )
+            },
             "error": message,
             "pasted": pasted,
             "ai_provider": get_settings().ai_provider,
-            "summary": [stats.month_summary(db, m) for m in stats.available_months(db)],
+            "summary": list(
+                reversed(stats.trend(db, account_type="all", operation_id=stats.report_cutoff(db)))
+            ),
         },
         400,
     )

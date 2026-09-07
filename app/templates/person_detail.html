@@ -44,7 +44,7 @@
         <td>{{ p.get('name') or '당시 이름 미확인' }}<br>{{ p.get('point_no')|point_no if p.get('point_no') else '당시 번호 미확인' }}<br><span class="muted">{{ p.get('personal_no') or '-' }}</span></td>
         <td>{{ p.get('team_name') or ('팀 없음' if b.provenance == 'observed' else '당시 팀 미확인') }}<br>{{ p.get('grade') or '-' }}</td>
         <td>{{ {'person':'일반 인원','shared':'공용 계정'}.get(p.get('account_type'), '당시 구분 미확인') }}<br>{{ {'active':'재직','inactive':'비재직'}.get(p.get('status'), '당시 상태 미확인') }}</td>
-        <td>{% if b.provenance == 'observed' %}확정 당시 관측{% elif b.provenance == 'master_at_migration' %}당시 정보 미확인 · 이관 시점 인원 정보 참고{% elif b.provenance == 'legacy_import' %}당시 정보 미확인 · 기존 장부 이관 참고{% elif b.provenance == 'reference_at_correction' %}당시 정보 미확인 · 정정 시점 참고{% else %}당시 정보 미확인{% endif %}</td>
+        <td>{% if b.provenance == 'observed' %}확정 당시 관측{% elif b.provenance == 'manual_correction' %}근거 확인 후 당시 정보 정정{% elif b.provenance == 'master_at_migration' %}당시 정보 미확인 · 이관 시점 인원 정보 참고{% elif b.provenance == 'legacy_import' %}당시 정보 미확인 · 기존 장부 이관 참고{% elif b.provenance == 'reference_at_correction' %}당시 정보 미확인 · 정정 시점 참고{% else %}당시 정보 미확인{% endif %}</td>
         <td>{{ b.carry_balance|number_format }}</td><td>{{ b.amount|number_format }}</td><td>{{ b.usage|number_format }}</td><td><strong>{{ b.total|number_format }}</strong></td>
         <td>{{ b.note or '-' }}</td><td><a class="btn btn-sm" href="/ledger/correct/{{ person.id }}?month={{ b.snapshot.month }}">이 월 정정</a></td>
       </tr>

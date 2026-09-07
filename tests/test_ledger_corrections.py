@@ -301,3 +301,128 @@ def test_balance_total_can_be_carried_to_next_input():
     assert compute_total(MAX_MONEY, MAX_MONEY) == MAX_TOTAL
     with pytest.raises(ValueError, match="총 잔액"):
         compute_total(1, MAX_TOTAL)
+
+
+def test_repair_failed_postcheck_rolls_back_all_writes(client, db, monkeypatch):
+    _person, records = setup_ledger(db)
+    records[1].usage = 999
+    db.commit()
+    plan = repair_plan(db, reason="실패 복구 검증", request_key=uuid.uuid4().hex)
+    from app.services.integrity import IntegrityReport
+
+    monkeypatch.setattr(
+        "app.services.integrity.inspect_ledger",
+        lambda db: IntegrityReport(version=1, issues=["synthetic failure"]),
+    )
+    start_write(db)
+    with pytest.raises(ValueError, match="롤백"):
+        apply_repair(db, plan, plan.token, 1)
+    db.rollback()
+    assert records[1].usage == 999
+    assert db.scalar(select(func.count(LedgerOperation.id))) == 0
+    assert db.scalar(select(func.count(BalanceRevision.id))) == 3
+
+
+@pytest.mark.parametrize("same_request", [True, False])
+def test_concurrent_monthly_submissions_are_serialized(auth_client, db, same_request):
+    from concurrent.futures import ThreadPoolExecutor
+
+    forms = []
+    for month in ["2026-07", "2026-08"]:
+        preview = auth_client.post(
+            "/monthly/review",
+            data={
+                "month": month,
+                "point_no_0": "00008104",
+                "account_type_0": "person",
+                "personal_no_0": "8104",
+                "name_0": "합성동시",
+                "team_0": "",
+                "grade_0": "",
+                "amount_0": "100",
+                "carry_0": "0",
+            },
+        )
+        values = review_fields(preview)
+        values["ack_warnings"] = "yes"
+        forms.append(values)
+    if same_request:
+        forms[1] = forms[0].copy()
+
+    def submit(values):
+        return auth_client.raw_request(
+            "POST", "/monthly/confirm", data=values, follow_redirects=False
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(submit, forms))
+    assert sorted(response.status_code for response in responses) == (
+        [303, 303] if same_request else [303, 409]
+    )
+    assert db.scalar(select(func.count(LedgerOperation.id))) == 1
+    assert db.scalar(select(func.count(MonthlySnapshot.id))) == 1
+
+
+def test_manual_historical_profile_changes_only_the_target(client, db):
+    person, records = setup_ledger(db)
+    profile = {
+        "name": "당시합성명",
+        "point_no": "00008101",
+        "personal_no": "",
+        "team_name": "당시팀",
+        "grade": "",
+        "account_type": "shared",
+        "status": "active",
+    }
+    plan = correction(db, person, historical_profile=profile)
+    apply(db, plan)
+    assert person.name == "합성정정" and person.account_type == "person"
+    assert json.loads(records[0].profile_data)["account_type"] == "shared"
+    assert records[0].provenance == "manual_correction"
+    assert json.loads(records[1].profile_data)["name"] == "합성정정"
+
+
+@pytest.mark.parametrize(
+    "kind,field,value", [("correct", "carry", "12.3"), ("adjust", "total", "-1")]
+)
+def test_ledger_invalid_input_and_backup_error_preserve_raw_http(
+    auth_client, db, monkeypatch, kind, field, value
+):
+    person, _ = setup_ledger(db)
+    path = f"/ledger/{kind}/{person.id}"
+    values = form_values(auth_client.get(path))
+    values.update(reason="합성 사유", **{field: value})
+    response = auth_client.post(path + "/preview", data=values)
+    assert response.status_code == 400 and form_values(response)[field] == value
+    values[field] = "123"
+    preview = auth_client.post(path + "/preview", data=values)
+    values = form_values(preview)
+
+    def fail():
+        raise PermissionError("synthetic secret marker")
+
+    monkeypatch.setattr("app.services.ledger.backup_database", fail)
+    response = auth_client.post(path + "/apply", data=values)
+    assert response.status_code == 500
+    assert form_values(response)[field] == "123"
+    assert "synthetic secret marker" not in response.text
+    assert db.scalar(select(func.count(LedgerOperation.id))) == 0
+
+
+def test_repair_http_preview_apply_and_replay(auth_client, db):
+    _person, records = setup_ledger(db)
+    records[1].usage = 999
+    db.commit()
+    page = auth_client.get("/ledger/integrity")
+    assert page.status_code == 200
+    values = form_values(page)
+    values["reason"] = "합성 계산 재검증"
+    preview = auth_client.post("/ledger/repair/preview", data=values)
+    assert preview.status_code == 200 and "복구 반영" in preview.text
+    values = form_values(preview)
+    first = auth_client.post("/ledger/repair/apply", data=values, follow_redirects=False)
+    assert first.status_code == 303
+    second = auth_client.post("/ledger/repair/apply", data=values, follow_redirects=False)
+    assert second.headers["location"] == first.headers["location"]
+    assert "정합성 검사 통과" in auth_client.get("/ledger/integrity").text
+    assert db.scalar(select(func.count(LedgerOperation.id))) == 1

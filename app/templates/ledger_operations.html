@@ -8,5 +8,5 @@
 {% set labels={'monthly':'월간 확정','correction':'과거 정정','adjustment':'현재 보정','profile':'기본 정보','repair':'계산 복구'} %}
 {% for entry in entries %}<tr><td>{{ entry.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td><td>{{ labels.get(entry.kind,entry.kind) }}</td><td>{{ entry.reason }}</td><td><a href="/ledger/operations/{{ entry.request_key }}">전후 보기</a></td></tr>{% else %}<tr><td colspan="4">아직 변경 이력이 없습니다.</td></tr>{% endfor %}
 </tbody></table></div>
-<p class="muted">최근 100개 작업을 표시합니다.</p>
+<div class="pagination">{% if page > 1 %}<a class="btn" href="/ledger?page={{ page - 1 }}">이전</a>{% endif %}<span>{{ page }}쪽 · 전체 {{ total }}건</span>{% if page * 100 < total %}<a class="btn" href="/ledger?page={{ page + 1 }}">다음</a>{% endif %}</div>
 {% endblock %}

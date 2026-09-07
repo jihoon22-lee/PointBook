@@ -70,7 +70,7 @@ def upgrade():
         profiles[row["id"]]=profile
         bind.execute(sa.text("UPDATE balance_records SET profile_data=:profile,provenance='master_at_migration' WHERE person_id=:person_id"),
             {"profile":json.dumps(profile,ensure_ascii=False,sort_keys=True),"person_id":row["id"]})
-    preserved=datetime.now(UTC).replace(tzinfo=None)
+    preserved=datetime.now(UTC).replace(tzinfo=None).isoformat(sep=" ", timespec="microseconds")
     revisions=[]
     for row in bind.execute(sa.text("SELECT r.*,s.month FROM balance_records r JOIN monthly_snapshots s ON s.id=r.snapshot_id")).mappings():
         data={key:row[key] for key in ("carry_balance","amount","usage","total","note","provenance","month")}

@@ -3,9 +3,9 @@ import uuid
 from datetime import UTC
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import RedirectResponse, Response
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session, joinedload
 from starlette.datastructures import FormData
@@ -116,11 +116,26 @@ def _form(
 
 
 @router.get("")
-def operations(request: Request, db: Session = Depends(get_db)) -> Response:
+def operations(
+    request: Request, page: int = Query(default=1, ge=1, le=1000000), db: Session = Depends(get_db)
+) -> Response:
     entries = list(
-        db.scalars(select(LedgerOperation).order_by(LedgerOperation.id.desc()).limit(100))
+        db.scalars(
+            select(LedgerOperation)
+            .order_by(LedgerOperation.id.desc())
+            .offset((page - 1) * 100)
+            .limit(100)
+        )
     )
-    return render(request, "ledger_operations.html", {"entries": entries})
+    return render(
+        request,
+        "ledger_operations.html",
+        {
+            "entries": entries,
+            "page": page,
+            "total": db.scalar(select(func.count(LedgerOperation.id))) or 0,
+        },
+    )
 
 
 @router.get("/operations/{key}")

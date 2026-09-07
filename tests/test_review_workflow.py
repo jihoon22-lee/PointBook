@@ -26,7 +26,7 @@ def data_row(**extra):
     }
 
 
-@pytest.mark.parametrize("bad", ["", "-1,000", "12.5", "5O000", "abc", "1,00", "1000000000000"])
+@pytest.mark.parametrize("bad", ["", "-1,000", "12.5", "5O000", "abc", "1,00", "1999999999999"])
 @pytest.mark.parametrize("field", ["amount_0", "carry_0"])
 def test_invalid_money_preserves_every_raw_cell_and_database(auth_client, db, field, bad):
     data = data_row(**{field: bad})

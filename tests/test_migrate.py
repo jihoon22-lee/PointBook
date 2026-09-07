@@ -369,3 +369,61 @@ def test_unversioned_failed_upgrade_does_not_leave_stamp(tmp_path):
         db_module.run_migrations(temporary)
     assert "alembic_version" not in inspect(temporary).get_table_names()
     assert "auth_version" not in {c["name"] for c in inspect(temporary).get_columns("admin_users")}
+
+
+def test_history_migration_preserves_every_financial_row_and_marks_unknown(tmp_path):
+    import json
+
+    url = f"sqlite:///{tmp_path / 'history.db'}"
+    _configure(url)
+    command.upgrade(db_module._alembic_config(), "c14a04000001")
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO people (id,point_no,personal_no,name,grade,status,account_type,team_id,current_carry_balance,current_amount,created_at) VALUES (1,'00000101','101','합성인원','','inactive','person',NULL,150,20,CURRENT_TIMESTAMP),(2,'00000102',NULL,'합성공용','','active','shared',NULL,50,10,CURRENT_TIMESTAMP)"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO monthly_snapshots (id,month,created_at) VALUES (1,'2026-01',CURRENT_TIMESTAMP),(2,'2026-03',CURRENT_TIMESTAMP)"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO balance_records (id,snapshot_id,person_id,carry_balance,amount,usage,total) VALUES (1,1,1,0,100,0,100),(2,2,1,150,20,-50,170),(3,2,2,50,10,0,60)"
+            )
+        )
+        before_people = conn.execute(text("SELECT * FROM people ORDER BY id")).all()
+        before_months = conn.execute(text("SELECT * FROM monthly_snapshots ORDER BY id")).all()
+        before_records = conn.execute(text("SELECT * FROM balance_records ORDER BY id")).all()
+    db_module.run_migrations()
+    with engine.connect() as conn:
+        assert [
+            tuple(row[: len(before_people[0])])
+            for row in conn.execute(text("SELECT * FROM people ORDER BY id"))
+        ] == [tuple(row) for row in before_people]
+        assert [
+            tuple(row[: len(before_months[0])])
+            for row in conn.execute(text("SELECT * FROM monthly_snapshots ORDER BY id"))
+        ] == [tuple(row) for row in before_months]
+        assert [
+            tuple(row[: len(before_records[0])])
+            for row in conn.execute(text("SELECT * FROM balance_records ORDER BY id"))
+        ] == [tuple(row) for row in before_records]
+        histories = conn.execute(
+            text("SELECT provenance,observed_at,profile_data FROM balance_records")
+        ).all()
+        assert all(
+            row.provenance == "master_at_migration" and row.observed_at is None for row in histories
+        )
+        assert json.loads(histories[0].profile_data)["status"] == "inactive"
+        revisions = conn.execute(
+            text("SELECT operation_id,source,data_json FROM balance_revisions ORDER BY record_id")
+        ).all()
+        assert len(revisions) == 3
+        assert all(
+            row.operation_id is None and row.source == "migration_baseline" for row in revisions
+        )
+        assert json.loads(revisions[1].data_json)["usage"] == -50
+        assert conn.execute(text("PRAGMA foreign_key_check")).all() == []
