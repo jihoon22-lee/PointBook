@@ -9,6 +9,7 @@
 - [아키텍처 문서](docs/architecture.md) — 기술 스택, 모듈 구조, 데이터 모델, 핵심 로직·흐름 다이어그램
 - [사용 가이드](docs/usage-guide.md) — 매달 요청서 처리 업무 흐름, 실기기 접속, 실사용 체크리스트
 - [변경 이력](CHANGELOG.md) — 버전별 변경 사항
+- [개발 에이전트 작업 안내](docs/agent-workflow.md) — 지침·skills, 격리 검증, 운영 명령 구분
 
 ## 주요 기능
 
@@ -125,5 +126,7 @@ uv run python -m scripts.backup   # DB 수동 백업 (data/backups/)
 
 ## CI
 
-PR 생성 시 GitHub Actions가 lint → typecheck → test(coverage 85%) → security(pip-audit)
-→ secret-scan(gitleaks) → e2e를 실행하고, 전체 통과 후 squash merge 한다.
+PR 생성 시 lint, typecheck(`mypy app scripts`), test(coverage 85%), migrations,
+security(pip-audit), secret-scan(gitleaks), e2e를 실행한다. e2e는 lint·typecheck·test 성공 후
+실행하며, `Quality gate`는 필수 7개 job이 모두 `success`일 때만 통과한다.
+실패·취소·건너뜀을 통과로 취급하지 않으며 전체 통과 후 squash merge 한다.
