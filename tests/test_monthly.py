@@ -1,9 +1,11 @@
+import pytest
 from sqlalchemy import select
 
 from app.ai.mock import MockProvider
 from app.models import MonthlySnapshot, Person
 from app.services.parsing import parse_pasted
 from tests.factories import make_person
+from tests.monthly_helpers import reviewed_confirm
 
 
 def test_mock_provider_returns_rows():
@@ -44,10 +46,10 @@ def test_parse_pasted_six_columns():
     assert rows[0].point_no == "00000001"
 
 
-def test_parse_pasted_skips_empty_and_bad_lines():
+def test_parse_pasted_rejects_partial_rows():
     text = "1팀\t김소방\n\n\t\t\t\n"
-    rows = parse_pasted(text)
-    assert len(rows) == 0
+    with pytest.raises(ValueError, match="1행"):
+        parse_pasted(text)
 
 
 def test_parse_pasted_amount_with_commas():
@@ -109,7 +111,7 @@ def test_confirm_creates_snapshot_and_syncs(auth_client, db):
         "amount_0": "50000",
         "carry_0": "10000",
     }
-    resp = auth_client.post("/monthly/confirm", data=data, follow_redirects=False)
+    resp = reviewed_confirm(auth_client, data=data, follow_redirects=False)
     assert resp.status_code == 303
     person = db.scalar(select(Person).where(Person.personal_no == "101"))
     assert person is not None
@@ -134,10 +136,10 @@ def test_confirm_usage_calculation_with_previous_month(auth_client, db):
         "amount_0": "50000",
         "carry_0": "10000",
     }
-    auth_client.post("/monthly/confirm", data=data)
+    reviewed_confirm(auth_client, data=data)
     data["month"] = "2026-07"
     data["carry_0"] = "4000"
-    resp = auth_client.post("/monthly/confirm", data=data, follow_redirects=False)
+    resp = reviewed_confirm(auth_client, data=data, follow_redirects=False)
     assert resp.status_code == 303
     snapshot = db.scalar(select(MonthlySnapshot).where(MonthlySnapshot.month == "2026-07"))
     record = snapshot.records[0]
@@ -156,8 +158,8 @@ def test_confirm_duplicate_month_rejected(auth_client, db):
         "amount_0": "50000",
         "carry_0": "0",
     }
-    auth_client.post("/monthly/confirm", data=data)
-    resp = auth_client.post("/monthly/confirm", data=data)
+    reviewed_confirm(auth_client, data=data)
+    resp = reviewed_confirm(auth_client, data=data)
     assert resp.status_code == 400
     assert "이미 처리되었습니다" in resp.text
 
@@ -165,7 +167,7 @@ def test_confirm_duplicate_month_rejected(auth_client, db):
 def test_confirm_invalid_month_rejected(auth_client):
     resp = auth_client.post("/monthly/confirm", data={"month": "2026-7"})
     assert resp.status_code == 400
-    assert "월 형식" in resp.text
+    assert "YYYY-MM" in resp.text
 
 
 def test_confirm_no_rows_rejected(auth_client):
@@ -187,7 +189,7 @@ def test_confirm_deactivates_missing_person(auth_client, db):
         "carry_0": "0",
         "deactivated_carry_00000999": "3000",
     }
-    auth_client.post("/monthly/confirm", data=data)
+    reviewed_confirm(auth_client, data=data)
     old = db.scalar(select(Person).where(Person.personal_no == "999"))
     assert old.status == "inactive"
     snapshot = db.scalar(select(MonthlySnapshot).where(MonthlySnapshot.month == "2026-07"))
@@ -207,7 +209,7 @@ def test_confirm_returns_balance_after_return(auth_client, db):
         "amount_0": "50000",
         "carry_0": "7000",
     }
-    auth_client.post("/monthly/confirm", data=data)
+    reviewed_confirm(auth_client, data=data)
     person = db.scalar(select(Person).where(Person.personal_no == "101"))
     assert person.status == "active"
 
@@ -224,11 +226,12 @@ def test_edit_person_syncs_latest_record(auth_client, db):
         "amount_0": "50000",
         "carry_0": "10000",
     }
-    auth_client.post("/monthly/confirm", data=data)
+    reviewed_confirm(auth_client, data=data)
     resp = auth_client.post(
         f"/people/{person.id}/edit",
         data={
             "point_no": person.point_no,
+            "account_type": "person",
             "personal_no": "101",
             "name": "김소방",
             "grade": "",
@@ -270,6 +273,7 @@ def test_parse_row_fields_over_100_rows(auth_client):
     form_data = []
     for i in range(101):
         form_data.append((f"point_no_{i}", f"{i + 1:08d}"))
+        form_data.append((f"account_type_{i}", "person"))
         form_data.append((f"personal_no_{i}", f"10{i:03d}"))
         form_data.append((f"name_{i}", f"인원{i}"))
         form_data.append((f"team_{i}", "1팀"))
@@ -342,7 +346,7 @@ def test_confirm_syncs_person_current_balance(auth_client, db):
         "amount_0": "50000",
         "carry_0": "12000",
     }
-    auth_client.post("/monthly/confirm", data=data)
+    reviewed_confirm(auth_client, data=data)
     person = db.scalar(select(Person).where(Person.personal_no == "101"))
     assert person.current_carry_balance == 12000
     assert person.current_amount == 50000
@@ -365,7 +369,7 @@ def test_confirm_rolls_back_on_error(auth_client, db, monkeypatch):
         "amount_0": "50000",
         "carry_0": "10000",
     }
-    resp = auth_client.post("/monthly/confirm", data=data)
+    resp = reviewed_confirm(auth_client, data=data)
     assert resp.status_code == 400
     assert "테스트용 실패" in resp.text
     assert db.scalar(select(Person).where(Person.personal_no == "101")) is None
@@ -396,7 +400,7 @@ def test_confirm_rejects_normalized_duplicate_point_number(auth_client):
         "grade_1": "",
         "amount_1": "50000",
     }
-    resp = auth_client.post("/monthly/confirm", data=data)
+    resp = reviewed_confirm(auth_client, data=data)
     assert resp.status_code == 400
     assert "중복" in resp.text
 
@@ -413,7 +417,7 @@ def test_confirm_uses_row_carry_after_point_number_edit(auth_client, db):
         "carry_0": "12345",
     }
 
-    resp = auth_client.post("/monthly/confirm", data=data, follow_redirects=False)
+    resp = reviewed_confirm(auth_client, data=data, follow_redirects=False)
 
     assert resp.status_code == 303
     person = db.scalar(select(Person).where(Person.point_no == "00000002"))
@@ -435,7 +439,7 @@ def test_confirm_rejects_missing_row_carry(auth_client, db):
         "amount_0": "50000",
     }
 
-    resp = auth_client.post("/monthly/confirm", data=data)
+    resp = reviewed_confirm(auth_client, data=data)
 
     assert resp.status_code == 400
     assert "이월 잔액" in resp.text

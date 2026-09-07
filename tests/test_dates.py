@@ -32,3 +32,36 @@ def test_current_month_kst_not_utc(monkeypatch):
 
     monkeypatch.setattr(dates_module, "datetime", FakeDateTime)
     assert current_month() == "2026-01"
+
+
+import pytest
+
+from app.services.dates import validate_month
+
+
+@pytest.mark.parametrize("value", ["0001-01", "2026-02", "2026-12", "9999-12"])
+def test_validate_month_calendar_boundaries(value):
+    assert validate_month(value) == value
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "0000-01",
+        "2026-00",
+        "2026-13",
+        "2026-1",
+        "26-01",
+        "10000-01",
+        "2026/01",
+        "２０２６-01",
+        "2026-０１",
+        " 2026-01",
+        "2026-01\n",
+        "",
+        "2026-01-01",
+    ],
+)
+def test_validate_month_rejects_invalid_calendar_and_format(value):
+    with pytest.raises(ValueError):
+        validate_month(value)

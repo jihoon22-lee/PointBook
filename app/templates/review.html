@@ -2,37 +2,44 @@
 {% block title %}요청서 검수 - PointBook{% endblock %}
 {% block content %}
 <h1>요청서 검수 · 확정</h1>
-{% if error %}<p class="alert alert-error">{{ error }}</p>{% endif %}
-<p class="muted">AI가 추출한 목록을 확인·수정한 뒤, 각 행의 <strong>이월 잔액</strong>을 입력하고 확정하세요.</p>
+{% if error %}<p class="alert alert-error" role="alert">{{ error }}</p>{% endif %}
+{% if errors %}<div class="alert alert-error" role="alert"><strong>입력 내용을 확인해 주세요.</strong><ul>{% for key, message in errors.items() %}<li>{{ message }}</li>{% endfor %}</ul></div>{% endif %}
+<p class="muted">목록을 수정하면 <strong>수정 내용 재검수</strong>를 눌러 변경 예상을 확인하세요. 이월 잔액은 모든 처리 대상에 한 번씩 입력합니다.</p>
 
-<form method="post" action="/monthly/confirm">
+<form method="post" action="/monthly/confirm" id="review-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token|default('') }}">
+  <input type="hidden" name="review_token" id="review-token" value="{{ review_token }}">
   <div class="toolbar">
-    <label class="month-label">처리 월
-      <input type="month" name="month" value="{{ month }}" style="width:auto">
-    </label>
-    <div class="spacer"></div>
-    <button type="submit" class="btn btn-primary" onclick="return confirm('이 내용으로 확정할까요? 확정 후 해당 월은 수정하려면 개별 수정을 이용해야 합니다.')">확정 · 동기화</button>
+    <label class="month-label">처리 월 <input type="text" name="month" value="{{ month }}" placeholder="YYYY-MM" inputmode="numeric" style="width:130px"></label>
+    <button type="submit" class="btn" formaction="/monthly/review" formnovalidate>수정 내용 재검수</button>
+    <span id="review-status" class="muted" role="status">{% if review_token %}변경 예상 확인 후 확정할 수 있습니다.{% else %}입력 오류를 고치고 다시 검수하세요.{% endif %}</span>
   </div>
 
   <div class="card">
-    <h2>인식된 인원 ({{ analysis.request_count }}명) <button type="button" class="btn btn-sm" id="add-row">행 추가</button></h2>
+    <h2>요청서 인원 ({{ rows|length }}명) <button type="button" class="btn btn-sm" id="add-row">행 추가</button></h2>
     <div class="table-wrap">
       <table id="rows">
-        <thead>
-          <tr><th>포인트번호</th><th>개인번호</th><th>이름</th><th>팀</th><th>계급</th><th>금액</th><th>비고</th><th>이월 잔액</th><th></th></tr>
-        </thead>
+        <thead><tr><th>포인트번호</th><th>유형</th><th>개인번호</th><th>이름</th><th>팀</th><th>계급</th><th>충전액</th><th>비고</th><th>이월 잔액</th><th></th></tr></thead>
         <tbody>
         {% for row in rows %}
-          <tr>
-            <td><input type="text" name="point_no_{{ loop.index0 }}" value="{{ row.point_no|point_no }}" class="row-input"></td>
-            <td><input type="text" name="personal_no_{{ loop.index0 }}" value="{{ row.personal_no }}" class="row-input"></td>
-            <td><input type="text" name="name_{{ loop.index0 }}" value="{{ row.name }}" class="row-input"></td>
-            <td><input type="text" name="team_{{ loop.index0 }}" value="{{ row.team }}" class="row-input"></td>
-            <td><input type="text" name="grade_{{ loop.index0 }}" value="{{ row.grade }}" class="row-input"></td>
-            <td><input type="text" name="amount_{{ loop.index0 }}" value="{{ row.amount }}" class="row-input"></td>
-            <td><input type="text" name="note_{{ loop.index0 }}" value="{{ row.note }}" class="row-input"></td>
-            {% set pt = prev_totals.get(row.point_no, 0) %}
-            <td><input type="number" name="carry_{{ loop.index0 }}" min="0" step="1" class="row-input" placeholder="{% if pt %}직전 잔액: {{ pt|number_format }}원{% else %}이월 잔액{% endif %}" required></td>
+          {% set row_index = loop.index0 %}
+          <tr data-row-id="{{ row.row_id }}">
+            <td><input type="hidden" data-field="row_id" name="row_id_{{ loop.index0 }}" value="{{ row.row_id }}">
+              <input type="hidden" data-field="source_line" name="source_line_{{ loop.index0 }}" value="{{ row.source_line }}">
+              <input type="text" data-field="point_no" name="point_no_{{ loop.index0 }}" value="{{ row.point_no }}" class="row-input" aria-label="{{ loop.index }}행 포인트번호">
+              {% if errors.get(row.row_id) %}<span class="alert-error">{{ errors[row.row_id] }}</span>{% endif %}
+              {% if row.source_line %}<details><summary>가져온 원문</summary><span>{{ row.source_line }}</span></details>{% endif %}
+            </td>
+            <td><select data-field="account_type" name="account_type_{{ loop.index0 }}" aria-label="{{ loop.index }}행 계정 유형">
+              {% if row.account_type not in ['person', 'shared'] %}<option value="{{ row.account_type }}" selected>{{ row.account_type or '유형 선택' }}</option>{% endif %}
+              <option value="person" {% if row.account_type == 'person' %}selected{% endif %}>일반</option>
+              <option value="shared" {% if row.account_type == 'shared' %}selected{% endif %}>공용</option>
+            </select></td>
+            {% for field, label in [('personal_no','개인번호'),('name','이름'),('team','팀'),('grade','계급'),('amount','충전액'),('note','비고')] %}
+            <td><input type="text" data-field="{{ field }}" name="{{ field }}_{{ row_index }}" value="{{ row[field] }}" class="row-input" aria-label="{{ row_index + 1 }}행 {{ label }}" {% if field == 'amount' %}inputmode="numeric"{% endif %}></td>
+            {% endfor %}
+            {% set normalized = row.point_no|replace(' ', '')|replace('-', '') %}
+            <td><input type="text" inputmode="numeric" data-field="carry" name="carry_{{ loop.index0 }}" value="{{ row.carry }}" class="row-input" aria-label="{{ loop.index }}행 이월 잔액" placeholder="{% if normalized in prev_totals %}직전 잔액: {{ prev_totals[normalized]|number_format }}원{% else %}이월 잔액{% endif %}" required></td>
             <td><button type="button" class="btn btn-sm btn-danger row-del">삭제</button></td>
           </tr>
         {% endfor %}
@@ -42,94 +49,41 @@
   </div>
 
   <div class="card">
-    <h2>변경 예상 (DB 전체 대조)</h2>
-    {% set groups = {'new': [], 'returned': [], 'kept': [], 'deactivated': []} %}
-    {% for c in analysis.changes %}
-      {% if groups[c.action] is defined %}{% set _ = groups[c.action].append(c) %}{% endif %}
-    {% endfor %}
-    {% if groups['new'] %}
-      <h3 class="muted" style="color:#c0392b">신규 ({{ groups['new']|length }})</h3>
-      <p>{% for c in groups['new'] %}<span class="badge" style="background:#c0392b">{{ c.name }} ({{ c.team_name or '팀없음' }})</span> {% endfor %}</p>
-    {% endif %}
-    {% if groups['returned'] %}
-      <h3 class="muted" style="color:#16a085">복귀 ({{ groups['returned']|length }})</h3>
-      <p>{% for c in groups['returned'] %}<span class="badge" style="background:#16a085">{{ c.name }}</span> {% endfor %}</p>
-    {% endif %}
-    {% if groups['kept'] %}
-      <h3 class="muted">재직 유지 ({{ groups['kept']|length }})</h3>
-      <p>{% for c in groups['kept'] %}<span class="badge" style="background:#4a7dbd">{{ c.name }}{% if c.team_changed %} ·팀변경{% endif %}</span> {% endfor %}</p>
-    {% endif %}
-    {% if groups['deactivated'] %}
-      <h3 class="muted" style="color:#9aa3ad">비재직 전환 ({{ groups['deactivated']|length }})</h3>
-      <p>{% for c in groups['deactivated'] %}<span class="badge badge-inactive">{{ c.name }}</span> {% endfor %}</p>
-    {% endif %}
-  </div>
-
-  {% if groups['deactivated'] %}
-  <div class="card">
-    <h2>비재직 전환 대상 이월 잔액</h2>
-    <p class="muted">요청서에서 빠진 인원의 당월 기준 남은 포인트 잔액을 입력하세요.</p>
-    <div class="balance-grid">
-      {% for c in groups['deactivated'] %}
-      <label class="balance-item">
-        <span>
-          <span class="badge badge-inactive">비재직</span>
-          {{ c.name }} ({{ c.point_no|point_no }})
-        </span>
-        {% set pt = prev_totals.get(c.point_no, 0) %}
-        <input type="number" name="deactivated_carry_{{ c.point_no }}" min="0" step="1" placeholder="{% if pt %}직전 잔액: {{ pt|number_format }}원{% else %}이월 잔액{% endif %}" required>
-      </label>
-      {% endfor %}
+    <h2>변경 예상 · 요청서 대사</h2>
+    <p>요청서 {{ analysis.request_count }}명 · 총 충전 <strong>{{ request_amount|number_format }}원</strong></p>
+    {% if previous_count is not none %}<p class="muted">최근 확정 월 관측 인원 {{ previous_count }}명 · 총 충전 {{ previous_amount|number_format }}원</p>{% endif %}
+    <div class="toolbar">
+      <label>원본 기대 인원 (선택)<input type="text" inputmode="numeric" name="expected_count" value="{{ expected_count }}" placeholder="모르면 비워 두세요"></label>
+      <label>원본 기대 총액 (선택)<input type="text" inputmode="numeric" name="expected_amount" value="{{ expected_amount }}" placeholder="모르면 비워 두세요"></label>
     </div>
+    {% if not expected_count or not expected_amount %}<p class="muted">외부 기대 인원/총액 대사: 미확인 항목이 있습니다. 원본 요청서의 완전성을 확인하세요.</p>{% endif %}
+    {% set groups = {'new': [], 'returned': [], 'kept': [], 'deactivated': []} %}
+    {% for c in analysis.changes %}{% set _ = groups[c.action].append(c) %}{% endfor %}
+    {% for action, label in [('new','신규'),('returned','복귀'),('kept','재직 유지'),('deactivated','비재직 전환 후보')] %}
+      {% if groups[action] %}<h3>{{ label }} ({{ groups[action]|length }})</h3>
+      <p>{% for c in groups[action] %}<span class="badge {% if action == 'deactivated' %}badge-inactive{% endif %}">{{ c.name }}{% if c.account_type == 'shared' %} ·공용{% endif %}{% if c.team_changed %} ·팀변경{% endif %}{% if c.profile_changed %} ·정보변경{% endif %}</span> {% endfor %}</p>{% endif %}
+    {% endfor %}
   </div>
-  {% endif %}
 
-  <button type="submit" class="btn btn-primary" onclick="return confirm('이 내용으로 확정할까요? 확정 후 해당 월은 수정하려면 개별 수정을 이용해야 합니다.')">확정 · 동기화</button>
+  {% if groups['deactivated'] %}<div class="card">
+    <h2>비재직 전환 대상 이월 잔액</h2>
+    <p class="muted">요청서 누락이 실제 전출인지 확인하세요. 삭제한 요청서 행의 잔액은 여기에 자동으로 옮기지 않습니다.</p>
+    <div class="balance-grid">
+      {% for c in groups['deactivated'] %}<label class="balance-item">
+        <span><span class="badge badge-inactive">비재직</span> {{ c.name }} ({{ c.point_no|point_no }})</span>
+        <input type="text" inputmode="numeric" name="deactivated_carry_{{ c.point_no }}" value="{{ deactivated_carries.get(c.point_no, '') }}" placeholder="{% if c.point_no in prev_totals %}직전 잔액: {{ prev_totals[c.point_no]|number_format }}원{% else %}이월 잔액{% endif %}" required>
+      </label>{% endfor %}
+    </div>
+  </div>{% endif %}
+  {% if obsolete_carries %}<details class="card"><summary>새 분석에서 제외된 이월 입력 (적용되지 않음)</summary>
+    {% for point, value in obsolete_carries.items() %}<p>{{ point }}: {{ value }} <input type="hidden" name="deactivated_carry_{{ point }}" value="{{ value }}"></p>{% endfor %}
+  </details>{% endif %}
+  {% if warnings %}<div class="alert alert-warning">
+    <ul>{% for warning in warnings %}<li>{{ warning }}</li>{% endfor %}</ul>
+    <label><input type="checkbox" name="ack_warnings" value="yes"> 처리 월·누락 후보·합계 경고를 원본과 대조했습니다.</label>
+  </div>{% endif %}
+  <button type="submit" class="btn btn-primary confirm-monthly" {% if not review_token %}disabled{% endif %}>확정 · 동기화</button>
   <a class="btn" href="/monthly">취소</a>
 </form>
-
-<script>
-(function () {
-  var table = document.getElementById('rows');
-  function rowInputs(tr) {
-    var inputs = tr.querySelectorAll('input');
-    var names = ['point_no', 'personal_no', 'name', 'team', 'grade', 'amount', 'note', 'carry'];
-    var result = {};
-    for (var i = 0; i < names.length; i++) result[names[i]] = inputs[i];
-    return result;
-  }
-  function reindex() {
-    var rows = table.tBodies[0].rows;
-    for (var i = 0; i < rows.length; i++) {
-      var ins = rowInputs(rows[i]);
-      ins.point_no.name = 'point_no_' + i;
-      ins.personal_no.name = 'personal_no_' + i;
-      ins.name.name = 'name_' + i;
-      ins.team.name = 'team_' + i;
-      ins.grade.name = 'grade_' + i;
-      ins.amount.name = 'amount_' + i;
-      ins.note.name = 'note_' + i;
-      ins.carry.name = 'carry_' + i;
-    }
-  }
-  function addRow() {
-    var tr = document.createElement('tr');
-    tr.innerHTML = '<td><input type="text" class="row-input"></td>'.repeat(7) +
-      '<td><input type="number" min="0" step="1" class="row-input" placeholder="이월 잔액" required></td>' +
-      '<td><button type="button" class="btn btn-sm btn-danger row-del">삭제</button></td>';
-    table.tBodies[0].appendChild(tr);
-    reindex();
-  }
-  document.getElementById('add-row').addEventListener('click', addRow);
-  table.addEventListener('click', function (e) {
-    if (e.target.classList.contains('row-del')) {
-      var tr = e.target.closest('tr');
-      if (tr && tr.parentElement.rows.length > 1) {
-        tr.parentElement.removeChild(tr);
-        reindex();
-      }
-    }
-  });
-})();
-</script>
+<script src="/static/js/review.js" defer></script>
 {% endblock %}

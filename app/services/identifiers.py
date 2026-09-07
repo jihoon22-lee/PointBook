@@ -2,8 +2,8 @@
 
 import re
 
-POINT_NO_RE = re.compile(r"^\d{8}$")
-LEGACY_POINT_NO_RE = re.compile(r"^L\d{7}$")
+POINT_NO_RE = re.compile(r"^[0-9]{8}$")
+LEGACY_POINT_NO_RE = re.compile(r"^L[0-9]{7}$")
 
 
 def normalize_point_no(value: str) -> str:
