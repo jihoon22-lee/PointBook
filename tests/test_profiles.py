@@ -372,7 +372,8 @@ def test_new_initial_observation_does_not_change_legacy_unobserved_account(auth_
         == 0
     )
     page = auth_client.get(f"/people/{legacy.id}")
-    assert "관측 기준 월 미확인" in page.text and "1,000원" in page.text
+    assert "잔액 기준 월" not in page.text and "1,000원" in page.text
+    assert "<th>이월 잔액</th>" in page.text and "<th>당월 충전</th>" in page.text
 
 
 def test_new_initial_observation_cannot_be_backdated_from_hidden_month(auth_client, db):

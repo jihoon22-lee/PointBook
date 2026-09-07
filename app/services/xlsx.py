@@ -335,7 +335,7 @@ def _report_workbook(
     summary_values = [
         ("PointBook 월간 보고서", __version__),
         ("기준 월", report.month),
-        ("잔액 범위", "해당 월 관측" if report.scope == "observed" else "기준 월까지 마지막 관측"),
+        ("잔액 범위", "총 잔액" if report.scope == "observed" else "기준 월까지 마지막 관측"),
         (
             "계정 구분",
             {"person": "일반", "shared": "공용", "all": "일반·공용 전체"}[report.account_type],
@@ -348,7 +348,7 @@ def _report_workbook(
             "생성 시각 (한국 시간)",
             report.generated_at.replace(tzinfo=UTC).astimezone(KST).isoformat(),
         ),
-        ("월간 처리 인원", report.summary.processed_count),
+        ("월간 처리 인원", report.summary.workforce_count),
         ("선택월 잔액 관측 인원", report.summary.observed_count),
         ("확인된 잔액 인원", report.summary.known_balance_count),
         ("기준시점 잔액 미확인", report.summary.unknown_count),
@@ -377,7 +377,7 @@ def _report_workbook(
         ),
         ("월간 재직 인원", report.summary.active_count),
         ("월간 비재직 전환 인원", report.summary.deactivated_count),
-        ("재직·비재직 전환 인원", report.summary.active_count + report.summary.deactivated_count),
+        ("재직·비재직 전환 인원", report.summary.workforce_count),
         (
             "인원 집계 기준",
             "일반 인원의 해당 월 재직자와 직전 실제 월간 기록에서 재직이었다가 비재직으로 전환한 인원입니다. 기존 비재직·공용계정은 제외합니다.",
@@ -442,7 +442,7 @@ def _report_workbook(
             (
                 team.name,
                 team.count,
-                team.processed_count,
+                team.workforce_count,
                 team.observed_count,
                 team.total_amount if team.processed_count else None,
                 team.total_usage if team.processed_count else None,

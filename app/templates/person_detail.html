@@ -19,15 +19,9 @@
     <tr><th>상태</th><td>{{ '재직' if person.status == 'active' else '비재직' }}</td></tr>
     <tr><th>계정 구분</th><td>{{ '공용 계정' if person.account_type == 'shared' else '일반 인원' }}</td></tr>
     <tr><th>개인번호</th><td>{{ person.personal_no or '-' }}</td></tr>
-    <tr><th>현재 총 잔액</th><td><strong>{{ (person.current_carry_balance + person.current_amount)|number_format }}원</strong></td></tr>
-    <tr><th>잔액 기준 월</th><td>{% if latest %}{{ latest.month }}{% else %}관측 기준 월 미확인 — 기존 보유값{% endif %}</td></tr>
-    {% if latest and latest.kind == 'monthly' %}
-    <tr><th>{{ latest.month }} 이월 잔액</th><td>{{ latest.carry_balance|number_format }}원</td></tr>
-    <tr><th>{{ latest.month }} 충전 금액</th><td>{{ latest.amount|number_format }}원</td></tr>
-    {% elif not latest %}
-    <tr><th>기존 이월 구성값</th><td>{{ person.current_carry_balance|number_format }}원</td></tr>
-    <tr><th>기존 금액 구성값</th><td>{{ person.current_amount|number_format }}원</td></tr>
-    {% endif %}
+    <tr><th>이월 잔액</th><td>{{ person.current_carry_balance|number_format }}원</td></tr>
+    <tr><th>당월 충전</th><td>{{ person.current_amount|number_format }}원</td></tr>
+    <tr><th>총 잔액</th><td><strong>{{ (person.current_carry_balance + person.current_amount)|number_format }}원</strong></td></tr>
   </table>
   <p class="muted">잔액은 마지막으로 확인한 값입니다. 기록 없는 달의 소비를 0원으로 의미하지 않습니다. 기본 정보 수정은 장부 금액을 변경하지 않습니다.</p>
 </div>

@@ -36,13 +36,13 @@
   <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>월</th><th>월간 처리 인원</th><th>총 충전</th><th>순사용 합계</th><th>해당 월 관측 잔액 · 일반/공용 전체</th></tr>
+        <tr><th>월</th><th>월간 처리 인원</th><th>총 충전</th><th>순사용 합계</th><th>총 잔액</th></tr>
       </thead>
       <tbody>
       {% for s in summary %}
         <tr>
           <td class="month-label">{{ s.month }}<br><span class="muted">{{ {"closed":"월간 확정","partial":"일부 인원 정정"}.get(month_statuses.get(s.month),"별도 잔액 관측") }}</span></td>
-          <td>{{ s.processed_count }}명</td>
+          <td>{{ s.workforce_count }}명</td>
           <td>{{ (s.total_amount|number_format) ~ "원" if s.processed_count else "월간 기록 없음" }}</td>
           <td>{{ (s.total_usage|number_format) ~ "원" if s.processed_count else "월간 기록 없음" }}</td>
           <td><strong>{{ s.total_balance|number_format }}원</strong></td>

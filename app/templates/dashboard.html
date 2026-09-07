@@ -9,7 +9,7 @@
   <form method="get" action="/dashboard">
     <label>조회 월 <select name="month" onchange="this.form.submit()">{% for month in months %}<option value="{{ month }}" {% if month == selected %}selected{% endif %}>{{ month }}</option>{% endfor %}</select></label>
     <label>잔액 범위 <select name="scope">
-      <option value="observed" {% if scope == 'observed' %}selected{% endif %}>해당 월 관측 잔액</option>
+      <option value="observed" {% if scope == 'observed' %}selected{% endif %}>총 잔액</option>
       <option value="as_of" {% if scope == 'as_of' %}selected{% endif %}>기준 월까지 보유 잔액</option>
     </select></label>
     <label>계정 구분 <select name="account_type">
@@ -27,7 +27,7 @@
 </div>
 {% if report %}
 <p><a class="btn" href="{{ export_url }}">이 조회 결과 Excel 다운로드</a></p>
-<p><strong>{{ '해당 월 관측 잔액' if scope == 'observed' else '기준 월까지 보유 잔액' }}</strong> · {{ '일반 인원' if account_type == 'person' else ('공용 계정' if account_type == 'shared' else '일반·공용 전체') }}{% if operation_id is not none %} · 변경 이력에서 선택한 시점의 금액{% endif %}</p>
+<p><strong>{{ '총 잔액' if scope == 'observed' else '기준 월까지 보유 잔액' }}</strong> · {{ '일반 인원' if account_type == 'person' else ('공용 계정' if account_type == 'shared' else '일반·공용 전체') }}{% if operation_id is not none %} · 변경 이력에서 선택한 시점의 금액{% endif %}</p>
 <p class="muted">팀·계급과 팀별 집계는 현재 인원 정보 기준입니다. 기존 장부의 일반 인원은 해당 월 충전액이 0원이면 비재직, 지급액이 있으면 재직입니다. 기록 없는 달은 새 기록으로 만들지 않습니다.</p>
 {% if report.summary.unknown_count %}<p class="alert alert-warning">기준시점 잔액 미확인 {{ report.summary.unknown_count }}명: 현재값은 참고로만 표시하며 잔액 합계에 포함하지 않았습니다. 합계는 확인된 잔액의 부분 합계입니다.</p>{% endif %}
 {% if report.unclassified_rows %}<div class="alert alert-warning">
@@ -41,13 +41,13 @@
 {% else %}
 <div class="summary-grid">
   <div class="summary-card">
-    {% if account_type != 'shared' %}<div class="label">{{ selected }} 재직·비재직 전환 인원</div><div class="value">{{ summary.active_count + summary.deactivated_count }}명</div><p>재직 {{ summary.active_count }}명 · 비재직 전환 {{ summary.deactivated_count }}명</p>
+    {% if account_type != 'shared' %}<div class="label">{{ selected }} 재직·비재직 전환 인원</div><div class="value">{{ summary.workforce_count }}명</div><p>재직 {{ summary.active_count }}명 · 비재직 전환 {{ summary.deactivated_count }}명</p>
     {% else %}<div class="label">{{ selected }} 공용계정 월간 기록</div><div class="value">{{ summary.processed_count }}개</div>{% endif %}
     <p class="muted">조회 대상 {{ summary.count }} · 월간 기록 {{ summary.processed_count }}</p>
   </div>
   <div class="summary-card"><div class="label">{{ selected }} 총 충전 금액</div><div class="value">{{ (summary.total_amount|number_format ~ '원') if summary.processed_count else '월간 기록 없음' }}</div></div>
   <div class="summary-card"><div class="label">{{ selected }} 순사용 합계</div><div class="value">{{ (summary.total_usage|number_format ~ '원') if summary.processed_count else '월간 기록 없음' }}</div></div>
-  <div class="summary-card"><div class="label">확인된 {{ '월 관측' if scope == 'observed' else '보유' }} 총 잔액</div><div class="value">{{ (summary.total_balance|number_format ~ '원') if summary.known_balance_count else '확인된 관측 없음' }}</div></div>
+  <div class="summary-card"><div class="label">{{ '총 잔액' if scope == 'observed' else '기준 월까지 보유 잔액' }}</div><div class="value">{{ (summary.total_balance|number_format ~ '원') if summary.known_balance_count else '확인된 관측 없음' }}</div></div>
 </div>
 
 <div class="card"><h2>월별 추이</h2><p class="muted">실제 관측이 있는 달만 표시합니다. 미관측 인원의 참고 잔액은 합계에 넣지 않습니다.</p>

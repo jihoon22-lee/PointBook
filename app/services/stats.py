@@ -37,6 +37,11 @@ class MonthSummary:
     active_count: int = 0
     deactivated_count: int = 0
 
+    @property
+    def workforce_count(self) -> int:
+        """월간 처리 인원: 재직(복귀 포함) + 그 월 비재직 전환. 중복 없이 센다."""
+        return self.active_count + self.deactivated_count
+
 
 @dataclass
 class TeamStat:
@@ -49,6 +54,7 @@ class TeamStat:
     processed_count: int = 0
     observed_count: int = 0
     unknown_count: int = 0
+    workforce_count: int = 0
 
 
 @dataclass
@@ -181,6 +187,10 @@ def _teams(rows: list[PersonStat]) -> list[TeamStat]:
                 result[name].total_amount += row.amount or 0
                 result[name].total_usage += row.usage or 0
                 active[name].add(row.person_id)
+                result[name].workforce_count += int(
+                    profile.get("account_type") == "person"
+                    and (profile.get("status") == "active" or row.deactivated)
+                )
             else:
                 result[name].total_balance += row.total or 0
                 observed[name].add(row.person_id)

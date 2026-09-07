@@ -2,6 +2,7 @@
 
 import io
 import json
+import re
 import uuid
 from contextlib import closing
 
@@ -88,11 +89,33 @@ def test_existing_raw_revisions_restore_absence_employment_departure_and_return(
     assert [(r.active_count, r.deactivated_count) for r in stats.trend(db)] == [
         (a, d) for _, a, d in expected
     ]
+    monthly = auth_client.get("/monthly")
+    counts = dict(
+        re.findall(
+            r'<td class="month-label">(\d{4}-\d{2}).*?</td>\s*<td>(\d+)명</td>',
+            monthly.text,
+            re.DOTALL,
+        )
+    )
+    assert counts == {
+        "2025-01": "0",
+        "2025-02": "1",
+        "2025-03": "1",
+        "2025-05": "0",
+        "2025-06": "1",
+    }
+    assert "<th>총 잔액</th>" in monthly.text and "해당 월 관측 잔액" not in monthly.text
     assert stats.report(db, "2025-04").rows == []
     assert stats.report(db, "2025-04", scope="as_of").summary.active_count == 0
     assert stats.report(db, "2025-04", scope="as_of").summary.total_balance == 50000
     page = auth_client.get(f"/people/{person.id}")
     assert "<th>출처</th>" not in page.text and "이관 시점 인원 정보 참고" not in page.text
+    current_table = page.text.split("<h2>현재 정보</h2>")[1].split("</table>")[0]
+    assert "잔액 기준 월" not in current_table and "2025-" not in current_table
+    assert all(
+        label in current_table
+        for label in ("<th>이월 잔액</th>", "<th>당월 충전</th>", "<th>총 잔액</th>")
+    )
     assert all(
         label not in page.text for label in ("월·정정판", "당시 이름", "당시 팀", "당시 구분")
     )
@@ -130,8 +153,18 @@ def test_dashboard_and_xlsx_restore_workforce_counts_and_use_only_current_assign
     assert result.teams[0].name == "현재팀" and result.teams[0].total_balance == 500
     assert not stats.report(db, "2025-03", account_type="all", team_name="과거팀").rows
     assert result.rows[-1].status == "active"  # shared account remains active at zero charge
+    monthly = auth_client.get("/monthly")
+    counts = dict(
+        re.findall(
+            r'<td class="month-label">(\d{4}-\d{2}).*?</td>\s*<td>(\d+)명</td>',
+            monthly.text,
+            re.DOTALL,
+        )
+    )
+    assert counts["2025-03"] == "2"  # active + newly inactive; retained inactive/shared excluded
     html = auth_client.get("/dashboard?month=2025-03&account_type=all")
     assert "재직·비재직 전환 인원" in html.text
+    assert "해당 월 관측 잔액" not in html.text
     assert "재직 1명 · 비재직 전환 1명" in html.text
     assert "과거팀" not in html.text and "과거계급" not in html.text
     assert "현재팀" in html.text and "현재계급" in html.text
@@ -139,6 +172,10 @@ def test_dashboard_and_xlsx_restore_workforce_counts_and_use_only_current_assign
     with closing(load_workbook(io.BytesIO(data.content))) as workbook:
         summary = {row[0].value: row[1].value for row in workbook["요약"]}
         assert (summary["월간 재직 인원"], summary["월간 비재직 전환 인원"]) == (1, 1)
+        assert summary["월간 처리 인원"] == 2
+        assert summary["잔액 범위"] == "총 잔액"
+        team_rows = list(workbook["팀별"].iter_rows(min_row=2, values_only=True))
+        assert team_rows[0][2] == 2
         headers = [cell.value for cell in workbook["인원"][1]]
         exported = [
             dict(zip(headers, row, strict=True))
