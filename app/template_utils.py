@@ -7,6 +7,7 @@ from fastapi.templating import Jinja2Templates
 
 from app._version import __version__
 from app.auth import csrf_token
+from app.config import get_settings
 from app.services.identifiers import format_point_no
 
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
@@ -59,6 +60,10 @@ def render(
     return templates.TemplateResponse(
         request,
         name,
-        {**(context or {}), "csrf_token": csrf_token(request)},
+        {
+            **(context or {}),
+            "csrf_token": csrf_token(request),
+            "instance_notice": get_settings().instance_notice,
+        },
         status_code=status_code,
     )
