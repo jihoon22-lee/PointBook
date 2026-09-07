@@ -9,7 +9,6 @@
     {% for field,label in [('carry_balance','이월 잔액'),('amount','충전액'),('usage','순사용'),('total','총잔액'),('note','비고')] %}
     <tr><td>{{ change.after.month }}</td><td>{{ label }}</td><td>{% if change.before %}{{ change.before[field]|number_format if field != 'note' else change.before[field] }}{% else %}새 관측{% endif %}</td><td>{{ change.after[field]|number_format if field != 'note' else change.after[field] }}</td></tr>
     {% endfor %}
-    {% if change.after.profile %}<tr><td>{{ change.after.month }}</td><td>당시 정보</td><td>{% if change.before %}{{ change.before.profile.name }} / {{ change.before.profile.team_name or '팀 없음' }} / {{ change.before.profile.account_type }}{% else %}미확인{% endif %}</td><td>{{ change.after.profile.name }} / {{ change.after.profile.team_name or '팀 없음' }} / {{ change.after.profile.account_type }}{% if change.after.provenance not in ['observed','manual_correction'] %} · 당시 사실 미확인{% endif %}</td></tr>{% endif %}
   {% endfor %}
   </tbody></table></div>
   {% if plan.current_before %}<p>현재 총잔액: {{ plan.current_before.total|number_format }}원 → {{ plan.current_after.total|number_format }}원</p>{% endif %}

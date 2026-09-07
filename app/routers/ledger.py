@@ -14,7 +14,6 @@ from app.auth import require_login
 from app.db import get_db
 from app.models import AdminUser, LedgerOperation, Person
 from app.services.dates import KST, current_month
-from app.services.history import profile_for_person, profile_for_record
 from app.services.integrity import apply_repair, inspect_ledger, repair_plan
 from app.services.ledger import (
     LedgerConflict,
@@ -30,7 +29,6 @@ from app.services.observations import latest_observations
 from app.template_utils import render
 
 router = APIRouter(prefix="/ledger", dependencies=[Depends(require_login)], tags=["ledger"])
-PROFILE_FIELDS = ("point_no", "personal_no", "name", "team_name", "grade", "status", "account_type")
 
 
 def _fields(form: FormData) -> dict[str, str]:
@@ -43,12 +41,8 @@ def _fields(form: FormData) -> dict[str, str]:
         "reason",
         "request_key",
         "plan_token",
-        "update_profile",
     )
-    return {
-        key: str(form.get(key, ""))
-        for key in (*keys, *("history_" + key for key in PROFILE_FIELDS))
-    }
+    return {key: str(form.get(key, "")) for key in keys}
 
 
 def _build(db: Session, kind: str, person_id: int, values: dict[str, str]) -> LedgerPlan:
@@ -65,9 +59,6 @@ def _build(db: Session, kind: str, person_id: int, values: dict[str, str]) -> Le
             month=values["month"],
             carry=values["carry"],
             amount=values["amount"],
-            historical_profile={key: values["history_" + key] for key in PROFILE_FIELDS}
-            if values["update_profile"] == "yes"
-            else None,
         )
     return adjustment_plan(db, **common, total=values["total"])
 
@@ -169,7 +160,6 @@ def correction_form(
     records = sorted(person.balances, key=lambda r: r.snapshot.month, reverse=True)
     month = month or (records[0].snapshot.month if records else current_month())
     record = next((r for r in records if r.snapshot.month == month), None)
-    profile = profile_for_record(record) if record else profile_for_person(person)
     values = {
         "month": month,
         "carry": str(record.carry_balance) if record else "",
@@ -179,8 +169,6 @@ def correction_form(
         "reason": "",
         "request_key": uuid.uuid4().hex,
         "plan_token": "",
-        "update_profile": "",
-        **{"history_" + key: str(profile.get(key) or "") for key in PROFILE_FIELDS},
     }
     return _form(request, db, "correction", person_id, values)
 
@@ -199,7 +187,6 @@ def adjustment_form(person_id: int, request: Request, db: Session = Depends(get_
         "reason": "",
         "request_key": uuid.uuid4().hex,
         "plan_token": "",
-        "update_profile": "",
     }
     return _form(request, db, "adjustment", person_id, values)
 

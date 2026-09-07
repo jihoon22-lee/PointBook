@@ -1,6 +1,6 @@
-"""당시 정보·선택한 정정판으로 월간 활동과 관측 기준 잔액을 분리 집계한다."""
+"""월별 지급·상태와 현재 팀·계급으로 활동/보유 잔액을 집계한다."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Any
 
@@ -9,13 +9,13 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.models import BalanceAdjustment, LedgerOperation, MonthlySnapshot, Person, utcnow
 from app.services.dates import validate_month
-from app.services.history import profile_for_person
+from app.services.history import current_person_profile, profile_for_person
 from app.services.observations import Observation, latest_observations, observation_events
 
 PROVENANCE_LABELS = {
     "unknown": "당시 정보 미확인",
-    "master_at_migration": "이관 시 현재정보 참고 · 당시 사실 미확인",
-    "legacy_import": "기존 장부에서 보존 · 당시 정보 확인 범위 제한",
+    "master_at_migration": "기존 장부",
+    "legacy_import": "기존 장부",
     "observed": "당시 관측 정보",
     "manual_correction": "명시적 보정·정정 정보",
     "reference_at_correction": "정정 당시 정보 참고 · 당시 사실 미확인",
@@ -34,6 +34,8 @@ class MonthSummary:
     observed_count: int = 0
     unknown_count: int = 0
     known_balance_count: int = 0
+    active_count: int = 0
+    deactivated_count: int = 0
 
 
 @dataclass
@@ -78,6 +80,7 @@ class PersonStat:
     balance_profile: dict[str, Any] | None = None
     current_reference_total: int | None = None
     current_reference_name: str = ""
+    deactivated: bool = False
 
 
 @dataclass
@@ -150,6 +153,13 @@ def _row(
         if current_reference
         else None,
         current_reference_name=person.name if current_reference or not profile else "",
+        deactivated=bool(
+            activity
+            and activity.profile.get("account_type") == "person"
+            and activity.profile.get("status") == "inactive"
+            and activity.previous_monthly_type == "person"
+            and activity.previous_monthly_status == "active"
+        ),
     )
 
 
@@ -175,9 +185,9 @@ def _teams(rows: list[PersonStat]) -> list[TeamStat]:
                 result[name].total_balance += row.total or 0
                 observed[name].add(row.person_id)
         if row.balance_kind == "unobserved":
-            name = "기준시점 팀 미확인"
+            name = row.team_name or "팀 없음"
             if name not in result:
-                result[name] = TeamStat(name, "#9aa3ad", 0, 0, 0, 0)
+                result[name] = TeamStat(name, row.team_color, 0, 0, 0, 0)
                 members[name], active[name], observed[name] = set(), set(), set()
             members[name].add(row.person_id)
             result[name].unknown_count += 1
@@ -207,6 +217,10 @@ def _assemble(
             continue
         person = people[pid]
         balance, activity = balances.get(pid), activities.get(pid)
+        if balance:
+            balance = replace(balance, profile=current_person_profile(balance.profile, person))
+        if activity:
+            activity = replace(activity, profile=current_person_profile(activity.profile, person))
         selected_balance = (
             balance if balance and _matches(balance.profile, account_type, team_name) else None
         )
@@ -227,9 +241,7 @@ def _assemble(
             if observation is None:
                 return False
             profile = observation.profile
-            return (
-                account_type != "all" and profile.get("account_type") not in {"person", "shared"}
-            ) or (team_name is not None and profile.get("team_name") is None)
+            return account_type != "all" and profile.get("account_type") not in {"person", "shared"}
 
         unknown_balance = balance if classification_unknown(balance) else None
         unknown_activity = activity if classification_unknown(activity) else None
@@ -246,6 +258,15 @@ def _assemble(
         observed_count=sum(row.observation_month == month for row in rows),
         unknown_count=sum(row.balance_kind == "unobserved" for row in rows),
         known_balance_count=sum(row.total is not None for row in rows),
+        active_count=sum(
+            bool(
+                row.activity_profile
+                and row.activity_profile.get("account_type") == "person"
+                and row.activity_profile.get("status") == "active"
+            )
+            for row in rows
+        ),
+        deactivated_count=sum(row.deactivated for row in rows),
     )
     return Report(
         month, scope, account_type, operation_id, rows, summary, _teams(rows), unclassified
@@ -268,8 +289,8 @@ def report(
 ) -> Report:
     """화면·Excel 공통 계약. 금액/usage는 선택월 실제 월간 기록, 잔액은 선택한 관측 범위다.
 
-    같은 달 프로필이 바뀐 보정이 있으면 월간 활동과 잔액을 각 관측 당시 유형/팀에
-    각각 귀속한다. 미관측 현재값은 참고 칸에만 두며 역사 잔액 합계에 넣지 않는다.
+    유형은 각 기록의 유형을 사용하고 팀·계급은 현재 인원 마스터로 통일한다.
+    미관측 현재값은 참고 칸에만 두며 역사 잔액 합계에 넣지 않는다.
     """
     validate_month(month)
     if scope not in {"observed", "as_of"} or account_type not in {"person", "shared", "all"}:

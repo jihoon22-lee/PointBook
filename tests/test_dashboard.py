@@ -61,7 +61,7 @@ def test_month_summary_sums_signed_usage(client, db):
     assert stats.month_summary(db, "2026-07").total_usage == -2000
 
 
-def test_month_summary_counts_actual_records_without_inferring_status_from_amount(client, db):
+def test_month_summary_restores_legacy_active_and_newly_inactive_counts(client, db):
     active = make_person(db, "101", "재직자")
     newly_inactive = make_person(db, "102", "신규비재직")
     already_inactive = make_person(db, "103", "기존비재직", status="inactive")
@@ -85,6 +85,7 @@ def test_month_summary_counts_actual_records_without_inferring_status_from_amoun
                 total=100,
             ),
         ],
+        source="legacy_import",
     )
     create_monthly_snapshot(
         db,
@@ -106,6 +107,7 @@ def test_month_summary_counts_actual_records_without_inferring_status_from_amoun
                 total=100,
             ),
         ],
+        source="legacy_import",
     )
 
     summary = stats.month_summary(db, "2026-08")
@@ -113,6 +115,10 @@ def test_month_summary_counts_actual_records_without_inferring_status_from_amoun
     assert summary.count == 3
     assert summary.processed_count == 3
     assert [item.count for item in stats.trend(db)] == [3, 3]
+
+    assert summary.active_count == 1
+    assert summary.deactivated_count == 1
+    assert [(s.active_count, s.deactivated_count) for s in stats.trend(db)] == [(2, 0), (1, 1)]
 
 
 def test_trend_orders_ascending(client, db):

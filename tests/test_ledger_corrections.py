@@ -363,23 +363,27 @@ def test_concurrent_monthly_submissions_are_serialized(auth_client, db, same_req
     assert db.scalar(select(func.count(MonthlySnapshot.id))) == 1
 
 
-def test_manual_historical_profile_changes_only_the_target(client, db):
+def test_amount_correction_cannot_create_a_monthly_identity_override(auth_client, db):
     person, records = setup_ledger(db)
-    profile = {
-        "name": "당시합성명",
-        "point_no": "00008101",
-        "personal_no": "",
-        "team_name": "당시팀",
-        "grade": "",
-        "account_type": "shared",
-        "status": "active",
-    }
-    plan = correction(db, person, historical_profile=profile)
-    apply(db, plan)
-    assert person.name == "합성정정" and person.account_type == "person"
-    assert json.loads(records[0].profile_data)["account_type"] == "shared"
-    assert records[0].provenance == "manual_correction"
-    assert json.loads(records[1].profile_data)["name"] == "합성정정"
+    before = records[0].profile_data
+    path = f"/ledger/correct/{person.id}"
+    values = form_values(auth_client.get(path + "?month=2026-05"))
+    assert not any(key.startswith("history_") for key in values)
+    values.update(
+        amount="150",
+        reason="금액 수정",
+        update_profile="yes",
+        history_name="다른 이름",
+        history_point_no="00009999",
+        history_team_name="과거팀",
+    )
+    preview = auth_client.post(path + "/preview", data=values)
+    assert preview.status_code == 200
+    response = auth_client.post(path + "/apply", data=form_values(preview), follow_redirects=False)
+    assert response.status_code == 303
+    db.refresh(records[0])
+    assert json.loads(records[0].profile_data) == json.loads(before)
+    assert person.name == "합성정정" and records[0].amount == 150
 
 
 @pytest.mark.parametrize(

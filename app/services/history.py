@@ -8,6 +8,33 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.models import BalanceRecord, BalanceRevision, Person, utcnow
 
+LEGACY_SOURCES = frozenset({"master_at_migration", "legacy_import"})
+
+
+def monthly_profile(profile: dict[str, Any], amount: int | None, provenance: str) -> dict[str, Any]:
+    """기존 엑셀 장부의 지급 이력으로 월별 상태를 읽는다. 원본은 변경하지 않는다."""
+    result = dict(profile)
+    if provenance in LEGACY_SOURCES and amount is not None:
+        if result.get("account_type") == "person":
+            result["status"] = "active" if amount > 0 else "inactive"
+        elif result.get("account_type") == "shared":
+            result["status"] = "active"
+    return result
+
+
+def current_person_profile(profile: dict[str, Any], person: Person) -> dict[str, Any]:
+    """인원 식별·이름·소속은 인원 마스터 한 곳에서 관리한다."""
+    return {
+        **profile,
+        "name": person.name,
+        "point_no": person.point_no,
+        "personal_no": person.personal_no,
+        "team_id": person.team_id,
+        "team_name": person.team.name if person.team else "",
+        "team_color": person.team.color if person.team else "#9aa3ad",
+        "grade": person.grade,
+    }
+
 
 def profile_for_person(person: Person) -> dict[str, Any]:
     return {
@@ -26,7 +53,11 @@ def profile_for_person(person: Person) -> dict[str, Any]:
 def profile_for_record(record: BalanceRecord) -> dict[str, Any]:
     try:
         value = json.loads(record.profile_data)
-        return value if isinstance(value, dict) else {}
+        return (
+            monthly_profile(value, record.amount, record.provenance)
+            if isinstance(value, dict)
+            else {}
+        )
     except (TypeError, ValueError):
         return {}
 
@@ -73,6 +104,10 @@ def freeze_new_records(
                 profile_for_person(people[record.person_id]), ensure_ascii=False, sort_keys=True
             )
         record.provenance = source
+        if source in LEGACY_SOURCES:
+            record.profile_data = json.dumps(
+                profile_for_record(record), ensure_ascii=False, sort_keys=True
+            )
         record.observed_at = utcnow() if source == "observed" else None
         record.version = record.version or 1
         record.note = record.note or ""

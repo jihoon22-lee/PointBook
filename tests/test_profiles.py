@@ -123,7 +123,7 @@ def test_new_account_preview_has_no_writes_then_initial_observation(auth_client,
     assert adjustment.note == "계정 등록 초기 잔액"
     assert json.loads(adjustment.profile_data)["point_no"] == "00000001"
     assert db.scalar(select(func.count(MonthlySnapshot.id))) == 0
-    assert "별도 잔액 관측" in auth_client.get(result.headers["location"]).text
+    assert "잔액 조정 이력" in auth_client.get(result.headers["location"]).text
 
 
 @pytest.mark.parametrize(
@@ -140,7 +140,7 @@ def test_known_zero_and_max_initial_balance_are_observations(auth_client, db, ca
 
     person = db.scalar(select(Person))
     assert person.current_carry_balance == total and person.current_amount == 0
-    assert "월간 충전 실적" in auth_client.get(result.headers["location"]).text
+    assert "잔액 조정 이력" in auth_client.get(result.headers["location"]).text
 
 
 def test_new_registration_replay_and_changed_payload(auth_client, db):
@@ -216,8 +216,10 @@ def test_profile_changes_require_review_and_preserve_historical_rows(auth_client
         record.version,
     ) == before
     page = auth_client.get(f"/people/{person.id}")
-    assert "기존 이름" in page.text and "기존 팀" in page.text and "당시 비고" in page.text
-    assert "확정 당시 관측" in page.text and "-20" in page.text
+    assert "현재 이름" in page.text and "새 팀" in page.text and "당시 비고" in page.text
+    assert "기존 이름" not in page.text
+    assert "기존 팀" not in page.text and "새 계급" in page.text
+    assert "확정 당시 관측" not in page.text and "-20" in page.text
     assert f"/ledger/correct/{person.id}?month=2026-01" in page.text
     operation = db.scalar(select(LedgerOperation))
     assert operation.kind == "profile"
@@ -322,8 +324,9 @@ def test_legacy_unknown_history_is_not_filled_from_live_profile(auth_client, db)
     )
     db.commit()
     page = auth_client.get(f"/people/{person.id}")
-    assert "이관 참고 이름" in page.text
-    assert "당시 정보 미확인 · 이관 시점 인원 정보 참고" in page.text
+    assert "현재 이름" in page.text and "이관 참고 이름" not in page.text
+    assert "당시 정보 미확인 · 이관 시점 인원 정보 참고" not in page.text
+    assert "<th>출처</th>" not in page.text
     assert db.scalar(select(func.count(BalanceAdjustment.id))) == 0
 
 

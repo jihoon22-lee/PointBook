@@ -27,9 +27,8 @@ from app.models import (
 from app.services.backup import backup_database
 from app.services.balance import compute_total
 from app.services.dates import current_month, validate_month
-from app.services.history import preserve_revision, profile_for_person, record_data
+from app.services.history import monthly_profile, preserve_revision, profile_for_person, record_data
 from app.services.observations import latest_observations
-from app.services.parsing import RawRequestRow
 from app.services.validation import parse_balance, parse_money
 
 
@@ -192,7 +191,6 @@ def correction_plan(
     note: str,
     reason: str,
     request_key: str,
-    historical_profile: dict[str, str] | None = None,
 ) -> LedgerPlan:
     validate_request_key(request_key)
     month = validate_month(month)
@@ -204,32 +202,6 @@ def correction_plan(
         "note": _note(note),
         "reason": _reason(reason),
     }
-    if historical_profile is not None:
-        raw = RawRequestRow(
-            **{
-                key: historical_profile.get(key, "")
-                for key in ("point_no", "personal_no", "name", "grade", "account_type")
-            },
-            team=historical_profile.get("team_name", ""),
-            amount="0",
-        )
-        row = raw.validated()
-        status = historical_profile.get("status", "")
-        if status not in {"active", "inactive"} or (
-            row.account_type == "shared" and status != "active"
-        ):
-            raise ValueError("당시 상태와 계정 유형을 확인해 주세요.")
-        payload["historical_profile"] = {
-            "point_no": row.point_no,
-            "personal_no": row.personal_no or None,
-            "name": row.name,
-            "grade": row.grade,
-            "account_type": row.account_type,
-            "status": status,
-            "team_id": None,
-            "team_name": row.team,
-            "team_color": "#9aa3ad",
-        }
     person = _person(db, person_id)
     record = _record_at(db, person_id, month)
     if record is None:
@@ -262,8 +234,7 @@ def correction_plan(
             provenance="reference_at_correction",
             observed_at=None,
         )
-    if historical_profile is not None:
-        after.update(profile=payload["historical_profile"], provenance="manual_correction")
+    after["profile"] = monthly_profile(after["profile"], after["amount"], after["provenance"])
     plan = LedgerPlan(
         kind="correction",
         request_key=request_key,
