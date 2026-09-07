@@ -16,6 +16,7 @@
           <td><a href="/teams/{{ team.id }}">{{ team.name }}</a></td>
           <td>
             <form class="team-color-form" method="post" action="/teams/{{ team.id }}/color">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <input class="color-picker color-picker-compact" type="color" name="color" value="{{ team.color }}" required aria-label="{{ team.name }} 색상">
               <code class="muted">{{ team.color }}</code>
               <button type="submit" class="btn btn-sm" aria-label="{{ team.name }} 색상 저장">색상 저장</button>
@@ -28,6 +29,7 @@
           </td>
           <td>
             <form method="post" action="/teams/{{ team.id }}/delete" onsubmit="return confirm('팀 \'{{ team.name }}\' 을(를) 삭제할까요? (소속 인원은 팀 없음으로 변경됩니다)')">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button type="submit" class="btn btn-sm btn-danger">삭제</button>
             </form>
           </td>
@@ -43,6 +45,7 @@
 <div class="card">
   <h2>팀 추가</h2>
   <form method="post" action="/teams">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>팀 이름
       <input type="text" name="name" required maxlength="50" placeholder="예: 1팀, 구조대">
     </label>

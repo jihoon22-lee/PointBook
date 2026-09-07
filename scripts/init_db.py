@@ -7,7 +7,7 @@ from sqlalchemy import select
 from werkzeug.security import generate_password_hash
 
 from app import db as db_module
-from app.config import get_settings
+from app.config import DEFAULT_ADMIN_PASSWORD, get_settings
 from app.models import AdminUser
 
 
@@ -17,6 +17,10 @@ def ensure_admin() -> str:
         existing = db.scalar(select(AdminUser).where(AdminUser.username == settings.admin_username))
         if existing is not None:
             return f"관리자 계정 '{settings.admin_username}' 이(가) 이미 존재합니다."
+        if (settings.app_env == "production" or settings.enforce_secure_defaults) and (
+            not settings.admin_password.strip() or settings.admin_password == DEFAULT_ADMIN_PASSWORD
+        ):
+            raise ValueError("운영 관리자 초기 암호에 기본값 또는 빈 값을 사용할 수 없습니다.")
         db.add(
             AdminUser(
                 username=settings.admin_username,
@@ -28,9 +32,13 @@ def ensure_admin() -> str:
 
 
 def main() -> None:
+    get_settings().validate_runtime()
     db_module.configure_database(db_module.default_database_url())
-    db_module.init_db()
-    print(ensure_admin())
+    try:
+        db_module.init_db()
+        print(ensure_admin())
+    finally:
+        db_module.engine.dispose()
 
 
 if __name__ == "__main__":

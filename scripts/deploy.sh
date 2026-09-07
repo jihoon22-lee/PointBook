@@ -1,77 +1,46 @@
 #!/usr/bin/env bash
-# GitHub Actions self-hosted runner가 호출하는 Docker Compose 배포 스크립트
-# - 코드 최신화(main) → 이미지 빌드 → PointBook 중지 → DB 백업 → 기동·상태 확인
+# source 갱신 후 새 스크립트로 handoff한다. 유지보수 lock은 handoff 이후 한 번만 확보한다.
 set -euo pipefail
-cd "$(dirname "$0")/.."
-
+POINTBOOK_DEPLOY_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
+cd "$POINTBOOK_DEPLOY_ROOT"
 export PATH="$PATH:/snap/bin"
-export POINTBOOK_PORT="${POINTBOOK_PORT:-${DEPLOY_PORT:-8002}}"
-export POINTBOOK_UID="${POINTBOOK_UID:-$(id -u)}"
-export POINTBOOK_GID="${POINTBOOK_GID:-$(id -g)}"
-
-echo "== deploy: 코드 최신화 =="
-git fetch origin main --quiet
-git checkout main --quiet
-git pull --ff-only origin main --quiet
-
-echo "== deploy: 운영 이미지 빌드 =="
-docker compose build app
-
-echo "== deploy: PointBook 서버 중지 =="
-scripts/stop.sh
-
-echo "== deploy: DB 사전 백업 =="
-mkdir -p data/backups
-if [ -f data/pointbook.db ]; then
-  cp data/pointbook.db "data/backups/pointbook-pre-deploy-$(date +%Y%m%d-%H%M%S).db"
-  echo "   백업 완료: data/backups/"
-else
-  echo "   백업할 DB 없음 (신규 설치)"
+if [ -n "$(git status --porcelain)" ]; then echo '오류: 배포 checkout에 미커밋 변경이 있습니다.' >&2; exit 1; fi
+if [ -z "${POINTBOOK_DEPLOY_HANDOFF_SHA:-}" ]; then
+  git fetch origin main --quiet
+  POINTBOOK_DEPLOY_TARGET="$(git rev-parse --verify "${POINTBOOK_DEPLOY_REF:-origin/main}^{commit}")"
+  git checkout --detach "$POINTBOOK_DEPLOY_TARGET" --quiet
+  export POINTBOOK_DEPLOY_HANDOFF_SHA="$POINTBOOK_DEPLOY_TARGET"
+  exec bash "$POINTBOOK_DEPLOY_ROOT/scripts/deploy.sh" "$@"
 fi
-
-echo "== deploy: Docker Compose 서버 시작 =="
-docker compose up -d app
-
-CONTAINER_ID="$(docker compose ps -q app)"
-if [ -z "$CONTAINER_ID" ]; then
-  echo "오류: PointBook 앱 컨테이너를 찾을 수 없습니다." >&2
-  docker compose ps >&2
-  exit 1
+POINTBOOK_DEPLOY_SHA="$(git rev-parse HEAD)"
+if [ "$POINTBOOK_DEPLOY_SHA" != "$POINTBOOK_DEPLOY_HANDOFF_SHA" ]; then
+  echo '오류: handoff 이후 배포 source SHA가 변경됐습니다.' >&2; exit 1
 fi
-
-for _ in $(seq 1 30); do
-  STATUS="$(docker inspect --format '{{.State.Health.Status}}' "$CONTAINER_ID" 2>/dev/null || true)"
-  case "$STATUS" in
-    healthy) break ;;
-    "unhealthy")
-      echo "오류: PointBook 앱 컨테이너가 unhealthy 상태입니다." >&2
-      docker compose logs --tail 100 app >&2
-      exit 1
-      ;;
-  esac
-  if ! docker inspect --format '{{.State.Running}}' "$CONTAINER_ID" 2>/dev/null | grep -q true; then
-    echo "오류: PointBook 앱 컨테이너가 종료되었습니다." >&2
-    docker compose logs --tail 100 app >&2
-    exit 1
-  fi
-  sleep 2
-done
-
-if [ "$(docker inspect --format '{{.State.Health.Status}}' "$CONTAINER_ID")" != "healthy" ]; then
-  echo "오류: PointBook 앱 컨테이너의 healthy 전환 시간이 초과됐습니다." >&2
-  docker compose logs --tail 100 app >&2
-  exit 1
+unset POINTBOOK_DEPLOY_HANDOFF_SHA
+source "$(dirname "$0")/compose-common.sh"
+pb_lock
+pb_preserve_current_image
+# 검증된 이미지를 명시하면 재빌드하지 않는다. 기본은 현재 source로 빌드 후 ID 고정.
+pb_select_deploy_image
+if [ "$(git rev-parse HEAD)" != "$POINTBOOK_DEPLOY_SHA" ] || [ -n "$(git status --porcelain)" ]; then
+  echo '오류: 이미지 선택 중 배포 source가 변경됐습니다.' >&2; exit 1
 fi
-
-for _ in $(seq 1 10); do
-  if curl --fail --silent --show-error --max-time 5 \
-    "http://127.0.0.1:${POINTBOOK_PORT}/login" >/dev/null; then
-    echo "== deploy: 완료 (http://localhost:${POINTBOOK_PORT}, healthy) =="
-    exit 0
-  fi
-  sleep 1
-done
-
-echo "오류: PointBook 로그인 페이지 상태 확인에 실패했습니다." >&2
-docker compose logs --tail 100 app >&2
-exit 1
+pb_preflight
+pb_rehearse_current_database
+pb_compose stop app
+trap 'echo "배포 중단: 서비스/보존 사본/이전 이미지를 확인하세요. DB 자동 rollback은 하지 않습니다." >&2' ERR
+PREDEPLOY_BACKUP=""
+if [ -f "$POINTBOOK_DATA_DIR/pointbook.db" ]; then
+  PREDEPLOY_BACKUP="$(pb_compose run --rm --no-deps --pull never --entrypoint python app -m scripts.backup --print-path)"
+fi
+pb_compose up -d --no-build --pull never app
+pb_verify
+pb_compose restart app
+pb_verify
+if [ -n "$PREDEPLOY_BACKUP" ]; then
+  pb_compose run --rm --no-deps --pull never --entrypoint python app \
+    -m scripts.restore "$PREDEPLOY_BACKUP" --verify-current
+fi
+printf '%s\n' "$POINTBOOK_DEPLOY_SHA" > "$POINTBOOK_DATA_DIR/deployed-source.txt"
+printf '%s\n' "$POINTBOOK_SELECTED_IMAGE" > "$POINTBOOK_DATA_DIR/deployed-image.txt"
+echo "배포 완료: $POINTBOOK_DEPLOY_SHA / $POINTBOOK_SELECTED_IMAGE (http://localhost:${POINTBOOK_PORT})"

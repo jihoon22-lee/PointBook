@@ -112,7 +112,7 @@ uv run python -m scripts.import_ledger --file 누적장부.xlsx --apply
 ## DB 마이그레이션·백업
 
 스키마 마이그레이션은 Alembic이 담당하며, 서버 기동 시 자동으로 적용된다.
-기존 1.0.x DB는 최초 1회 자동으로 기준점(stamp)이 잡힌다. 수동 명령:
+기존 무버전 DB는 알려진 전체 구조와 일치할 때만 과거 revision으로 판별한다. 수동 명령:
 
 ```bash
 uv run alembic upgrade head   # 최신 스키마로 마이그레이션
@@ -120,9 +120,11 @@ uv run alembic check          # 모델-마이그레이션 드리프트 확인
 uv run python -m scripts.backup   # DB 수동 백업 (data/backups/)
 ```
 
-- 월간 확정 시 `data/backups/`에 DB가 자동 백업된다 (보관 개수 `BACKUP_KEEP`, 기본 30)
-- 복구: `scripts/stop.sh`로 컨테이너를 중지한 뒤 원하는 백업 파일을
-  `data/pointbook.db`로 복사하고 `scripts/run.sh` 실행
+- 월간 확정 전 SQLite backup API로 일관된 사본과 검증 metadata를 보존한다.
+- 정기 백업은 `scripts/scheduled-backup.sh`, 복원은 `scripts/restore.sh 검증사본.db`를 사용한다.
+- 선택 환경·별도 백업 경로·복원 rehearsal·실패 복구는 [운영 절차](docs/backup-restore.md)를 따른다.
+- 운영은 `APP_ENV=production`으로 설정한다. 기본 비밀키·기본 관리자 DB 암호·Mock AI는 차단한다.
+  비밀번호 변경은 기존 세션을 폐기하며 모든 상태 변경 요청에 CSRF 검증을 적용한다.
 
 ## CI
 

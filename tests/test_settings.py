@@ -72,3 +72,18 @@ def test_change_password_success(auth_client, db):
     user = db.scalar(select(AdminUser).where(AdminUser.username == settings.admin_username))
     assert user is not None
     assert check_password_hash(user.password_hash, "newpass123")
+
+
+def test_cannot_change_to_default_password(auth_client):
+    from app.config import DEFAULT_ADMIN_PASSWORD
+
+    response = auth_client.post(
+        "/settings",
+        data={
+            "current_password": get_settings().admin_password,
+            "new_password": DEFAULT_ADMIN_PASSWORD,
+            "confirm_password": DEFAULT_ADMIN_PASSWORD,
+        },
+    )
+    assert response.status_code == 400
+    assert "기본 암호" in response.text

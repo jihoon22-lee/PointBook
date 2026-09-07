@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import argparse
-import shutil
 import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 
 from app import db as db_module
-from app.services.backup import backup_database
+from app.services.backup import backup_database, copy_database
 from app.services.ledger_import import (
     LedgerData,
     LedgerImportError,
@@ -81,7 +80,7 @@ def _dry_run(data: LedgerData, *, replace_empty_history_people: bool) -> LedgerI
     with tempfile.TemporaryDirectory(prefix="pointbook-ledger-dry-run-") as temp_dir:
         temporary_database = Path(temp_dir) / "pointbook.db"
         if source.is_file():
-            shutil.copy2(source, temporary_database)
+            copy_database(source, temporary_database)
         try:
             return _analyze_on_database(
                 f"sqlite:///{temporary_database}",

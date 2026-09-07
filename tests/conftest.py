@@ -1,3 +1,5 @@
+import re
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -21,7 +23,7 @@ def _reset_rate_limiter():
 def client(tmp_path):
     db_path = tmp_path / "test.db"
     db_module.configure_database(f"sqlite:///{db_path}")
-    db_module.Base.metadata.create_all(db_module.engine)
+    db_module.run_migrations()
     settings = get_settings()
     with Session(db_module.engine) as db:
         db.add(
@@ -32,7 +34,23 @@ def client(tmp_path):
         )
         db.commit()
     with TestClient(app) as c:
+        # Existing business tests submit valid browser requests. Security tests can
+        # use raw_request explicitly to exercise absent/invalid tokens.
+        c.raw_request = c.request
+
+        def csrf_request(method, url, **kwargs):
+            if method.upper() not in {"GET", "HEAD", "OPTIONS"}:
+                page = c.raw_request("GET", "/login")
+                match = re.search(r'name="csrf_token" value="([^"]+)"', page.text)
+                headers = dict(kwargs.pop("headers", {}) or {})
+                if match:
+                    headers.setdefault("X-CSRF-Token", match.group(1))
+                kwargs["headers"] = headers
+            return c.raw_request(method, url, **kwargs)
+
+        c.request = csrf_request
         yield c
+    db_module.engine.dispose()
 
 
 @pytest.fixture()

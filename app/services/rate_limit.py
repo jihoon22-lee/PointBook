@@ -1,46 +1,68 @@
-"""로그인 시도 레이트리밋.
+"""단일 프로세스용 로그인 제한: 동시 접근·메모리 상한·만료를 처리한다.
 
-단일 관리자 계정에 대한 브루트포스 공격을 막기 위한 인메모리 제한.
-단일 프로세스·단일 관리자 환경이라 프로세스 메모리로 충분하다.
+실제 client IP만 사용한다. Uvicorn 프록시 신뢰는 운영 실행 설정에서 제한한다.
+서버 재시작 시 초기화되며 다중 worker 환경을 위한 공유 제한기는 아니다.
 """
 
+import threading
 import time
-from collections import defaultdict
+from collections import OrderedDict
 
 
 class LoginRateLimiter:
-    def __init__(self, max_attempts: int = 5, window_seconds: int = 300) -> None:
+    def __init__(
+        self, max_attempts: int = 5, window_seconds: int = 300, max_keys: int = 10000
+    ) -> None:
         self.max_attempts = max_attempts
         self.window_seconds = window_seconds
-        self._failures: dict[tuple[str, str], list[float]] = defaultdict(list)
+        self.max_keys = max_keys
+        self._failures: OrderedDict[tuple[str, str], list[float]] = OrderedDict()
+        self._lock = threading.Lock()
 
-    def _key(self, username: str, ip: str) -> tuple[str, str]:
-        return (username.strip().lower(), ip)
+    def _keys(self, username: str, ip: str) -> tuple[tuple[str, str], tuple[str, str]]:
+        return ((username.strip().lower()[:100], ip), ("", ip))
 
-    def _prune(self, key: tuple[str, str], now: float) -> None:
-        self._failures[key] = [t for t in self._failures[key] if now - t < self.window_seconds]
+    def _prune(self, now: float) -> None:
+        for key in list(self._failures):
+            attempts = [t for t in self._failures[key] if now - t < self.window_seconds]
+            if attempts:
+                self._failures[key] = attempts
+            else:
+                del self._failures[key]
 
     def locked_for(self, username: str, ip: str) -> int:
-        """잠금이면 남은 시간(초)을, 아니면 0을 반환한다."""
-        key = self._key(username, ip)
-        now = time.monotonic()
-        self._prune(key, now)
-        attempts = self._failures[key]
-        if len(attempts) >= self.max_attempts:
-            return max(1, int(self.window_seconds - (now - attempts[0])))
-        return 0
+        with self._lock:
+            now = time.monotonic()
+            self._prune(now)
+            remaining = 0
+            for key in self._keys(username, ip):
+                attempts = self._failures.get(key, [])
+                if len(attempts) >= self.max_attempts:
+                    remaining = max(
+                        remaining, max(1, int(self.window_seconds - (now - attempts[0])))
+                    )
+            return remaining
 
     def record_failure(self, username: str, ip: str) -> None:
-        key = self._key(username, ip)
-        now = time.monotonic()
-        self._failures[key].append(now)
-        self._prune(key, now)
+        with self._lock:
+            now = time.monotonic()
+            self._prune(now)
+            for key in set(self._keys(username, ip)):
+                attempts = self._failures.setdefault(key, [])
+                if len(attempts) < self.max_attempts:
+                    attempts.append(now)
+                self._failures.move_to_end(key)
+            while len(self._failures) > self.max_keys:
+                self._failures.popitem(last=False)
 
     def reset(self, username: str, ip: str) -> None:
-        self._failures.pop(self._key(username, ip), None)
+        with self._lock:
+            for key in self._keys(username, ip):
+                self._failures.pop(key, None)
 
     def clear_all(self) -> None:
-        self._failures.clear()
+        with self._lock:
+            self._failures.clear()
 
 
 login_limiter = LoginRateLimiter()
