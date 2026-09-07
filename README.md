@@ -22,6 +22,8 @@
 - **팀 색상**: 팀 추가 시 자유 색상 팔레트에서 구분 색상을 선택하고, 기존 팀도 팀 목록에서 색상만 안전하게 변경
 - **정정·감사**: 기본 정보·과거 장부 정정·현재 잔액 보정을 분리하고 전후 검토·사유·불변 이력을 보존
 - **대시보드**: 당시 정보·정정판으로 월별 활동과 마지막 관측 잔액을 구분해 일반/공용·팀·개인별 조회
+- **서버 초안**: 자동 저장·새로고침/다른 기기 복구·두 탭 충돌 방지·잔액 집중 입력
+- **표준 Excel**: 입력 양식 다운로드→검수·초안→확정, 같은 조회 범위·정정판의 보고서 다운로드
 - **자동 백업**: 월간 확정 전 DB 자동 백업 (`data/backups/`), 보관 개수 제한
 - **설정**: 관리자 비밀번호 변경 (`/settings`)
 
@@ -55,16 +57,16 @@ scripts/deploy.sh              # main 최신화·이미지 빌드·DB 백업·�
   이미지나 컨테이너를 교체해도 그대로 유지된다.
 - 접속: **Windows(호스트) 브라우저**는 `http://localhost:8002`로 접속한다.
 - 운영 포트 변경: `POINTBOOK_PORT=8001 scripts/run.sh`
-- 기본 접속은 HTTP(내부망). HTTPS 필요 시 uvicorn에 인증서 옵션을 추가해 TLS 1.2로 전환:
+- 기본 접속은 HTTP(내부망). HTTPS가 필요하면 인증서·프록시를 구성하고 대상 기기의 TLS 1.2 협상을 검증한다. 독립 개발 서버 예시:
   `uv run uvicorn app.main:app --host 0.0.0.0 --port 8443 --ssl-keyfile key.pem --ssl-certfile cert.pem`
 
 ### 갤럭시 실기기·Win7 접속
 
-운영 컨테이너는 보안을 위해 `127.0.0.1:8002`에만 바인딩한다. 다른 기기에서는
-Tailscale serve로 이 주소를 프록시한 뒤 tailnet URL로 접속한다.
+운영 컨테이너는 보안을 위해 `127.0.0.1:8002`에만 바인딩한다. 다른 기기에는
+승인된 LAN/프록시 또는 tailnet 접속 경로가 필요하다. Tailscale Serve를 사용하도록 구성한 환경의 예시:
 
 ```bash
-tailscale serve --bg https+8002 http://127.0.0.1:8002
+tailscale serve --bg --https=8002 http://127.0.0.1:8002
 tailscale serve status
 ```
 
@@ -133,3 +135,7 @@ PR 생성 시 lint, typecheck(`mypy app scripts`), test(coverage 85%), migration
 security(pip-audit), secret-scan(gitleaks), e2e를 실행한다. e2e는 lint·typecheck·test 성공 후
 실행하며, `Quality gate`는 필수 7개 job이 모두 `success`일 때만 통과한다.
 실패·취소·건너뜀을 통과로 취급하지 않으며 전체 통과 후 squash merge 한다.
+
+
+v1.4.0의 자동 검증·실기·운영 수용 상태는 [수용 기록](docs/v1.4.0-acceptance.md)에서 구분한다.
+표준 파일 계약은 [Excel 안내](docs/excel-workflow.md), 초안·정정 업무는 [사용 가이드](docs/usage-guide.md)를 따른다.

@@ -2,6 +2,10 @@
   'use strict';
   var form = document.getElementById('monthly-upload');
   if (!form) return;
+  var month = form.querySelector('[name="month"]');
+  month.addEventListener('change', function () {
+    document.getElementById('request-template-link').href = '/monthly/template.xlsx?month=' + encodeURIComponent(month.value);
+  });
   form.addEventListener('submit', function () {
     var button = form.querySelector('button[type="submit"]');
     button.disabled = true;

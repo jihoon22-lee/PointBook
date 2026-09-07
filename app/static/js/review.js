@@ -13,11 +13,12 @@
   }
   form.addEventListener('input', function (event) {
     var name = event.target.name || '';
+    if (!name) return;
     if (name.indexOf('carry_') === 0 || name.indexOf('deactivated_carry_') === 0 || name === 'ack_warnings') return;
     changed();
   });
   form.addEventListener('change', function (event) {
-    if (event.target.tagName === 'SELECT') changed();
+    if (event.target.tagName === 'SELECT' && event.target.name) changed();
   });
   function reindex() {
     var rows = table.tBodies[0].rows;
@@ -56,10 +57,14 @@
   });
   form.addEventListener('submit', function (event) {
     var submitter = event.submitter || document.activeElement;
-    if (submitter && submitter.getAttribute('formaction') === '/monthly/review') return;
+    if (submitter && submitter.getAttribute('formaction') === '/monthly/review') {
+      if (window.pointbookDraft) { event.preventDefault(); window.pointbookDraft.submit(submitter); }
+      return;
+    }
     if (!document.getElementById('review-token').value || !window.confirm('이 내용으로 확정할까요?')) {
       event.preventDefault(); return;
     }
+    if (window.pointbookDraft) { event.preventDefault(); window.pointbookDraft.submit(submitter); return; }
     confirmButton.disabled = true;
     confirmButton.textContent = '확정 중…';
   });

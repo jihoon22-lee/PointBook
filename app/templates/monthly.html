@@ -2,13 +2,16 @@
 {% block title %}월간 처리 - PointBook{% endblock %}
 {% block content %}
 <h1>월간 처리</h1>
-<p class="muted">순사용에서 양수는 포인트 순감소, 음수는 적립·이전 등으로 인한 순증가입니다.</p>
+<p><a class="btn" id="request-template-link" href="/monthly/template.xlsx?month={{ month }}">이번 달 표준 Excel 양식 다운로드</a></p>
+<p><a class="btn" href="/drafts">저장한 초안 이어하기</a></p>
+
+<p class="muted">순사용에서 양수는 포인트 순감소, 음수는 관측 사이 순증가입니다. 거래 원인은 별도로 확인합니다.</p>
 {% if error %}<p class="alert alert-error">{{ error }}</p>{% endif %}
 {% if done %}<p class="alert alert-success">월간 처리가 완료되었습니다.</p>{% endif %}
 
 <div class="card">
   <h2>요청서 등록</h2>
-  <p class="muted">요청서 사진을 업로드하거나, 표를 복사해 붙여넣어 검수할 수 있습니다. 사진은 AI가 인식하며, 붙여넣기는 표를 직접 읽습니다.<br>
+  <p class="muted">요청서 사진을 업로드하거나, 표를 복사해 붙여넣어 검수할 수 있습니다. 사진은 AI가 인식하며, 표준 Excel과 붙여넣기는 외부 전송 없이 표를 직접 읽습니다.<br>
     붙여넣기 형식(탭/콤마 구분): 순번 팀 이름 계급 금액 개인번호 포인트번호 비고 (순번 없이 6컬럼도 가능)</p>
   {% if ai_provider == 'mock' %}<p class="alert alert-warning">개발용 모의 인식입니다. 사진 내용 대신 예시 목록을 반환합니다.</p>{% else %}<p class="muted">사진은 Gemini로 전송해 인식합니다. 원본 사진은 서버에 영구 보관하지 않습니다. 붙여넣기는 외부 AI로 전송하지 않습니다.</p>{% endif %}
   <form method="post" action="/monthly/upload" enctype="multipart/form-data" id="monthly-upload">
@@ -16,13 +19,14 @@
     <label>처리 월
       <input type="month" name="month" value="{{ month }}">
     </label>
-    <label>요청서 사진
-      <input type="file" name="file" accept="image/*">
+    <label>요청서 사진 또는 표준 Excel
+      <input type="file" name="file" accept="image/*,.xlsx">
     </label>
     <label>또는 표 붙여넣기
       <textarea name="pasted" rows="5" placeholder="팀\t이름\t계급\t금액\t개인번호\t포인트번호&#10;1팀\t김소방\t소방경\t50000\t101\t00026147">{{ pasted|default('') }}</textarea>
     </label>
     <button type="submit" class="btn btn-primary">인식 · 검수하기</button>
+    <button type="submit" formaction="/monthly/start" formnovalidate class="btn">빈 요청서 시작</button>
     <p id="upload-status" role="status" aria-live="polite"></p>
   </form>
 </div>

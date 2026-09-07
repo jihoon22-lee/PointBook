@@ -119,8 +119,10 @@ def main() -> int:
     parser.add_argument("--apply", action="store_true", help="기존 DB 보존 후 교체")
     parser.add_argument("--service-stopped", action="store_true", help="모든 DB writer 정지 확인")
     args = parser.parse_args()
-    target = Path(get_settings().database_path)
+    target: Path | None = None
+    phase = "restore" if args.apply or args.verify_current else "rehearsal"
     try:
+        target = Path(get_settings().database_path)
         if args.verify_current:
             verify_restored_database(args.backup, target)
             print("기동 후 복원 장부 행 수·합계 대사 완료.")
@@ -129,11 +131,13 @@ def main() -> int:
             print("복원·DB 대사 완료. 앱 기동·읽기·재시작 검증이 필요합니다.")
         else:
             metadata = verify_restore_backup(args.backup)
+            record_recovery_status(target, "rehearsal", "verified")
             print(f"복원 사본 검증 완료. DB revision: {metadata['database']['revisions']}")
         return 0
     except Exception:  # noqa: BLE001 - 민감 경로/행/예외 원문 출력 금지
         try:
-            record_recovery_status(target, "restore", "failed")
+            if target is not None:
+                record_recovery_status(target, phase, "failed")
         except OSError:
             pass
         print("복원 실패. 서비스 상태와 기존 보존 사본을 확인하세요. 자동 rollback하지 않습니다.")

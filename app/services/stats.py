@@ -345,3 +345,19 @@ def trend(
             ).summary
         )
     return result
+
+
+SORT_FIELDS = {"name", "point_no", "team_name", "amount", "usage", "total"}
+
+
+def sort_report(result: Report, sort_by: str = "name", direction: str = "asc") -> Report:
+    if sort_by not in SORT_FIELDS or direction not in {"asc", "desc"}:
+        raise ValueError("지원하는 정렬 기준과 방향을 선택해 주세요.")
+    known = [row for row in result.rows if getattr(row, sort_by) is not None]
+    missing = [row for row in result.rows if getattr(row, sort_by) is None]
+    known.sort(
+        key=lambda row: (getattr(row, sort_by), row.point_no, row.person_id),
+        reverse=direction == "desc",
+    )
+    result.rows = known + missing
+    return result

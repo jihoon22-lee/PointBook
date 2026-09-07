@@ -8,6 +8,17 @@
 
 <form method="post" action="/monthly/confirm" id="review-form">
   <input type="hidden" name="csrf_token" value="{{ csrf_token|default('') }}">
+  <input type="hidden" name="draft_id" value="{{ draft_id|default('') }}">
+  <input type="hidden" name="draft_version" value="{{ draft_version|default('') }}">
+  <input type="hidden" name="input_source" value="{{ input_source }}">
+  <div class="draft-toolbar card">
+    <p id="draft-status" role="status" aria-live="polite">{% if draft_saved_at %}서버 초안 저장 완료{% else %}초안 저장 상태를 확인하세요.{% endif %}</p>
+    <p class="muted">자동 저장은 장부를 확정하지 않습니다. 마지막 저장부터 {{ draft_keep_days }}일 보관하며, 다른 기기에서는 초안 목록에서 이어서 작업합니다.</p>
+    <button type="button" class="btn" id="draft-save">지금 저장</button>
+    <button type="button" class="btn" id="draft-fork">이 입력을 새 초안으로 저장</button>
+    <a class="btn" href="/drafts" target="_blank" rel="noopener">서버 초안 목록</a>
+    <a class="btn" href="/login" target="_blank" rel="noopener" id="draft-login" hidden>다시 로그인</a>
+  </div>
   <input type="hidden" name="request_key" value="{{ request_key }}">
   <input type="hidden" name="review_token" id="review-token" value="{{ review_token }}">
   <div class="toolbar">
@@ -19,12 +30,21 @@
   <div class="card">
     <h2>요청서 인원 ({{ rows|length }}명) <button type="button" class="btn btn-sm" id="add-row">행 추가</button></h2>
     <div class="table-wrap">
-      <table id="rows">
+      <div class="input-tools toolbar">
+        <label><input type="checkbox" id="focus-input"> 잔액·금액 집중 보기</label>
+        <label>표시<select id="row-filter"><option value="all">전체 행</option><option value="missing">이월 미입력</option><option value="errors">검수 오류</option><option value="new">신규 (최근 검수)</option><option value="returned">복귀 (최근 검수)</option><option value="kept">재직 유지 (최근 검수)</option><option value="team_changed">팀 변경 (최근 검수)</option><option value="profile_changed">기본 정보 변경 (최근 검수)</option></select></label>
+        <label>정렬<select id="row-sort"><option value="original">원래 순서</option><option value="name">이름</option><option value="point_no">포인트번호</option><option value="team">팀</option><option value="amount">충전액</option></select></label>
+        <button type="button" id="next-missing" class="btn">다음 미입력 잔액</button>
+        <p id="input-summary" role="status" aria-live="polite"></p>
+        <p class="muted">필터로 숨긴 행도 전체 저장·검증·확정 대상입니다. 이월 칸에서 Enter를 누르면 다음 잔액으로 이동합니다.</p>
+      </div>
+      <table id="rows" class="review-input-table">
         <thead><tr><th>포인트번호</th><th>유형</th><th>개인번호</th><th>이름</th><th>팀</th><th>계급</th><th>충전액</th><th>비고</th><th>이월 잔액</th><th></th></tr></thead>
         <tbody>
         {% for row in rows %}
           {% set row_index = loop.index0 %}
-          <tr data-row-id="{{ row.row_id }}">
+          {% set row_change = row_changes.get(row.point_no|replace(' ','')|replace('-',''),{}) %}
+          <tr data-action="{{ row_change.get('action','') }}" data-team-changed="{{ 'yes' if row_change.get('team_changed') else 'no' }}" data-profile-changed="{{ 'yes' if row_change.get('profile_changed') else 'no' }}" data-row-id="{{ row.row_id }}" data-original-order="{{ loop.index0 }}" data-has-error="{{ 'yes' if errors.get(row.row_id) else 'no' }}">
             <td><input type="hidden" data-field="row_id" name="row_id_{{ loop.index0 }}" value="{{ row.row_id }}">
               <input type="hidden" data-field="source_line" name="source_line_{{ loop.index0 }}" value="{{ row.source_line }}">
               <input type="text" data-field="point_no" name="point_no_{{ loop.index0 }}" value="{{ row.point_no }}" class="row-input" aria-label="{{ loop.index }}행 포인트번호">
@@ -87,4 +107,6 @@
   <a class="btn" href="/monthly">취소</a>
 </form>
 <script src="/static/js/review.js" defer></script>
+<script src="/static/js/drafts.js" defer></script>
+<script src="/static/js/review-input.js" defer></script>
 {% endblock %}

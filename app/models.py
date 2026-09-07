@@ -165,3 +165,28 @@ class BalanceAdjustment(Base):
     note: Mapped[str] = mapped_column(Text, default="")
     operation_id: Mapped[int] = mapped_column(ForeignKey("ledger_operations.id"))
     observed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class MonthlyDraft(Base):
+    """인증된 월간 작업 초안. 원장과 별개이며 버전 충돌로 오래된 덮어쓰기를 막는다."""
+
+    __tablename__ = "monthly_drafts"
+    __table_args__ = (
+        CheckConstraint("version >= 1", name="ck_draft_version"),
+        CheckConstraint(
+            "status IN ('active','confirmed','deleted','expired')", name="ck_draft_status"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("admin_users.id"), index=True)
+    request_key: Mapped[str] = mapped_column(String(64), unique=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    month: Mapped[str] = mapped_column(String(20))
+    status: Mapped[str] = mapped_column(String(20), default="active", index=True)
+    payload_json: Mapped[str] = mapped_column(Text)
+    review_state: Mapped[str] = mapped_column(String(20), default="needs_review")
+    base_version: Mapped[int] = mapped_column(Integer)
+    result_url: Mapped[str] = mapped_column(String(200), default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)

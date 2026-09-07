@@ -377,3 +377,25 @@ body:has(.login-wrap) .login-wrap .muted { color: #cbd5e1; }
   th, td { padding: 9px 8px; }
   .summary-card .value { font-size: 1.35rem; }
 }
+
+/* 월간 검수: 집중 입력과 스크롤 중 행 식별 */
+.input-tools { padding: 12px; background: #f5f8fc; }
+.input-tools label { display: inline-flex; align-items: center; gap: 8px; }
+.input-tools p { flex-basis: 100%; margin: 4px 0; }
+.input-tools select { width: auto; }
+.review-input-table td:first-child, .review-input-table th:first-child {
+  min-width: 145px; position: sticky; left: 0; background: #fff; z-index: 1;
+}
+.review-input-table td:nth-child(4), .review-input-table th:nth-child(4) {
+  min-width: 110px; position: sticky; left: 145px; background: #fff; z-index: 1;
+}
+.review-input-table th:first-child, .review-input-table th:nth-child(4) { background: #edf3f9; }
+.review-input-table td { min-width: 100px; }
+.review-input-table input { min-width: 75px; }
+.review-input-table.focus-input th:nth-child(2), .review-input-table.focus-input td:nth-child(2),
+.review-input-table.focus-input th:nth-child(3), .review-input-table.focus-input td:nth-child(3),
+.review-input-table.focus-input th:nth-child(5), .review-input-table.focus-input td:nth-child(5),
+.review-input-table.focus-input th:nth-child(6), .review-input-table.focus-input td:nth-child(6),
+.review-input-table.focus-input th:nth-child(8), .review-input-table.focus-input td:nth-child(8) { display: none; }
+.draft-toolbar p { overflow-wrap: anywhere; }
+[hidden] { display: none !important; }

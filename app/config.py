@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     ai_max_response_bytes: int = Field(default=2_000_000, ge=1024, le=8_000_000)
     cookie_samesite: Literal["lax", "strict", "none"] = "lax"
     cookie_secure: bool = False
+    draft_keep_days: int = Field(default=30, ge=1, le=365)
+    draft_max_active: int = Field(default=20, ge=1, le=100)
     backup_keep: int = Field(default=30, ge=1, le=10000)
 
     @model_validator(mode="before")
