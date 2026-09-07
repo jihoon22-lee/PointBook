@@ -110,6 +110,12 @@ def test_existing_raw_revisions_restore_absence_employment_departure_and_return(
     assert stats.report(db, "2025-04", scope="as_of").summary.total_balance == 50000
     page = auth_client.get(f"/people/{person.id}")
     assert "<th>출처</th>" not in page.text and "이관 시점 인원 정보 참고" not in page.text
+    current_table = page.text.split("<h2>현재 정보</h2>")[1].split("</table>")[0]
+    assert "잔액 기준 월" not in current_table and "2025-" not in current_table
+    assert all(
+        label in current_table
+        for label in ("<th>이월 잔액</th>", "<th>당월 충전</th>", "<th>총 잔액</th>")
+    )
     assert all(
         label not in page.text for label in ("월·정정판", "당시 이름", "당시 팀", "당시 구분")
     )
