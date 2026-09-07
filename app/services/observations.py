@@ -24,6 +24,7 @@ from sqlalchemy.sql.selectable import Subquery
 
 from app.models import BalanceAdjustment, BalanceRecord, BalanceRevision, MonthlySnapshot
 from app.services.dates import validate_month
+from app.services.history import monthly_profile
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,8 @@ class Observation:
     adjustment_id: int | None
     version: int
     note: str
+    previous_monthly_status: str | None = None
+    previous_monthly_type: str | None = None
 
 
 def _monthly_query(operation_id: int | None) -> Select[Any]:
@@ -111,6 +114,16 @@ def _monthly_query(operation_id: int | None) -> Select[Any]:
 
 
 def _source(operation_id: int | None = None) -> Subquery:
+    monthly = _monthly_query(operation_id).subquery()
+    monthly_with_previous = select(
+        monthly,
+        *[
+            func.lag(monthly.c[key])
+            .over(partition_by=monthly.c.person_id, order_by=monthly.c.month)
+            .label("previous_" + key)
+            for key in ("profile_data", "amount", "provenance")
+        ],
+    )
     adjustments = select(
         BalanceAdjustment.person_id,
         BalanceAdjustment.month,
@@ -128,12 +141,15 @@ def _source(operation_id: int | None = None) -> Subquery:
         BalanceAdjustment.note,
         BalanceAdjustment.id.label("order_id"),
         literal(1).label("kind_order"),
+        literal(None).label("previous_profile_data"),
+        literal(None).label("previous_amount"),
+        literal(None).label("previous_provenance"),
     )
     if operation_id is not None:
         if operation_id < 0:
             raise ValueError("정정판 작업 번호는 0 이상이어야 합니다.")
         adjustments = adjustments.where(BalanceAdjustment.operation_id <= operation_id)
-    return union_all(_monthly_query(operation_id), adjustments).subquery()
+    return union_all(monthly_with_previous, adjustments).subquery()
 
 
 def _read(row: Any) -> Observation:
@@ -141,6 +157,13 @@ def _read(row: Any) -> Observation:
         profile = json.loads(row.profile_data or "{}")
     except (TypeError, ValueError):
         profile = {}
+    try:
+        previous = json.loads(row.previous_profile_data or "{}")
+    except (TypeError, ValueError):
+        previous = {}
+    previous = monthly_profile(
+        previous if isinstance(previous, dict) else {}, row.previous_amount, row.previous_provenance
+    )
     return Observation(
         person_id=row.person_id,
         month=row.month,
@@ -148,7 +171,9 @@ def _read(row: Any) -> Observation:
         carry_balance=row.carry_balance,
         amount=row.amount,
         usage=row.usage,
-        profile=profile if isinstance(profile, dict) else {},
+        profile=monthly_profile(
+            profile if isinstance(profile, dict) else {}, row.amount, row.provenance
+        ),
         provenance=row.provenance or "unknown",
         kind=row.kind,
         observed_at=row.observed_at,
@@ -156,6 +181,8 @@ def _read(row: Any) -> Observation:
         adjustment_id=row.adjustment_id,
         version=row.version,
         note=row.note or "",
+        previous_monthly_status=previous.get("status"),
+        previous_monthly_type=previous.get("account_type"),
     )
 
 

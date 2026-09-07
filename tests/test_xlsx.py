@@ -227,7 +227,7 @@ def test_report_uses_same_scope_cutoff_sort_and_numeric_values(auth_client, db):
                 summary = {row[0].value: row[1].value for row in wb["요약"]}
                 assert summary["확인된 잔액 합계"] == result.summary.total_balance
                 assert summary["월간 순사용 합계"] == result.summary.total_usage
-                assert summary["정정판 작업 번호"] == cutoff
+                assert summary["변경 이력 기준 번호"] == cutoff
                 rows = list(wb["인원"].iter_rows(min_row=2, values_only=True))
                 assert [row[0] for row in rows] == [row.point_no for row in result.rows]
                 assert [row[10] for row in rows] == [row.total for row in result.rows]
@@ -249,8 +249,8 @@ def test_export_untrusted_text_and_large_integer_are_explicit_strings(client, db
         )
     ) as wb:
         assert wb["인원"]["D2"].data_type == "s"
-        assert wb["인원"]["R2"].data_type == "s"
-        assert "\\u0001" in wb["인원"]["R2"].value
+        assert wb["인원"]["O2"].data_type == "s"
+        assert "\\u0001" in wb["인원"]["O2"].value
         assert not any(cell.data_type == "f" for sheet in wb for row in sheet for cell in row)
         summary = {row[0].value: row[1] for row in wb["요약"]}
         assert summary["확인된 잔액 합계"].value == "1999999999999998"

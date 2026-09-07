@@ -110,25 +110,29 @@ def test_same_month_adjustment_before_monthly_is_previous_balance(client, db):
     assert not latest_observations(db, person_ids=[])
 
 
-def test_snapshot_profile_survives_master_name_team_type_and_status_changes(client, db):
+def test_record_amounts_and_status_survive_while_identity_team_and_grade_use_current_master(
+    client, db
+):
     old_team = make_team(db, "합성 옛팀")
     new_team = make_team(db, "합성 새팀")
     person = make_person(db, "101", "합성 옛이름", team=old_team)
     record(db, person, "2026-01", carry=10, amount=100, usage=-20)
     person.name = "합성 새이름"
+    person.grade = "최신 계급"
     person.team = new_team
     person.account_type = "shared"
     person.personal_no = None
     person.status = "active"
     db.commit()
     report = stats.report(db, "2026-01")
-    assert report.rows[0].name == "합성 옛이름"
-    assert report.rows[0].team_name == "합성 옛팀"
+    assert report.rows[0].name == "합성 새이름"
+    assert report.rows[0].team_name == "합성 새팀"
+    assert report.rows[0].grade == "최신 계급"
     assert report.rows[0].account_type == "person"
     assert report.rows[0].usage == -20
     assert not stats.report(db, "2026-01", account_type="shared").rows
     assert report.summary.total_balance == 110
-    assert report.teams[0].name == "합성 옛팀"
+    assert report.teams[0].name == "합성 새팀"
 
 
 def test_as_of_retains_long_unobserved_inactive_and_shared_balances(client, db):
@@ -192,7 +196,8 @@ def test_same_month_type_team_change_keeps_activity_and_balance_populations_dist
     assert all_accounts.summary.total_amount == 100
     assert all_accounts.summary.total_balance == 200
     teams = {t.name: t for t in all_accounts.teams}
-    assert teams["합성 A"].total_amount == 100
+    assert "합성 A" not in teams
+    assert teams["합성 B"].total_amount == 100
     assert teams["합성 B"].total_balance == 200
 
 
@@ -231,8 +236,8 @@ def test_migration_reference_is_frozen_and_never_claimed_as_observed(client, db)
     person.name = "바뀐 현재 이름"
     db.commit()
     row = stats.report(db, "2020-01").rows[0]
-    assert row.name == "이관 참고 이름"
-    assert "당시 사실 미확인" in row.profile_label
+    assert row.name == "바뀐 현재 이름"
+    assert row.profile_label == "기존 장부"
     assert row.observed_at is None
 
 
@@ -242,7 +247,7 @@ def test_unclassified_history_is_exposed_without_current_master_reclassification
     result = stats.report(db, "2020-01")
     assert not result.rows
     assert result.unclassified_rows[0].total == 100
-    assert "당시 이름 미확인" in result.unclassified_rows[0].name
+    assert result.unclassified_rows[0].name == "현재 이름"
     assert stats.report(db, "2020-01", account_type="all").summary.total_balance == 100
 
 
@@ -285,7 +290,7 @@ def test_same_timestamp_adjustments_have_deterministic_id_order(client, db):
     assert result.total == 200
 
 
-def test_report_filters_activity_and_balances_without_using_current_team(client, db):
+def test_report_filters_activity_and_balances_using_current_team(client, db):
     team = make_team(db, "역사 팀")
     first = make_person(db, "101", "합성 첫째", team=team)
     second = make_person(db, "102", "합성 둘째")
@@ -294,8 +299,9 @@ def test_report_filters_activity_and_balances_without_using_current_team(client,
     first.team = None
     db.commit()
     filtered = stats.report(db, "2026-01", team_name="역사 팀")
-    assert [r.person_id for r in filtered.rows] == [first.id]
-    assert stats.trend(db, team_name="역사 팀")[0].total_amount == 100
+    assert filtered.rows == []
+    assert stats.trend(db, team_name="역사 팀")[0].total_amount == 0
+    assert stats.report(db, "2026-01", team_name="").summary.total_amount == 300
     assert stats.trend(db, person_id=second.id)[0].total_amount == 200
 
 
@@ -320,7 +326,7 @@ def test_dashboard_captures_one_revision_cutoff_for_summary_and_chart(auth_clien
     assert calls == [0]
     assert '"amount": [100]' in response.text
     assert '"balance": [100]' in response.text
-    assert "기준 작업 0" in response.text
+    assert "기준 작업" not in response.text
     assert "900원" not in response.text
 
 
@@ -339,8 +345,8 @@ def test_dashboard_exposes_shared_unobserved_and_revision_labels(auth_client, db
         "합성 미관측공용",
         "2025-01",
         "현재값 참고: 700원",
-        "당시 사실 미확인",
-        "작업 0까지",
+        "팀·계급과 팀별 집계는 현재 인원 정보 기준",
+        "변경 이력에서 선택한 시점의 금액",
         "부분 합계",
     ]:
         assert text in response.text
@@ -465,7 +471,7 @@ def test_dashboard_filter_form_accepts_blank_latest_revision(auth_client, db):
         "/dashboard?month=2026-01&scope=as_of&account_type=person&team_name=&operation_id="
     )
     assert response.status_code == 200
-    assert "최신 정정본" in response.text
+    assert "정정판 작업 번호" not in response.text
 
 
 def test_unknown_balance_still_visible_when_monthly_activity_is_classified(client, db):
@@ -490,12 +496,13 @@ def test_unknown_balance_still_visible_when_monthly_activity_is_classified(clien
     assert result.unclassified_rows[0].total == 90
 
 
-def test_unknown_team_membership_is_disclosed_in_team_filtered_report(client, db):
+def test_missing_old_team_does_not_override_current_team_filter(client, db):
     person = make_person(db, "101", "합성 인원")
     record(db, person, "2026-01", profile={"name": "합성 당시 이름", "account_type": "person"})
     result = stats.report(db, "2026-01", account_type="all", team_name="합성 팀")
     assert not result.rows
-    assert result.unclassified_rows[0].total == 100
+    assert result.unclassified_rows == []
+    assert stats.report(db, "2026-01", team_name="").summary.total_balance == 100
 
 
 def test_correction_reference_profile_is_marked_as_unverified_history(client, db):

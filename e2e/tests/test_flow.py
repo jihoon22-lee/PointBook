@@ -49,6 +49,17 @@ def test_person_detail_shows_history(page):
     page.goto(f"{BASE_URL}/people")
     page.click('a:has-text("E2E이력")')
     assert "월별 포인트 이력" in page.text_content("body")
+    history = page.locator(".card").filter(has=page.locator("h2:text-is('월별 포인트 이력')"))
+    assert history.locator("th").all_text_contents() == [
+        "월",
+        "이월 잔액",
+        "당월 충전",
+        "순사용",
+        "총 잔액",
+    ]
+    assert "정정판" not in history.inner_text() and "당시" not in history.inner_text()
+    page.set_viewport_size({"width": 390, "height": 844})
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert "2099-03" in page.text_content("body")
     assert "20,000" in page.text_content("body")
 
@@ -89,17 +100,21 @@ def test_review_change_preserves_carry_and_requires_new_analysis(page):
     assert page.locator(".confirm-monthly").is_disabled()
     assert page.locator('input[name="row_id_0"]').input_value() == kept_id
     assert page.locator('input[name="carry_0"]').input_value() == "123"
-    page.click('button:has-text("수정 내용 재검수")')
+    with page.expect_navigation():
+        page.click('button:has-text("수정 내용 재검수")')
     page.wait_for_selector('input[name="deactivated_carry_00000782"]')
     assert page.locator('input[name="deactivated_carry_00000782"]').input_value() == ""
     page.fill('input[name="deactivated_carry_00000782"]', "777")
     page.fill('input[name="amount_0"]', "5O000")
-    page.click('button:has-text("수정 내용 재검수")')
+    with page.expect_navigation():
+        page.click('button:has-text("수정 내용 재검수")')
     assert page.locator('input[name="amount_0"]').input_value() == "5O000"
     assert page.locator('input[name="carry_0"]').input_value() == "123"
     page.fill('input[name="amount_0"]', "20000")
-    page.click('button:has-text("수정 내용 재검수")')
+    with page.expect_navigation():
+        page.click('button:has-text("수정 내용 재검수")')
     assert page.locator('input[name="deactivated_carry_00000782"]').input_value() == "777"
+    assert page.locator('input[name="ack_warnings"]').count(), page.inner_text("body")
     page.check('input[name="ack_warnings"]')
     page.click(".confirm-monthly")
     page.wait_for_selector("text=처리가 완료되었습니다", timeout=15000)
