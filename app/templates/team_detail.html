@@ -15,6 +15,7 @@
 <div class="toolbar">
   <h1><span class="badge" style="background: {{ team.color }}; color: {{ team.color|contrast_color }}">{{ team.name }}</span></h1>
   <div class="spacer"></div>
+  <a class="btn" href="/dashboard?team_name={{ team.name|urlencode }}&account_type=person&scope=as_of">팀 보고서 · Excel</a>
   <a class="btn" href="/teams">팀 목록</a>
 </div>
 

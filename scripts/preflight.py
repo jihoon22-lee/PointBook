@@ -9,7 +9,12 @@ from werkzeug.security import check_password_hash
 from app import db as db_module
 from app.config import DEFAULT_ADMIN_PASSWORD, Settings, get_settings
 from app.models import AdminUser
-from app.services.backup import compare_ledger, copy_database, validate_database
+from app.services.backup import (
+    compare_ledger,
+    copy_database,
+    record_recovery_status,
+    validate_database,
+)
 
 
 def _validate_admin_for_start(settings: Settings, engine: Engine | None = None) -> None:
@@ -50,13 +55,22 @@ def preflight_database(source: Path) -> None:
 
 
 def main() -> int:
+    source: Path | None = None
     try:
         settings = get_settings()
         settings.validate_runtime()
-        preflight_database(Path(settings.database_path))
+        source = Path(settings.database_path)
+        preflight_database(source)
+        if source.exists():
+            record_recovery_status(source, "rehearsal", "verified")
         print("운영 설정·DB 이전 예행 검증 완료.")
         return 0
     except Exception:  # noqa: BLE001 - 경로·DB 행·설정의 민감 예외를 출력하지 않는다.
+        if source is not None and source.exists():
+            try:
+                record_recovery_status(source, "rehearsal", "failed")
+            except OSError:
+                pass
         print(
             "기동 사전 검증 실패. 설정·DB 구조·이전 조건을 확인하세요. 서비스를 중지하지 않았습니다."
         )

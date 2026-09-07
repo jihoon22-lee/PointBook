@@ -53,6 +53,7 @@ def test_extract_table_preserves_raw_values_and_uses_header_auth():
     assert not request.url.query
     assert request.headers["x-goog-api-key"] == "synthetic-key-never-real"
     payload = json.loads(request.content)
+    assert "temperature" not in payload["generationConfig"]
     assert payload["generationConfig"]["responseMimeType"] == "application/json"
     assert payload["generationConfig"]["responseJsonSchema"]["type"] == "array"
     assert payload["contents"][0]["parts"][1]["inline_data"]["mime_type"] == "image/png"

@@ -6,6 +6,7 @@
   <div class="spacer"></div>
   <a class="btn" href="/people/{{ person.id }}/edit">기본 정보 수정</a>
   <a class="btn" href="/ledger/adjust/{{ person.id }}">현재 잔액 보정</a>
+  <a class="btn" href="/dashboard?person_id={{ person.id }}&account_type=all&scope=as_of{% if latest %}&month={{ latest.month }}{% endif %}">개인 보고서 · Excel</a>
   <a class="btn" href="/ledger">변경 감사 이력</a>
   <a class="btn" href="/people">목록</a>
 </div>

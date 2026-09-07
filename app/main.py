@@ -1,10 +1,11 @@
+import asyncio
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from alembic.script import ScriptDirectory
 from fastapi import Depends, FastAPI, Request
-from fastapi.responses import Response
+from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -22,12 +23,14 @@ from app.logging import get_logger, log_security_warnings
 from app.models import AdminUser
 from app.routers import auth as auth_router
 from app.routers import dashboard as dashboard_router
+from app.routers import drafts as drafts_router
 from app.routers import home as home_router
 from app.routers import ledger as ledger_router
 from app.routers import monthly as monthly_router
 from app.routers import people as people_router
 from app.routers import settings as settings_router
 from app.routers import teams as teams_router
+from app.services.drafts import clean_expired, cleanup_loop
 from app.services.rate_limit import login_limiter
 from app.services.vision import shutdown_vision
 
@@ -36,6 +39,7 @@ BASE_DIR = Path(__file__).resolve().parent
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    cleanup_task: asyncio.Task[None] | None = None
     settings = get_settings()
     settings.validate_runtime()
     log_security_warnings(
@@ -54,8 +58,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                         user.password_hash, DEFAULT_ADMIN_PASSWORD
                     ) or check_password_hash(user.password_hash, ""):
                         raise RuntimeError("운영 관리자 DB의 기본 또는 빈 암호를 변경해야 합니다.")
+        clean_expired()
+        cleanup_task = asyncio.create_task(cleanup_loop())
         yield
     finally:
+        if cleanup_task is not None:
+            cleanup_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await cleanup_task
         shutdown_vision()
         db_module.engine.dispose()
 
@@ -118,6 +128,13 @@ def create_app() -> FastAPI:
 
     @app.middleware("http")
     async def no_cache(request: Request, call_next: RequestResponseEndpoint) -> Response:
+        user_agent = request.headers.get("user-agent", "")
+        if ("Trident/" in user_agent or "MSIE " in user_agent) and request.url.path != "/health":
+            return HTMLResponse(
+                (BASE_DIR / "templates" / "legacy_browser.html").read_text(),
+                status_code=426,
+                headers={"Cache-Control": "no-store"},
+            )
         response: Response = await call_next(request)
         if not request.url.path.startswith("/static"):
             response.headers["Cache-Control"] = "no-store"
@@ -140,6 +157,7 @@ def create_app() -> FastAPI:
     app.include_router(dashboard_router.router)
     app.include_router(settings_router.router)
     app.include_router(ledger_router.router)
+    app.include_router(drafts_router.router)
     return app
 
 

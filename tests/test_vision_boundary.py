@@ -206,6 +206,8 @@ def test_slow_upload_does_not_block_health_login_or_people(auth_client, monkeypa
             finally:
                 provider.release.set()
                 response = await task
+            assert response.status_code == 303
+            response = await client.get(response.headers["location"])
             assert response.status_code == 200
             assert "김소방" in response.text
 

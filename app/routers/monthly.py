@@ -1,11 +1,12 @@
 import uuid
 from dataclasses import asdict
+from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError, OperationalError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from starlette.datastructures import FormData
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
@@ -17,7 +18,16 @@ from app.models import MonthlySnapshot, Person
 from app.services import stats
 from app.services.backup import backup_database
 from app.services.balance import build_balance_records, create_monthly_snapshot
-from app.services.dates import current_month
+from app.services.dates import current_month, validate_month
+from app.services.drafts import (
+    DraftError,
+    confirm_draft,
+    draft_payload,
+    draft_state,
+    payload_from_form,
+    save_draft,
+    verify_draft_for_confirm,
+)
 from app.services.history import profile_for_person
 from app.services.ledger import LedgerConflict, add_operation, find_replay
 from app.services.parsing import MAX_REQUEST_ROWS, RawRequestRow, parse_pasted_raw
@@ -31,10 +41,11 @@ from app.services.review import (
 )
 from app.services.sync import ACTION_DEACTIVATED, RequestRow, apply_analysis
 from app.services.vision import extract_image
+from app.services.xlsx import extract_request, request_template
 from app.template_utils import render
 
 router = APIRouter(prefix="/monthly", dependencies=[Depends(require_login)], tags=["monthly"])
-ALLOWED_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".heic"}
+ALLOWED_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".heic", ".xlsx"}
 
 
 async def monthly_form(request: Request) -> FormData:
@@ -102,6 +113,8 @@ def review_response(
     review: Review,
     *,
     request_key: str = "",
+    draft_info: dict[str, Any] | None = None,
+    input_source: str = "manual",
     deactivated: dict[str, str] | None = None,
     expected_count: str = "",
     expected_amount: str = "",
@@ -115,8 +128,19 @@ def review_response(
         request,
         "review.html",
         {
+            **(draft_info or {}),
+            "input_source": input_source,
+            "draft_keep_days": get_settings().draft_keep_days,
             "rows": review.raw_rows,
             "analysis": review.analysis,
+            "row_changes": {
+                change.point_no: {
+                    "action": change.action,
+                    "team_changed": change.team_changed,
+                    "profile_changed": change.profile_changed,
+                }
+                for change in review.analysis.changes
+            },
             "month": month,
             "errors": review.errors,
             "warnings": review.warnings,
@@ -142,10 +166,11 @@ async def upload(request: Request, db: Session = Depends(get_db)) -> Response:
     month = str(form.get("month", ""))
     pasted = str(form.get("pasted", ""))
     rows: list[RawRequestRow] = []
+    source = "paste" if pasted.strip() else "image"
     file = form.get("file")
     if pasted.strip() and isinstance(file, StarletteUploadFile) and file.filename:
         return _error_response(
-            request, db, month, "사진과 붙여넣기 중 하나만 선택해 주세요.", pasted
+            request, db, month, "파일과 붙여넣기 중 하나만 선택해 주세요.", pasted
         )
     try:
         if pasted.strip():
@@ -154,11 +179,21 @@ async def upload(request: Request, db: Session = Depends(get_db)) -> Response:
             settings = get_settings()
             ext = f".{file.filename.lower().rsplit('.', 1)[-1]}" if "." in file.filename else ""
             if ext not in ALLOWED_IMAGE_EXTS:
-                raise ValueError("지원하지 않는 이미지 형식입니다. (png, jpg, jpeg, webp, heic)")
+                raise ValueError(
+                    "지원하지 않는 파일 형식입니다. (png, jpg, jpeg, webp, heic, 표준 xlsx)"
+                )
             data = await file.read(settings.max_upload_mb * 1024 * 1024 + 1)
             if len(data) > settings.max_upload_mb * 1024 * 1024:
                 raise ValueError(f"파일이 너무 큽니다. (최대 {settings.max_upload_mb}MB)")
-            rows = await extract_image(data, file.filename)
+            if ext == ".xlsx":
+                parsed = await extract_request(data, file.filename)
+                if parsed.month != month:
+                    raise ValueError(
+                        f"파일 처리 월({parsed.month})과 선택 월({month})이 다릅니다. 원본을 확인해 주세요."
+                    )
+                rows, source = parsed.rows, "xlsx"
+            else:
+                rows = await extract_image(data, file.filename)
         if not rows:
             raise ValueError(
                 "인식된 인원이 없습니다. 사진을 다시 업로드하거나 표를 붙여넣기해 주세요."
@@ -168,13 +203,15 @@ async def upload(request: Request, db: Session = Depends(get_db)) -> Response:
     finally:
         if isinstance(file, StarletteUploadFile):
             await file.close()
-    # 기존 공용계정 유형은 DB에서 확인한다. 신규 유형은 검수 화면에서 명시한다.
-    shared_points = set(db.scalars(select(Person.point_no).where(Person.account_type == "shared")))
-    for row in rows:
-        if row.point_no.replace(" ", "").replace("-", "") in shared_points:
-            row.account_type = "shared"
-    review = review_rows(db, month, rows)
-    return review_response(request, month, review, status=400 if review.errors else 200)
+    # 표준 XLSX의 명시적 유형은 보존한다. 유형 열 없는 입력만 DB 공용 정보를 보완한다.
+    if source != "xlsx":
+        shared_points = set(
+            db.scalars(select(Person.point_no).where(Person.account_type == "shared"))
+        )
+        for row in rows:
+            if row.point_no.replace(" ", "").replace("-", "") in shared_points:
+                row.account_type = "shared"
+    return store_review_response(request, db, month, rows, source=source)
 
 
 @router.post("/review")
@@ -185,20 +222,78 @@ async def review(request: Request, db: Session = Depends(get_db)) -> Response:
         rows = raw_rows_from_form(form)
     except ValueError as exc:
         return _error_response(request, db, month, str(exc))
-    expected_count, expected_amount = (
-        str(form.get("expected_count", "")),
-        str(form.get("expected_amount", "")),
-    )
+    return store_review_response(request, db, month, rows, form=form)
+
+
+def store_review_response(
+    request: Request,
+    db: Session,
+    month: str,
+    rows: list[RawRequestRow],
+    *,
+    form: FormData | None = None,
+    source: str = "manual",
+) -> Response:
+    form = form or FormData()
+    source = str(form.get("input_source", source))
+    expected_count = str(form.get("expected_count", ""))
+    expected_amount = str(form.get("expected_amount", ""))
+    deactivated = deactivated_from_form(form)
+    key = str(form.get("request_key", "")) or uuid.uuid4().hex
     result = review_rows(db, month, rows, expected_count, expected_amount)
+    info: dict[str, Any] = {
+        "draft_id": str(form.get("draft_id", "")),
+        "draft_version": str(form.get("draft_version", "")),
+    }
+    status, message = (400 if result.errors else 200), ""
+    try:
+        draft = save_draft(
+            db,
+            owner_id=int(request.session["admin_id"]),
+            payload=draft_payload(
+                month,
+                rows,
+                deactivated=deactivated,
+                expected_count=expected_count,
+                expected_amount=expected_amount,
+                source=source,
+                review_token=result.token,
+            ),
+            request_key=key,
+            draft_id=info["draft_id"],
+            version=info["draft_version"],
+        )
+        info = draft_state(draft)
+    except DraftError as exc:
+        status, message = exc.status, str(exc)
+    except Exception:  # noqa: BLE001 - 초안 실패는 원문을 보존하고 안전하게 알린다.
+        db.rollback()
+        status, message = (
+            500,
+            "초안을 저장하지 못했습니다. 화면의 입력을 보존했습니다. 다시 저장하세요.",
+        )
+    if status == 200 and info.get("draft_saved_at"):
+        return RedirectResponse("/drafts/" + str(info["draft_id"]), status_code=303)
     return review_response(
         request,
         month,
         result,
-        request_key=str(form.get("request_key", "")),
-        deactivated=deactivated_from_form(form),
+        request_key=key,
+        draft_info=info,
+        input_source=source,
+        deactivated=deactivated,
         expected_count=expected_count,
         expected_amount=expected_amount,
-        status=400 if result.errors else 200,
+        message=message,
+        status=status,
+    )
+
+
+@router.post("/start")
+async def start_monthly(request: Request, db: Session = Depends(get_db)) -> Response:
+    form = await monthly_form(request)
+    return store_review_response(
+        request, db, str(form.get("month", current_month())), [RawRequestRow()], source="manual"
     )
 
 
@@ -238,6 +333,11 @@ async def confirm(request: Request, db: Session = Depends(get_db)) -> Response:
             month,
             result,
             request_key=request_key,
+            draft_info={
+                "draft_id": str(form.get("draft_id", "")),
+                "draft_version": str(form.get("draft_version", "")),
+            },
+            input_source=str(form.get("input_source", "manual")),
             deactivated=deactivated,
             expected_count=expected_count,
             expected_amount=expected_amount,
@@ -246,6 +346,15 @@ async def confirm(request: Request, db: Session = Depends(get_db)) -> Response:
         )
 
     if result.errors:
+        if "month" in result.errors and form.get("review_token"):
+            try:
+                validate_month(month)
+            except ValueError:
+                pass
+            else:
+                return response(
+                    "다른 작업으로 처리 월의 기준이 변경되었습니다. 다시 검수하세요.", 409
+                )
         return response()
     if replay_error:
         return response(replay_error, 409)
@@ -280,8 +389,18 @@ async def confirm(request: Request, db: Session = Depends(get_db)) -> Response:
             result.errors.update(locked_errors)
             db.rollback()
             return response()
+        draft = verify_draft_for_confirm(
+            db,
+            draft_id=str(form.get("draft_id", "")),
+            owner_id=int(request.session["admin_id"]),
+            version=str(form.get("draft_version", "")),
+            request_key=request_key,
+        )
         backup_database()
-        before = {p.point_no: profile_for_person(p) for p in db.scalars(select(Person)).all()}
+        before = {
+            p.point_no: profile_for_person(p)
+            for p in db.scalars(select(Person).options(joinedload(Person.team))).all()
+        }
         operation = add_operation(
             db,
             request_key=request_key,
@@ -321,7 +440,11 @@ async def confirm(request: Request, db: Session = Depends(get_db)) -> Response:
                 record.amount,
             )
         create_monthly_snapshot(db, month, records, commit=False, operation_id=operation.id)
+        confirm_draft(draft, payload_from_form(form), operation.result_url)
         db.commit()
+    except DraftError as exc:
+        db.rollback()
+        return response(str(exc), exc.status)
     except LedgerConflict as exc:
         db.rollback()
         return response(str(exc), 409)
@@ -338,3 +461,21 @@ async def confirm(request: Request, db: Session = Depends(get_db)) -> Response:
             "확정 처리 중 오류가 발생했습니다. 입력을 보존했습니다. 다시 시도해 주세요.", 500
         )
     return RedirectResponse(operation.result_url, status_code=303)
+
+
+@router.get("/template.xlsx")
+def download_template(month: str, request: Request) -> Response:
+    try:
+        data = request_template(month)
+    except ValueError as exc:
+        from fastapi import HTTPException
+
+        raise HTTPException(400, str(exc)) from exc
+    return Response(
+        data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="pointbook-request-{month}-v1.xlsx"',
+            "Cache-Control": "no-store",
+        },
+    )

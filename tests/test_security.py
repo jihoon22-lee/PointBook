@@ -69,7 +69,7 @@ def test_upload_unsupported_ext_rejected(auth_client):
         files={"file": ("req.txt", b"fake", "text/plain")},
     )
     assert resp.status_code == 400
-    assert "지원하지 않는 이미지 형식" in resp.text
+    assert "지원하지 않는 파일 형식" in resp.text
 
 
 def test_upload_oversized_file_rejected(auth_client, monkeypatch):

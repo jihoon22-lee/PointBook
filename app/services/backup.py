@@ -71,7 +71,7 @@ def recovery_status(source: Path | None = None) -> dict[str, Any]:
         return {
             key: {field: item[field] for field in ("at", "status") if field in item}
             for key, item in value.items()
-            if key in {"backup", "restore"} and isinstance(item, dict)
+            if key in {"backup", "restore", "rehearsal"} and isinstance(item, dict)
         }
     except (OSError, ValueError, TypeError, AttributeError):
         return {}

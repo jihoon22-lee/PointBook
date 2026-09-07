@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.models import Person, Team
 from app.services.identifiers import normalize_point_no
+from app.services.teams import TEAM_COLORS
 from app.services.validation import parse_money
 
 
@@ -125,6 +126,7 @@ def apply_analysis(db: Session, analysis: SyncAnalysis) -> None:
     """검증된 계획을 현재 쓰기 트랜잭션에 반영한다. 커밋은 호출자가 담당한다."""
     people = {p.id: p for p in db.scalars(select(Person)).all()}
     teams = {t.name: t for t in db.scalars(select(Team)).all()}
+    used_colors = {team.color for team in teams.values()}
     for change in analysis.changes:
         person = people.get(change.person_id) if change.person_id is not None else None
         if change.action == ACTION_NEW:
@@ -150,7 +152,11 @@ def apply_analysis(db: Session, analysis: SyncAnalysis) -> None:
         if change.team_name:
             team = teams.get(change.team_name)
             if team is None:
-                team = Team(name=change.team_name)
+                color = next(
+                    (color for color in TEAM_COLORS if color not in used_colors), TEAM_COLORS[0]
+                )
+                team = Team(name=change.team_name, color=color)
+                used_colors.add(color)
                 db.add(team)
                 teams[change.team_name] = team
             person.team = team

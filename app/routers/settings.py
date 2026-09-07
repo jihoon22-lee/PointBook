@@ -9,14 +9,15 @@ from app.config import DEFAULT_ADMIN_PASSWORD
 from app.db import get_db
 from app.logging import get_logger
 from app.models import AdminUser
+from app.services.operations import operation_status
 from app.template_utils import render
 
 router = APIRouter(prefix="/settings", dependencies=[Depends(require_login)], tags=["settings"])
 
 
 @router.get("")
-def settings_page(request: Request) -> Response:
-    return render(request, "settings.html")
+def settings_page(request: Request, db: Session = Depends(get_db)) -> Response:
+    return render(request, "settings.html", {"operations": operation_status(db)})
 
 
 @router.post("")

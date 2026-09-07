@@ -1,4 +1,5 @@
 import re
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response
@@ -8,6 +9,7 @@ from app.auth import require_login
 from app.db import get_db
 from app.services import stats
 from app.services.dates import current_month
+from app.services.xlsx import report_workbook
 from app.template_utils import render
 
 router = APIRouter(prefix="/dashboard", dependencies=[Depends(require_login)], tags=["dashboard"])
@@ -22,6 +24,8 @@ def dashboard(
     person_id: int | None = None,
     team_name: str | None = None,
     operation_id: str = "",
+    sort_by: str = "name",
+    direction: str = "asc",
     db: Session = Depends(get_db),
 ) -> Response:
     months = stats.available_months(db)
@@ -42,6 +46,7 @@ def dashboard(
             team_name if team_name else None,
             cutoff,
         )
+        stats.sort_report(result, sort_by, direction)
         trend_data = stats.trend(
             db,
             scope=scope,
@@ -90,5 +95,61 @@ def dashboard(
             "team_name": team_name or "",
             "person_id": person_id,
             "operation_id": requested_operation,
+            "sort_by": sort_by,
+            "direction": direction,
+            "export_url": "/dashboard/export.xlsx?"
+            + urlencode(
+                {
+                    "month": selected,
+                    "scope": scope,
+                    "account_type": account_type,
+                    "team_name": team_name or "",
+                    "operation_id": cutoff,
+                    "sort_by": sort_by,
+                    "direction": direction,
+                    **({"person_id": person_id} if person_id else {}),
+                }
+            ),
         },
     )
+
+
+@router.get("/export.xlsx")
+def export_report(
+    request: Request,
+    month: str,
+    scope: str = "observed",
+    account_type: str = "person",
+    person_id: int | None = None,
+    team_name: str = "",
+    operation_id: str = "",
+    sort_by: str = "name",
+    direction: str = "asc",
+    db: Session = Depends(get_db),
+) -> Response:
+    try:
+        if operation_id and (
+            not re.fullmatch(r"[0-9]{1,19}", operation_id) or int(operation_id) > 2**63 - 1
+        ):
+            raise ValueError("정정판 작업 번호는 0 이상의 정수여야 합니다.")
+        cutoff = int(operation_id) if operation_id else stats.report_cutoff(db)
+        result = stats.sort_report(
+            stats.report(db, month, scope, account_type, person_id, team_name or None, cutoff),
+            sort_by,
+            direction,
+        )
+        data = report_workbook(
+            result, sort_by=sort_by, direction=direction, team_name=team_name, person_id=person_id
+        )
+        return Response(
+            data,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": f'attachment; filename="pointbook-report-{result.month}-{scope}-{account_type}.xlsx"',
+                "Cache-Control": "no-store",
+            },
+        )
+    except ValueError as exc:
+        from fastapi import HTTPException
+
+        raise HTTPException(400, str(exc)) from exc

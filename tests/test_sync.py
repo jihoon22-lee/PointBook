@@ -198,3 +198,25 @@ def test_apply_new_person_sets_current_amount(client, db):
     person = db.scalar(select(Person))
     assert person.current_amount == 40000
     assert person.current_carry_balance == 0
+
+
+def test_new_team_colors_are_assigned_without_duplicate_queries(client, db):
+    from sqlalchemy import select
+
+    from app.models import Team
+    from app.services.sync import RequestRow, analyze, apply_analysis
+
+    rows = [
+        RequestRow(
+            point_no=f"{index:08d}",
+            personal_no=str(index),
+            name=f"합성{index}",
+            team=f"새팀{index}",
+            amount=0,
+        )
+        for index in range(1, 4)
+    ]
+    apply_analysis(db, analyze(db, rows))
+    db.commit()
+    teams = list(db.scalars(select(Team)))
+    assert len(teams) == 3 and len({team.color for team in teams}) == 3
