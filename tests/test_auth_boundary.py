@@ -340,3 +340,34 @@ def test_initializer_rejects_runtime_config_before_migration(client, monkeypatch
     with pytest.raises(ValueError, match="SECRET_KEY"):
         init_db.main()
     assert reached_migration == []
+
+
+def test_preview_instance_cookie_does_not_replace_operating_session(auth_client, monkeypatch):
+    from app.config import get_settings
+    from app.main import create_app
+
+    settings = get_settings()
+    original_cookie = auth_client.cookies.get("session")
+    monkeypatch.setattr(settings, "session_cookie_name", "pointbook_candidate")
+    monkeypatch.setattr(settings, "secret_key", "synthetic-preview-signing-secret")
+    preview = TestClient(create_app(), base_url="http://testserver:8003")
+    try:
+        preview.cookies.update(auth_client.cookies)
+        opened = preview.get("/login")
+        assert opened.status_code == 200
+        import re
+
+        csrf = re.search(r'name="csrf_token" value="([^"]+)"', opened.text).group(1)
+        logged_in = preview.post(
+            "/login", data={**_credentials(), "csrf_token": csrf}, follow_redirects=False
+        )
+        assert logged_in.status_code == 303
+        assert preview.cookies.get("session") == original_cookie
+        assert preview.cookies.get("pointbook_candidate")
+        auth_client.cookies.update(preview.cookies)
+        assert auth_client.get("/people", follow_redirects=False).status_code == 200
+        preview.cookies.clear()
+        preview.cookies.set("pointbook_candidate", original_cookie)
+        assert preview.get("/people", follow_redirects=False).status_code == 303
+    finally:
+        preview.close()
