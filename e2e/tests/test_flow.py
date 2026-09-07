@@ -20,6 +20,7 @@ def test_create_person(page):
     page.fill('input[name="name"]', "E2E인원")
     page.fill('input[name="grade"]', "소방사")
     page.click('.card button[type="submit"]')
+    page.click('button[name="intent"][value="apply"]')
     page.wait_for_url(f"{BASE_URL}/people/*")
     page.goto(f"{BASE_URL}/people")
     assert "E2E인원" in page.text_content("body")

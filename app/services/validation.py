@@ -19,6 +19,11 @@ def parse_money(value: object, *, label: str = "금액") -> int:
     return _parse_bounded(value, label=label, maximum=MAX_MONEY, currency=True)
 
 
+def parse_balance(value: object, *, label: str = "이월 잔액") -> int:
+    """계산된 총 잔액을 다음 관측 입력으로 다시 사용할 수 있다."""
+    return _parse_bounded(value, label=label, maximum=MAX_TOTAL, currency=True)
+
+
 def parse_expected_total(value: object, *, max_rows: int = 2000) -> int:
     """기대 충전 총액은 개별 원화 문법과 전체 요청서 행수×입력 상한을 적용한다."""
     return _parse_bounded(

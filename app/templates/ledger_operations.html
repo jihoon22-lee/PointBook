@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}장부 변경 이력 - PointBook{% endblock %}
+{% block content %}
+<h1>장부 변경 이력</h1>
+<p class="muted">단일 관리자 계정의 처리 기록입니다. 최초 이관 자료의 원래 작성자·확정 시각을 소급해 보증하지 않습니다.</p>
+<a class="btn" href="/ledger/integrity">정합성 검사</a>
+<div class="card table-wrap"><table><thead><tr><th>기록 시각 (UTC)</th><th>작업</th><th>사유</th><th></th></tr></thead><tbody>
+{% set labels={'monthly':'월간 확정','correction':'과거 정정','adjustment':'현재 보정','profile':'기본 정보','repair':'계산 복구'} %}
+{% for entry in entries %}<tr><td>{{ entry.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td><td>{{ labels.get(entry.kind,entry.kind) }}</td><td>{{ entry.reason }}</td><td><a href="/ledger/operations/{{ entry.request_key }}">전후 보기</a></td></tr>{% else %}<tr><td colspan="4">아직 변경 이력이 없습니다.</td></tr>{% endfor %}
+</tbody></table></div>
+<div class="pagination">{% if page > 1 %}<a class="btn" href="/ledger?page={{ page - 1 }}">이전</a>{% endif %}<span>{{ page }}쪽 · 전체 {{ total }}건</span>{% if page * 100 < total %}<a class="btn" href="/ledger?page={{ page + 1 }}">다음</a>{% endif %}</div>
+{% endblock %}

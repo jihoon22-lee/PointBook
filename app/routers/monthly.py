@@ -1,3 +1,6 @@
+import uuid
+from dataclasses import asdict
+
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import select, text
@@ -10,11 +13,13 @@ from app.auth import require_login
 from app.config import get_settings
 from app.db import get_db
 from app.logging import get_logger
-from app.models import Person
+from app.models import MonthlySnapshot, Person
 from app.services import stats
 from app.services.backup import backup_database
 from app.services.balance import build_balance_records, create_monthly_snapshot
 from app.services.dates import current_month
+from app.services.history import profile_for_person
+from app.services.ledger import LedgerConflict, add_operation, find_replay
 from app.services.parsing import MAX_REQUEST_ROWS, RawRequestRow, parse_pasted_raw
 from app.services.review import (
     Review,
@@ -46,7 +51,15 @@ def monthly_home(request: Request, db: Session = Depends(get_db)) -> Response:
         request,
         "monthly.html",
         {
-            "summary": [stats.month_summary(db, m) for m in stats.available_months(db)],
+            "summary": list(
+                reversed(stats.trend(db, account_type="all", operation_id=stats.report_cutoff(db)))
+            ),
+            "month_statuses": {
+                month: status
+                for month, status in db.execute(
+                    select(MonthlySnapshot.month, MonthlySnapshot.status)
+                )
+            },
             "month": current_month(),
             "done": request.query_params.get("done"),
             "ai_provider": get_settings().ai_provider,
@@ -66,10 +79,18 @@ def _error_response(
         "monthly.html",
         {
             "month": month,
+            "month_statuses": {
+                month: status
+                for month, status in db.execute(
+                    select(MonthlySnapshot.month, MonthlySnapshot.status)
+                )
+            },
             "error": message,
             "pasted": pasted,
             "ai_provider": get_settings().ai_provider,
-            "summary": [stats.month_summary(db, m) for m in stats.available_months(db)],
+            "summary": list(
+                reversed(stats.trend(db, account_type="all", operation_id=stats.report_cutoff(db)))
+            ),
         },
         400,
     )
@@ -80,6 +101,7 @@ def review_response(
     month: str,
     review: Review,
     *,
+    request_key: str = "",
     deactivated: dict[str, str] | None = None,
     expected_count: str = "",
     expected_amount: str = "",
@@ -99,6 +121,7 @@ def review_response(
             "errors": review.errors,
             "warnings": review.warnings,
             "review_token": review.token,
+            "request_key": request_key or uuid.uuid4().hex,
             "prev_totals": review.prev_totals,
             "request_amount": review.request_amount,
             "previous_count": review.previous_count,
@@ -171,6 +194,7 @@ async def review(request: Request, db: Session = Depends(get_db)) -> Response:
         request,
         month,
         result,
+        request_key=str(form.get("request_key", "")),
         deactivated=deactivated_from_form(form),
         expected_count=expected_count,
         expected_amount=expected_amount,
@@ -191,6 +215,21 @@ async def confirm(request: Request, db: Session = Depends(get_db)) -> Response:
     except ValueError as exc:
         return _error_response(request, db, month, str(exc))
     deactivated = deactivated_from_form(form)
+    request_key = str(form.get("request_key", ""))
+    payload = {
+        "month": month,
+        "rows": [{k: v for k, v in asdict(row).items() if k != "source_line"} for row in rows],
+        "deactivated": deactivated,
+        "expected_count": expected_count,
+        "expected_amount": expected_amount,
+    }
+    replay_error = ""
+    try:
+        replay = find_replay(db, request_key, "monthly", payload)
+        if replay:
+            return RedirectResponse(replay.result_url, status_code=303)
+    except ValueError as exc:
+        replay_error = str(exc)
     result = review_rows(db, month, rows, expected_count, expected_amount)
 
     def response(message: str = "", status: int = 400) -> Response:
@@ -198,6 +237,7 @@ async def confirm(request: Request, db: Session = Depends(get_db)) -> Response:
             request,
             month,
             result,
+            request_key=request_key,
             deactivated=deactivated,
             expected_count=expected_count,
             expected_amount=expected_amount,
@@ -207,6 +247,8 @@ async def confirm(request: Request, db: Session = Depends(get_db)) -> Response:
 
     if result.errors:
         return response()
+    if replay_error:
+        return response(replay_error, 409)
     carries, errors = carry_values(result, deactivated)
     if errors:
         result.errors.update(errors)
@@ -223,6 +265,10 @@ async def confirm(request: Request, db: Session = Depends(get_db)) -> Response:
     db.rollback()
     try:
         db.execute(text("BEGIN IMMEDIATE"))
+        replay = find_replay(db, request_key, "monthly", payload)
+        if replay:
+            db.rollback()
+            return RedirectResponse(replay.result_url, status_code=303)
         locked = review_rows(db, month, rows, expected_count, expected_amount)
         if locked.errors or not matches_token(token, locked.digest):
             result = locked
@@ -235,6 +281,29 @@ async def confirm(request: Request, db: Session = Depends(get_db)) -> Response:
             db.rollback()
             return response()
         backup_database()
+        before = {p.point_no: profile_for_person(p) for p in db.scalars(select(Person)).all()}
+        operation = add_operation(
+            db,
+            request_key=request_key,
+            kind="monthly",
+            payload=payload,
+            actor_id=int(request.session["admin_id"]),
+            reason=f"{month} 월간 요청서 확정",
+            details={
+                "month": month,
+                "changes": [
+                    {
+                        "point_no": c.point_no,
+                        "before": before.get(c.point_no),
+                        "action": c.action,
+                        "amount": c.amount,
+                        "carry_balance": carries[c.point_no],
+                    }
+                    for c in result.analysis.changes
+                ],
+            },
+            result_url=f"/monthly?done=1&operation={request_key}",
+        )
         apply_analysis(db, result.analysis)
         db.flush()
         people = {p.point_no: p for p in db.scalars(select(Person)).all()}
@@ -242,14 +311,20 @@ async def confirm(request: Request, db: Session = Depends(get_db)) -> Response:
         amount_map = {people[c.point_no].id: c.amount for c in result.analysis.changes}
         records = build_balance_records(db, month, carry_map, amount_map)
         by_id = {p.id: p for p in people.values()}
+        notes = {row.point_no: row.note for row in result.rows}
         for record in records:
             person = by_id[record.person_id]
+            record.note = notes.get(person.point_no, "")
+            person.version += 1
             person.current_carry_balance, person.current_amount = (
                 record.carry_balance,
                 record.amount,
             )
-        create_monthly_snapshot(db, month, records, commit=False)
+        create_monthly_snapshot(db, month, records, commit=False, operation_id=operation.id)
         db.commit()
+    except LedgerConflict as exc:
+        db.rollback()
+        return response(str(exc), 409)
     except ValueError as exc:
         db.rollback()
         return response(str(exc))
@@ -262,4 +337,4 @@ async def confirm(request: Request, db: Session = Depends(get_db)) -> Response:
         return response(
             "확정 처리 중 오류가 발생했습니다. 입력을 보존했습니다. 다시 시도해 주세요.", 500
         )
-    return RedirectResponse("/monthly?done=1", status_code=303)
+    return RedirectResponse(operation.result_url, status_code=303)

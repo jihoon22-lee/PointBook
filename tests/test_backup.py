@@ -5,10 +5,10 @@ from contextlib import closing
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
+from alembic import command
+from sqlalchemy import create_engine, inspect
 
 from app import db as db_module
-from app.db import Base
 from app.services.backup import (
     BackupError,
     backup_database,
@@ -21,7 +21,14 @@ from app.services.backup import (
 def make_database(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     engine = create_engine(f"sqlite:///{path}")
-    Base.metadata.create_all(engine)
+    # 실제 과거 스키마 fixture. 현재 모델을 CREATE ALL로 섞어 revision을 위조하지 않는다.
+    if not inspect(engine).get_table_names():
+        cfg = db_module._alembic_config()
+        with engine.connect() as connection:
+            cfg.attributes["connection"] = connection
+            command.upgrade(cfg, "b7d9f2a1c4e6")
+            connection.exec_driver_sql("DROP TABLE alembic_version")
+            connection.commit()
     engine.dispose()
     with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("PRAGMA journal_mode=WAL")

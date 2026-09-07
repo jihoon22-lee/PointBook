@@ -1,10 +1,13 @@
 from collections.abc import Collection
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import BalanceRecord, MonthlySnapshot, Person
-from app.services.validation import parse_money
+from app.models import BalanceRecord, MonthlySnapshot, Person, utcnow
+from app.services.dates import validate_month
+from app.services.history import freeze_new_records, preserve_revision
+from app.services.observations import latest_observations
+from app.services.validation import MAX_TOTAL, parse_balance, parse_money
 
 
 def compute_usage(prev_total: int, carry_balance: int) -> int:
@@ -18,32 +21,21 @@ def compute_usage(prev_total: int, carry_balance: int) -> int:
 
 def compute_total(amount: int, carry_balance: int) -> int:
     """총 잔액 = 이번 달 들어온 금액 + 이번 달 입력한 이월 잔액."""
-    return parse_money(amount) + parse_money(carry_balance, label="이월 잔액")
+    total = parse_money(amount) + parse_balance(carry_balance)
+    if total > MAX_TOTAL:
+        raise ValueError(f"총 잔액은 {MAX_TOTAL:,}원 이하여야 합니다.")
+    return total
 
 
 def previous_totals(
     db: Session, month: str, person_ids: Collection[int] | None = None
 ) -> dict[int, int]:
     """직전 실제 관측을 일괄 조회한다. 관측 없는 인원은 맵에 포함하지 않는다."""
-    stmt = (
-        select(
-            BalanceRecord.person_id,
-            BalanceRecord.total,
-            func.row_number()
-            .over(partition_by=BalanceRecord.person_id, order_by=MonthlySnapshot.month.desc())
-            .label("position"),
-        )
-        .join(MonthlySnapshot, MonthlySnapshot.id == BalanceRecord.snapshot_id)
-        .where(MonthlySnapshot.month < month)
-    )
-    if person_ids is not None:
-        stmt = stmt.where(BalanceRecord.person_id.in_(person_ids))
-    ranked = stmt.subquery()
     return {
-        person_id: total
-        for person_id, total in db.execute(
-            select(ranked.c.person_id, ranked.c.total).where(ranked.c.position == 1)
-        ).all()
+        person_id: observation.total
+        for person_id, observation in latest_observations(
+            db, before_month=month, before_at=utcnow(), person_ids=person_ids
+        ).items()
     }
 
 
@@ -52,13 +44,7 @@ def previous_total_or_none(db: Session, person_id: int, month: str) -> int | Non
 
     단일 조인 쿼리로 조회해 월간 확정 시 인원×월 이중 순회(N+1)를 피한다.
     """
-    return db.scalar(
-        select(BalanceRecord.total)
-        .join(MonthlySnapshot, MonthlySnapshot.id == BalanceRecord.snapshot_id)
-        .where(MonthlySnapshot.month < month, BalanceRecord.person_id == person_id)
-        .order_by(MonthlySnapshot.month.desc())
-        .limit(1)
-    )
+    return previous_totals(db, month, [person_id]).get(person_id)
 
 
 def previous_total(db: Session, person_id: int, month: str) -> int:
@@ -100,16 +86,28 @@ def recompute_record(record: BalanceRecord, prev_total: int | None) -> None:
 
 
 def create_monthly_snapshot(
-    db: Session, month: str, records: list[BalanceRecord], *, commit: bool = True
+    db: Session,
+    month: str,
+    records: list[BalanceRecord],
+    *,
+    commit: bool = True,
+    source: str = "observed",
+    operation_id: int | None = None,
 ) -> MonthlySnapshot:
+    validate_month(month)
     if db.scalar(select(MonthlySnapshot).where(MonthlySnapshot.month == month)) is not None:
         raise ValueError(f"{month} 월은 이미 처리되었습니다.")
     snapshot = MonthlySnapshot(month=month)
     db.add(snapshot)
     db.flush()
+    freeze_new_records(db, records, source=source)
     for record in records:
         record.snapshot_id = snapshot.id
+        record.snapshot = snapshot
         db.add(record)
+    db.flush()
+    for record in records:
+        preserve_revision(db, record, operation_id, source=source)
     if commit:
         db.commit()
     return snapshot

@@ -4,22 +4,41 @@
 <h1>{{ '인원 수정' if person else '인원 추가' }}</h1>
 {% if error %}<p class="alert alert-error">{{ error }}</p>{% endif %}
 
-{% if values is not defined %}
-{% set values = {
-  'account_type': person.account_type if person else 'person',
-  'point_no': person.point_no|point_no if person else '',
-  'personal_no': (person.personal_no or '') if person else '',
-  'name': person.name if person else '',
-  'grade': person.grade if person else '',
-  'team_id': person.team_id|string if person and person.team_id else '',
-  'status': person.status if person else 'active',
-  'carry_balance': person.current_carry_balance if person else 0,
-  'amount': person.current_amount if person else 0
-} %}
-{% endif %}
 <div class="card">
   <form method="post" action="{{ '/people/%d/edit' % person.id if person else '/people/new' }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token|default('') }}">
+    <input type="hidden" name="request_key" value="{{ values.request_key }}">
+    <input type="hidden" name="base_version" value="{{ values.base_version }}">
+    <input type="hidden" name="person_version" value="{{ values.person_version }}">
+    {% if not person %}<input type="hidden" name="initial_month" value="{{ values.initial_month }}">{% endif %}
+    {% if preview %}
+    <input type="hidden" name="plan_token" value="{{ preview.token }}">
+    <section class="card" aria-labelledby="profile-preview-title">
+      <h2 id="profile-preview-title">변경 전후 검토</h2>
+      {% set change = preview.changes[0] %}
+      {% set labels = {'point_no':'포인트번호', 'name':'이름', 'personal_no':'개인번호', 'account_type':'계정 구분', 'team_name':'팀', 'grade':'계급', 'status':'상태'} %}
+      <div class="table-wrap"><table>
+        <thead><tr><th>항목</th><th>변경 전</th><th>변경 후</th></tr></thead>
+        <tbody>{% for field, label in labels.items() %}<tr>
+          <th>{{ label }}</th>
+          <td>{% set before = change.before.get(field) if change.before else none %}{{ {'person':'일반 인원','shared':'공용 계정','active':'재직','inactive':'비재직'}.get(before, before) or '없음' }}</td>
+          <td>{% set after = change.after.get(field) %}{{ {'person':'일반 인원','shared':'공용 계정','active':'재직','inactive':'비재직'}.get(after, after) or '없음' }}</td>
+        </tr>{% endfor %}</tbody>
+      </table></div>
+      {% if person %}
+      <p>기존 월별 기록 {{ change.record_count }}건과 별도 관측 {{ change.adjustment_count }}건의 당시 정보·금액은 보존됩니다. 현재 총 잔액 {{ preview.current_after.total|number_format }}원도 유지됩니다.</p>
+      {% else %}
+      <p>{{ values.initial_month }}에 확인한 초기 총 잔액 <strong>{{ preview.current_after.total|number_format }}원</strong>을 별도 관측으로 기록합니다. 해당 월의 전체 요청서는 이후 월간 처리에서 확정합니다.</p>
+      {% endif %}
+      {% if identity_changed %}
+      <p class="alert">포인트번호 또는 계정 구분이 바뀝니다. 앞으로 요청서를 대조할 번호와 현재 인원 목록의 구분이 달라지며, 과거 기록에는 이전 번호·당시 구분이 남습니다.</p>
+      <label><input type="checkbox" name="confirm_identity" value="yes"> 포인트번호·계정 구분 변경의 영향을 확인했습니다.</label>
+      {% endif %}
+      <p class="muted">아래 입력을 변경했다면 전후 검토를 다시 실행하세요.</p>
+      <button type="submit" name="intent" value="apply" class="btn btn-primary">{{ '검토한 변경 저장' if person else '검토한 계정 등록' }}</button>
+    </section>
+    {% endif %}
+    {% if person %}<p class="muted">기본 정보만 수정합니다. 금액은 <a href="/ledger/adjust/{{ person.id }}">현재 잔액 보정</a> 또는 개인 이력의 대상 월 정정에서 변경하세요.</p>{% endif %}
     <label>계정 구분
       <select name="account_type">
         {% if values.account_type not in ['person', 'shared'] %}<option value="{{ values.account_type }}" selected>잘못된 값: {{ values.account_type }}</option>{% endif %}
@@ -56,16 +75,28 @@
         <option value="inactive" {% if values.status == 'inactive' %}selected{% endif %}>비재직</option>
       </select>
     </label>
-    <label>이월 잔액 (원)
-      <input type="text" inputmode="numeric" name="carry_balance" required value="{{ values.carry_balance }}">
+    {% if not person %}
+    <label>초기 이월 잔액 (원)
+      <input type="text" inputmode="numeric" name="carry_balance" required value="{{ values.carry_balance|default('') }}">
     </label>
-    <label>당월 충전 금액 (원)
-      <input type="text" inputmode="numeric" name="amount" required value="{{ values.amount }}">
+    <label>초기 추가 금액 (원)
+      <input type="text" inputmode="numeric" name="amount" required value="{{ values.amount|default('') }}">
     </label>
-    <p class="muted">금액은 0~999,999,999,999원 정수로 입력합니다. 천단위 쉼표와 ₩ 접두사·원 접미사를 사용할 수 있습니다.</p>
-    <button type="submit" class="btn btn-primary">{{ '저장' if person else '추가' }}</button>
+    <p class="muted">등록 시 확인한 두 금액의 합계를 초기 잔액으로 기록합니다. 월간 충전 실적으로 집계하지 않습니다. 0원도 확인한 잔액으로 남습니다.</p>
+    <p class="muted">각 금액은 0~999,999,999,999원 정수로 입력합니다. 합계는 최대 1,999,999,999,998원입니다. 이월·현재 잔액 입력은 총 잔액 상한까지 허용하며 충전 후 합계도 이 범위 안이어야 합니다.</p>
+    {% elif error and ('carry_balance' in values or 'amount' in values) %}
+    <div class="alert alert-error"><p>전달된 금액은 저장하지 않았습니다. 금액 정정 화면에서 다시 확인해 주세요.</p>
+      {% if 'carry_balance' in values %}<p>전달된 이월 잔액 원문: <span>{{ values.carry_balance }}</span></p>{% endif %}
+      {% if 'amount' in values %}<p>전달된 금액 원문: <span>{{ values.amount }}</span></p>{% endif %}
+    </div>
+    {% endif %}
+    <label>변경 사유 *
+      <textarea name="reason" required maxlength="1000">{{ values.reason }}</textarea>
+    </label>
+    {% if conflict %}<button type="submit" name="intent" value="rebase" class="btn">입력을 유지하고 새 기준으로 검토</button>{% endif %}
+    <button type="submit" name="intent" value="preview" class="btn btn-primary">변경 내용 검토</button>
     <a class="btn" href="{{ '/people/%d' % person.id if person else '/people' }}">취소</a>
   </form>
 </div>
-<p class="muted">* 포인트번호는 필수 고유값입니다. 이월 잔액·충전 금액을 수정하면 최신 월 기록의 순사용·총 잔액도 함께 재계산됩니다.</p>
+<p class="muted">* 포인트번호는 필수 고유값입니다. 이름·개인번호는 중복될 수 있으며 인원은 삭제하지 않습니다.</p>
 {% endblock %}

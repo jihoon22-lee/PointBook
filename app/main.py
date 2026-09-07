@@ -23,6 +23,7 @@ from app.models import AdminUser
 from app.routers import auth as auth_router
 from app.routers import dashboard as dashboard_router
 from app.routers import home as home_router
+from app.routers import ledger as ledger_router
 from app.routers import monthly as monthly_router
 from app.routers import people as people_router
 from app.routers import settings as settings_router
@@ -138,6 +139,7 @@ def create_app() -> FastAPI:
     app.include_router(monthly_router.router)
     app.include_router(dashboard_router.router)
     app.include_router(settings_router.router)
+    app.include_router(ledger_router.router)
     return app
 
 

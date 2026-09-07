@@ -11,12 +11,12 @@ from sqlalchemy.orm import Session
 from starlette.datastructures import FormData
 
 from app.config import get_settings
-from app.models import BalanceRecord, MonthlySnapshot, Person, Team
+from app.models import BalanceRecord, LedgerState, MonthlySnapshot, Person, Team
 from app.services.balance import previous_totals
 from app.services.dates import current_month, validate_month
 from app.services.parsing import MAX_REQUEST_ROWS, ROW_FIELDS, RawRequestRow
 from app.services.sync import ACTION_DEACTIVATED, RequestRow, SyncAnalysis, analyze
-from app.services.validation import parse_expected_count, parse_expected_total, parse_money
+from app.services.validation import parse_balance, parse_expected_count, parse_expected_total
 
 
 @dataclass
@@ -78,6 +78,7 @@ def database_fingerprint(db: Session) -> str:
     people = db.execute(
         select(
             Person.id,
+            Person.version,
             Person.point_no,
             Person.personal_no,
             Person.name,
@@ -93,6 +94,7 @@ def database_fingerprint(db: Session) -> str:
     balances = db.execute(
         select(
             BalanceRecord.id,
+            BalanceRecord.version,
             BalanceRecord.person_id,
             BalanceRecord.snapshot_id,
             BalanceRecord.carry_balance,
@@ -102,9 +104,15 @@ def database_fingerprint(db: Session) -> str:
         ).order_by(BalanceRecord.id)
     ).all()
     months = db.execute(
-        select(MonthlySnapshot.id, MonthlySnapshot.month).order_by(MonthlySnapshot.id)
+        select(
+            MonthlySnapshot.id,
+            MonthlySnapshot.month,
+            MonthlySnapshot.status,
+            MonthlySnapshot.version,
+        ).order_by(MonthlySnapshot.id)
     ).all()
-    value = [[list(r) for r in group] for group in (people, teams, balances, months)]
+    version = db.scalar(select(LedgerState.version).where(LedgerState.id == 1))
+    value = [version, *[[list(r) for r in group] for group in (people, teams, balances, months)]]
     return hashlib.sha256(json.dumps(value, ensure_ascii=False).encode()).hexdigest()
 
 
@@ -241,13 +249,13 @@ def carry_values(
     errors: dict[str, str] = {}
     for raw, row in zip(review.raw_rows, review.rows, strict=True):
         try:
-            values[row.point_no] = parse_money(raw.carry, label="이월 잔액")
+            values[row.point_no] = parse_balance(raw.carry, label="이월 잔액")
         except ValueError as exc:
             errors[raw.row_id] = f"{row.name}: {exc}"
     for change in review.analysis.changes:
         if change.action == ACTION_DEACTIVATED:
             try:
-                values[change.point_no] = parse_money(
+                values[change.point_no] = parse_balance(
                     deactivated.get(change.point_no, ""), label="이월 잔액"
                 )
             except ValueError as exc:

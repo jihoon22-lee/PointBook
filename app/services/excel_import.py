@@ -183,7 +183,7 @@ def import_excel(db: Session, path: Path, month: str) -> ImportResult:
             )
         )
     if records:
-        create_monthly_snapshot(db, month, records)
+        create_monthly_snapshot(db, month, records, source="legacy_import")
     return ImportResult(
         month=month, created_persons=created, existing_persons=existing, records=len(records)
     )

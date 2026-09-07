@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}{{ '과거 장부 정정' if kind == 'correction' else '현재 잔액 보정' }} - PointBook{% endblock %}
+{% block content %}
+<h1>{{ '과거 장부 정정 · 삽입' if kind == 'correction' else '현재 잔액 보정' }}</h1>
+{% if error %}<p class="alert alert-error" role="alert">{{ error }}</p>{% endif %}
+{% if person %}
+<p><strong>{{ person.name }}</strong> · {{ person.point_no|point_no }}</p>
+{% if kind == 'correction' %}
+<p class="muted">대상 월의 입력을 정정하고 다음 실제 관측의 순사용 영향을 확인합니다. 정정 전 값과 사유는 이력에 보존됩니다.</p>
+{% else %}
+<p class="muted">지금 확인한 잔액을 별도 관측으로 기록합니다. 월간 충전 이력은 보존하며, 이후 잔액 계산은 이 관측에서 이어집니다.</p>
+{% endif %}
+<p>현재 총잔액 {{ (person.current_carry_balance + person.current_amount)|number_format }}원 · 마지막 관측 {% if observation %}{{ observation.month }}{% else %}미확인{% endif %}</p>
+<form method="post" id="ledger-form" action="/ledger/{{ 'correct' if kind == 'correction' else 'adjust' }}/{{ person.id }}/preview" class="card">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="request_key" value="{{ values.request_key }}">
+  {% if plan %}<input type="hidden" name="plan_token" value="{{ plan.token }}">{% endif %}
+  {% if kind == 'correction' %}
+  <label>대상 월<input type="text" inputmode="numeric" name="month" value="{{ values.month }}" placeholder="YYYY-MM" required></label>
+  <label>그 월의 이월 잔액<input type="text" inputmode="numeric" name="carry" value="{{ values.carry }}" required></label>
+  <label>그 월의 충전액<input type="text" inputmode="numeric" name="amount" value="{{ values.amount }}" required></label>
+  {% else %}
+  <label>현재 확인한 총잔액<input type="text" inputmode="numeric" name="total" value="{{ values.total }}" required></label>
+  {% endif %}
+  <label>비고<input type="text" name="note" value="{{ values.note }}" maxlength="1000"></label>
+  <label>변경 사유<textarea name="reason" required maxlength="1000">{{ values.reason }}</textarea></label>
+  {% if kind == 'correction' %}
+  <details {% if values.update_profile == 'yes' %}open{% endif %}>
+    <summary>당시 정보도 정정할 때</summary>
+    <p class="muted">근거로 확인한 당시 정보만 입력합니다. 확인하지 않으면 기존 출처 표시와 정보를 유지합니다. 빈 과거 월에 삽입할 때 기본 정보는 정정 시점 참고값으로 표시됩니다.</p>
+    <label><input type="checkbox" name="update_profile" value="yes" {% if values.update_profile == 'yes' %}checked{% endif %}> 당시 정보를 확인했으며 아래 값으로 정정합니다.</label>
+    {% for field,label in [('name','당시 이름'),('point_no','당시 포인트번호'),('personal_no','당시 개인번호'),('team_name','당시 팀'),('grade','당시 계급')] %}
+    <label>{{ label }}<input type="text" name="history_{{ field }}" value="{{ values['history_'+field] }}"></label>
+    {% endfor %}
+    <label>당시 상태<select name="history_status"><option value="active" {% if values.history_status == 'active' %}selected{% endif %}>재직</option><option value="inactive" {% if values.history_status == 'inactive' %}selected{% endif %}>비재직</option></select></label>
+    <label>당시 계정 구분<select name="history_account_type"><option value="person" {% if values.history_account_type == 'person' %}selected{% endif %}>일반</option><option value="shared" {% if values.history_account_type == 'shared' %}selected{% endif %}>공용</option></select></label>
+  </details>
+  {% endif %}
+  <button type="submit" class="btn">전후 차이 검토</button>
+  {% if plan %}
+    {% include "ledger_plan.html" %}
+    <button type="submit" formaction="/ledger/{{ 'correct' if kind == 'correction' else 'adjust' }}/{{ person.id }}/apply" class="btn btn-primary" onclick="return confirm('표시된 전후 차이와 사유로 반영할까요?')">검토한 내용 반영</button>
+  {% endif %}
+  <a class="btn" href="/people/{{ person.id }}">인원으로 돌아가기</a>
+</form>
+{% endif %}
+{% endblock %}

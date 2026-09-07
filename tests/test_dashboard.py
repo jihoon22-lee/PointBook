@@ -61,7 +61,7 @@ def test_month_summary_sums_signed_usage(client, db):
     assert stats.month_summary(db, "2026-07").total_usage == -2000
 
 
-def test_month_summary_counts_active_and_newly_inactive_people_only(client, db):
+def test_month_summary_counts_actual_records_without_inferring_status_from_amount(client, db):
     active = make_person(db, "101", "재직자")
     newly_inactive = make_person(db, "102", "신규비재직")
     already_inactive = make_person(db, "103", "기존비재직", status="inactive")
@@ -110,8 +110,9 @@ def test_month_summary_counts_active_and_newly_inactive_people_only(client, db):
 
     summary = stats.month_summary(db, "2026-08")
 
-    assert summary.count == 2
-    assert [item.count for item in stats.trend(db)] == [2, 2]
+    assert summary.count == 3
+    assert summary.processed_count == 3
+    assert [item.count for item in stats.trend(db)] == [3, 3]
 
 
 def test_trend_orders_ascending(client, db):
@@ -249,7 +250,7 @@ def test_dashboard_month_select(auth_client, db):
     assert "65,000원" in resp.text
 
 
-def test_dashboard_invalid_month_falls_back(auth_client, db):
+def test_dashboard_keeps_valid_gap_month_without_inventing_observations(auth_client, db):
     _confirm(
         auth_client,
         "2026-07",
@@ -258,7 +259,8 @@ def test_dashboard_invalid_month_falls_back(auth_client, db):
     )
     resp = auth_client.get("/dashboard?month=2099-01")
     assert resp.status_code == 200
-    assert "2026-07" in resp.text
+    assert 'value="2099-01"' in resp.text
+    assert "선택한 범위의 관측 기록이 없으면" in resp.text
 
 
 def test_dashboard_requires_login(client):
