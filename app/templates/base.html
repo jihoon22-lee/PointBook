@@ -28,6 +28,7 @@
   </header>
   {% endif %}
   <main class="container">
+    {% if instance_notice %}<p class="alert alert-warning" role="status"><strong>{{ instance_notice }}</strong></p>{% endif %}
     {% block content %}{% endblock %}
   </main>
   <footer class="footer">PointBook v{{ version }}</footer>

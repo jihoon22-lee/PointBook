@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     database_path: str = "data/pointbook.db"
     app_env: Literal["development", "test", "production"] = "development"
     backup_dir: str = ""
+    instance_notice: str = Field(default="", max_length=160)
 
     # 보안 하드닝
     enforce_secure_defaults: bool = False
