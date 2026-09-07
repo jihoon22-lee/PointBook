@@ -6,6 +6,8 @@ from xml.etree import ElementTree as ET
 
 from conftest import BASE_URL, login
 
+MULTILINE_NOTE = "\n=문자열 <비고>\n둘째 줄\n"
+
 
 def fill_template(data):
     namespace = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -34,7 +36,7 @@ def fill_template(data):
                         "150",
                         "950",
                         "00000950",
-                        "=문자열 비고",
+                        MULTILINE_NOTE,
                         "50",
                     ],
                 ):
@@ -68,7 +70,18 @@ def test_standard_excel_and_report_download(page):
     page.click('#monthly-upload button[type="submit"]')
     page.wait_for_url("**/drafts/*")
     assert page.input_value('input[name="point_no_0"]') == "00000950"
-    assert page.input_value('input[name="note_0"]') == "=문자열 비고"
+    note = page.locator('[name="note_0"]')
+    assert note.input_value() == MULTILINE_NOTE
+    edited_note = MULTILINE_NOTE + "추가 확인"
+    note.fill(edited_note)
+    page.wait_for_function(
+        "document.getElementById('draft-status').textContent.indexOf('저장 완료') >= 0"
+    )
+    page.reload()
+    assert page.input_value('[name="note_0"]') == edited_note
+    with page.expect_navigation(wait_until="domcontentloaded"):
+        page.click('button[formaction="/monthly/review"]')
+    assert page.input_value('[name="note_0"]') == edited_note
     for carry in page.locator('input[name^="deactivated_carry_"]').all():
         carry.fill("0")
     acknowledgement = page.locator('[name="ack_warnings"]')
@@ -88,6 +101,9 @@ def test_standard_excel_and_report_download(page):
         content = workbook.read("xl/worksheets/sheet2.xml").decode()
         assert "00000950" in content
         assert "<f>" not in content
+        namespace = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+        values = [node.text for node in ET.fromstring(content).findall(".//s:t", namespace)]
+        assert edited_note in values
 
 
 def test_ie_guidance_uses_no_app_form(browser):

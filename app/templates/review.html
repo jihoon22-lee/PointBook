@@ -57,7 +57,8 @@
               <option value="shared" {% if row.account_type == 'shared' %}selected{% endif %}>공용</option>
             </select></td>
             {% for field, label in [('personal_no','개인번호'),('name','이름'),('team','팀'),('grade','계급'),('amount','충전액'),('note','비고')] %}
-            <td><input type="text" data-field="{{ field }}" name="{{ field }}_{{ row_index }}" value="{{ row[field] }}" class="row-input" aria-label="{{ row_index + 1 }}행 {{ label }}" {% if field == 'amount' %}inputmode="numeric"{% endif %}></td>
+            <td>{% if field == 'note' %}<textarea data-field="note" name="note_{{ row_index }}" rows="1" class="row-input" aria-label="{{ row_index + 1 }}행 {{ label }}">
+{{ row.note }}</textarea>{% else %}<input type="text" data-field="{{ field }}" name="{{ field }}_{{ row_index }}" value="{{ row[field] }}" class="row-input" aria-label="{{ row_index + 1 }}행 {{ label }}" {% if field == 'amount' %}inputmode="numeric"{% endif %}>{% endif %}</td>
             {% endfor %}
             {% set normalized = row.point_no|replace(' ', '')|replace('-', '') %}
             <td><input type="text" inputmode="numeric" data-field="carry" name="carry_{{ loop.index0 }}" value="{{ row.carry }}" class="row-input" aria-label="{{ loop.index }}행 이월 잔액" placeholder="{% if normalized in prev_totals %}직전 잔액: {{ prev_totals[normalized]|number_format }}원{% else %}이월 잔액{% endif %}" required></td>

@@ -163,8 +163,12 @@ def _row(
             activity
             and activity.profile.get("account_type") == "person"
             and activity.profile.get("status") == "inactive"
-            and activity.previous_monthly_type == "person"
-            and activity.previous_monthly_status == "active"
+            and (
+                activity.monthly_action == "deactivated"
+                if activity.monthly_action is not None
+                else activity.previous_monthly_type == "person"
+                and activity.previous_monthly_status == "active"
+            )
         ),
     )
 

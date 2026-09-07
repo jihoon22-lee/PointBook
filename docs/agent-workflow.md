@@ -9,6 +9,7 @@ v1.4.0의 범위·의존성은 [#47](https://github.com/jihoon22-lee/PointBook/i
 R01~R26/S01~S12의 수용 기준은 [#48](https://github.com/jihoon22-lee/PointBook/issues/48),
 실행 계획은 각 WP가 관리한다. 변경할 부분의 이슈를 읽고 현재 코드와 대조한다.
 계획 본문을 로컬에 복제하거나 작업 이슈마다 PR을 만들 필요는 없다.
+v1.4.1 후속 수정은 [작업 기록](../workthrough/2026-09-07-v1.4.1-ledger-fixes.md)에서 범위와 실제 검증을 추적한다.
 
 개발 기록은 PR 묶음당 `workthrough/YYYY-MM-DD-scope.md` 하나를 재사용한다.
 문제·결정·관련 R/S/WP·PR·검증 SHA 또는 CI URL·실제 명령/환경·결과/한계를 남긴다.

@@ -122,3 +122,17 @@ def test_korean_composition_defers_autosave_and_mobile_focus(page):
     page.click("#next-missing")
     assert page.evaluate("document.activeElement.name") == "carry_0"
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    page.uncheck("#focus-input")
+    page.click("#add-row")
+    added_note = page.locator("#rows tbody tr").last.locator('[data-field="note"]')
+    added_note.fill("첫째 줄")
+    added_note.press("End")
+    added_note.press("Enter")
+    added_note.type("둘째 줄")
+    assert added_note.input_value() == "첫째 줄\n둘째 줄"
+    saved(page)
+    page.reload()
+    assert (
+        page.locator("#rows tbody tr").last.locator('[data-field="note"]').input_value()
+        == "첫째 줄\n둘째 줄"
+    )

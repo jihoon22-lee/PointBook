@@ -268,6 +268,28 @@ def test_http_preview_apply_replay_and_changed_payload(auth_client, db):
     assert db.scalar(select(func.count(LedgerOperation.id))) == 1
 
 
+def test_http_amount_correction_preserves_existing_multiline_note(auth_client, db):
+    person, records = setup_ledger(db)
+    note = "\n첫째 줄 <원문>\n둘째 줄\n"
+    apply(db, correction(db, person, amount="100", note=note))
+    path = f"/ledger/correct/{person.id}"
+    values = form_values(auth_client.get(path + "?month=2026-05"))
+    assert values["note"] == note
+    values.update(amount="170", reason="금액만 원본과 대조")
+    # textarea의 실제 폼 전송 줄끝(CRLF)을 보내도 앞뒤 빈 줄을 보존한다.
+    values["note"] = values["note"].replace("\n", "\r\n")
+    preview = auth_client.post(path + "/preview", data=values)
+    assert preview.status_code == 200
+    values = form_values(preview)
+    assert values["note"].replace("\r\n", "\n") == note
+    result = auth_client.post(path + "/apply", data=values, follow_redirects=False)
+    assert result.status_code == 303
+    db.refresh(records[0])
+    assert records[0].amount == 170 and records[0].note == note
+    reopened = form_values(auth_client.get(path + "?month=2026-05"))
+    assert reopened["note"] == note
+
+
 def test_monthly_replay_and_revision_audit(auth_client, db):
     values = {
         "month": "2026-08",

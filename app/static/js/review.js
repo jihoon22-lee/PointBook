@@ -28,8 +28,10 @@
     }
   }
   function field(td, key, value, hidden) {
-    var input = document.createElement('input');
-    input.type = hidden ? 'hidden' : 'text'; input.value = value || '';
+    var input = document.createElement(key === 'note' ? 'textarea' : 'input');
+    if (key === 'note') input.rows = 1;
+    else input.type = hidden ? 'hidden' : 'text';
+    input.value = value || '';
     input.setAttribute('data-field', key); input.className = 'row-input';
     input.setAttribute('aria-label', key);
     if (key === 'amount' || key === 'carry') input.setAttribute('inputmode', 'numeric');

@@ -2,7 +2,7 @@
 
 import json
 from collections.abc import Collection
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any
 
@@ -22,7 +22,13 @@ from sqlalchemy import (
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.selectable import Subquery
 
-from app.models import BalanceAdjustment, BalanceRecord, BalanceRevision, MonthlySnapshot
+from app.models import (
+    BalanceAdjustment,
+    BalanceRecord,
+    BalanceRevision,
+    LedgerOperation,
+    MonthlySnapshot,
+)
 from app.services.dates import validate_month
 from app.services.history import monthly_profile
 
@@ -45,6 +51,7 @@ class Observation:
     note: str
     previous_monthly_status: str | None = None
     previous_monthly_type: str | None = None
+    monthly_action: str | None = None
 
 
 def _monthly_query(operation_id: int | None) -> Select[Any]:
@@ -254,4 +261,23 @@ def observation_events(
     )
     if month is not None:
         stmt = stmt.where(source.c.month == validate_month(month))
-    return [_read(row) for row in db.execute(stmt)]
+    events = [_read(row) for row in db.execute(stmt)]
+    operations = select(LedgerOperation.detail_json).where(LedgerOperation.kind == "monthly")
+    if operation_id is not None:
+        operations = operations.where(LedgerOperation.id <= operation_id)
+    if month is not None:
+        operations = operations.where(
+            func.json_extract(LedgerOperation.detail_json, "$.month") == month
+        )
+    actions = {}
+    for raw in db.scalars(operations):
+        details = json.loads(raw)
+        for change in details["changes"]:
+            actions[(details["month"], change["point_no"])] = change["action"]
+    # 확정 당시 번호로 연결한다. 이후 번호 변경·개별 복귀에도 실제 전환 사실을 유지한다.
+    return [
+        replace(event, monthly_action=actions.get((event.month, event.profile.get("point_no"))))
+        if event.kind == "monthly" and event.provenance == "observed"
+        else event
+        for event in events
+    ]

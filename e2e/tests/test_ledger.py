@@ -12,16 +12,20 @@ def test_correction_review_and_immutable_result(page):
     page.click('a[href^="/ledger/correct/"]')
     page.fill('input[name="carry"]', "30")
     page.fill('input[name="amount"]', "150")
-    page.fill('input[name="note"]', "E2E 정정 비고")
+    note = "\nE2E 정정 비고\n둘째 줄\n"
+    page.fill('textarea[name="note"]', note)
     page.fill('textarea[name="reason"]', "합성 원본 대조")
     page.click('button:has-text("전후 차이 검토")')
     assert "반영 전후" in page.text_content("body")
+    assert page.input_value('textarea[name="note"]') == note
     page.click('button:has-text("검토한 내용 반영")')
     page.wait_for_url("**/ledger/operations/*")
     assert "합성 원본 대조" in page.text_content("body")
     assert "E2E 정정 비고" in page.text_content("body")
     page.goto(person_url)
     assert "180원" in page.text_content("body")
+    page.click('a[href^="/ledger/correct/"]')
+    assert page.input_value('textarea[name="note"]') == note
     page.goto(f"{BASE_URL}/ledger/integrity")
     assert "계산·연결 정합성 검사 통과" in page.text_content("body")
 

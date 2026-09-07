@@ -145,6 +145,7 @@ def _reason(value: str) -> str:
 
 
 def _note(value: str) -> str:
+    value = value.replace("\r\n", "\n").replace("\r", "\n")
     if len(value) > 1000:
         raise ValueError("비고는 1000자 이하여야 합니다.")
     return value

@@ -97,6 +97,38 @@ def test_standard_file_upload_draft_confirmation_roundtrip(auth_client, db):
     assert stats.report(db, "2026-08", account_type="all").summary.total_balance == 360
 
 
+def test_multiline_note_form_line_endings_keep_review_and_export(auth_client, db):
+    note = "\n=문자열 <비고>\n둘째 줄\n"
+    data = workbook_data(rows=[[1, "person", "", "합성", "", 100, "0011", "00001101", note, 0]])
+    response = auth_client.post(
+        "/monthly/upload", data={"month": "2026-08"}, files={"file": ("test.xlsx", data)}
+    )
+    assert response.status_code == 200
+    values = review_fields(response)
+    assert values["note_0"] == note
+    # 실제 브라우저는 textarea의 LF를 multipart 전송에서 CRLF로 직렬화한다.
+    values["note_0"] = note.replace("\n", "\r\n")
+    saved = auth_client.post("/drafts/save", data=values)
+    assert saved.status_code == 200
+    values.update(saved.json())
+    recovered = auth_client.get("/drafts/" + values["draft_id"])
+    assert review_fields(recovered)["note_0"] == note
+    values["ack_warnings"] = "yes"
+    assert (
+        auth_client.post("/monthly/confirm", data=values, follow_redirects=False).status_code == 303
+    )
+    assert db.scalar(select(BalanceRecord.note)) == note
+    report = stats.report(db, "2026-08", account_type="all")
+    with closing(
+        load_workbook(
+            io.BytesIO(report_workbook(report, sort_by="name", direction="asc")),
+            data_only=False,
+        )
+    ) as workbook:
+        assert workbook["인원"].cell(2, 14).value == note
+        assert workbook["인원"].cell(2, 14).data_type == "s"
+
+
 def test_numeric_identifier_and_formula_keep_cell_reference_until_review(auth_client):
     data = workbook_data(
         rows=[[1, "person", "", "합성", "", 100, "0011", 1101, "", 0]],
