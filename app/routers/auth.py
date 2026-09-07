@@ -44,7 +44,7 @@ def login(
     user = db.scalar(select(AdminUser).where(AdminUser.username == username))
     if user is not None and check_password_hash(user.password_hash, password):
         login_limiter.reset(username, ip)
-        login_user(request, user.username)
+        login_user(request, user)
         return RedirectResponse("/", status_code=303)
     login_limiter.record_failure(username, ip)
     return render(

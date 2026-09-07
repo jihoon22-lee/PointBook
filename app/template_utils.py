@@ -6,6 +6,7 @@ from fastapi.responses import Response
 from fastapi.templating import Jinja2Templates
 
 from app._version import __version__
+from app.auth import csrf_token
 from app.services.identifiers import format_point_no
 
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
@@ -55,4 +56,9 @@ def render(
     context: dict[str, Any] | None = None,
     status_code: int = 200,
 ) -> Response:
-    return templates.TemplateResponse(request, name, context or {}, status_code=status_code)
+    return templates.TemplateResponse(
+        request,
+        name,
+        {**(context or {}), "csrf_token": csrf_token(request)},
+        status_code=status_code,
+    )

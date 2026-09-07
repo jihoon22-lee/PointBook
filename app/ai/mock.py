@@ -1,8 +1,8 @@
 import json
-from typing import Any
 
 from app.ai.base import VisionProvider
-from app.services.sync import RequestRow
+from app.ai.rows import parse_rows
+from app.services.parsing import RawRequestRow
 
 DEFAULT_ROWS = [
     {
@@ -42,19 +42,5 @@ class MockProvider(VisionProvider):
     def __init__(self, mock_json: str = "") -> None:
         self._mock_json = mock_json
 
-    def extract_table(self, image_bytes: bytes, filename: str) -> list[RequestRow]:
-        data: list[dict[str, Any]] = (
-            json.loads(self._mock_json) if self._mock_json else DEFAULT_ROWS
-        )
-        return [
-            RequestRow(
-                point_no=str(r.get("point_no", "")),
-                personal_no=str(r.get("personal_no", "")),
-                name=str(r.get("name", "")),
-                team=str(r.get("team", "")),
-                grade=str(r.get("grade", "")),
-                amount=int(r.get("amount", 0) or 0),
-                note=str(r.get("note", "")),
-            )
-            for r in data
-        ]
+    def extract_table(self, image_bytes: bytes, filename: str) -> list[RawRequestRow]:
+        return parse_rows(self._mock_json or json.dumps(DEFAULT_ROWS, ensure_ascii=False))

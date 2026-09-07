@@ -1,5 +1,3 @@
-from dataclasses import asdict
-
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import select, text
@@ -8,7 +6,6 @@ from sqlalchemy.orm import Session
 from starlette.datastructures import FormData
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
-from app.ai.factory import get_provider
 from app.auth import require_login
 from app.config import get_settings
 from app.db import get_db
@@ -28,6 +25,7 @@ from app.services.review import (
     review_rows,
 )
 from app.services.sync import ACTION_DEACTIVATED, RequestRow, apply_analysis
+from app.services.vision import extract_image
 from app.template_utils import render
 
 router = APIRouter(prefix="/monthly", dependencies=[Depends(require_login)], tags=["monthly"])
@@ -51,6 +49,7 @@ def monthly_home(request: Request, db: Session = Depends(get_db)) -> Response:
             "summary": [stats.month_summary(db, m) for m in stats.available_months(db)],
             "month": current_month(),
             "done": request.query_params.get("done"),
+            "ai_provider": get_settings().ai_provider,
         },
     )
 
@@ -69,6 +68,7 @@ def _error_response(
             "month": month,
             "error": message,
             "pasted": pasted,
+            "ai_provider": get_settings().ai_provider,
             "summary": [stats.month_summary(db, m) for m in stats.available_months(db)],
         },
         400,
@@ -135,8 +135,7 @@ async def upload(request: Request, db: Session = Depends(get_db)) -> Response:
             data = await file.read(settings.max_upload_mb * 1024 * 1024 + 1)
             if len(data) > settings.max_upload_mb * 1024 * 1024:
                 raise ValueError(f"파일이 너무 큽니다. (최대 {settings.max_upload_mb}MB)")
-            extracted = get_provider().extract_table(data, file.filename)
-            rows = [RawRequestRow(**{k: str(v) for k, v in asdict(r).items()}) for r in extracted]
+            rows = await extract_image(data, file.filename)
         if not rows:
             raise ValueError(
                 "인식된 인원이 없습니다. 사진을 다시 업로드하거나 표를 붙여넣기해 주세요."

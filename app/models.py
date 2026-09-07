@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -20,6 +20,20 @@ class Team(Base):
 
 class Person(Base):
     __tablename__ = "people"
+    __table_args__ = (
+        CheckConstraint("status IN ('active', 'inactive')", name="ck_people_status"),
+        CheckConstraint("account_type IN ('person', 'shared')", name="ck_people_account_type"),
+        CheckConstraint(
+            "account_type != 'shared' OR status = 'active'", name="ck_people_shared_active"
+        ),
+        CheckConstraint(
+            "current_carry_balance >= 0 AND typeof(current_carry_balance) = 'integer'",
+            name="ck_people_carry",
+        ),
+        CheckConstraint(
+            "current_amount >= 0 AND typeof(current_amount) = 'integer'", name="ck_people_amount"
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     point_no: Mapped[str] = mapped_column(String(8), unique=True, index=True)
@@ -49,7 +63,13 @@ class MonthlySnapshot(Base):
 
 class BalanceRecord(Base):
     __tablename__ = "balance_records"
-    __table_args__ = (UniqueConstraint("snapshot_id", "person_id", name="uq_snapshot_person"),)
+    __table_args__ = (
+        UniqueConstraint("snapshot_id", "person_id", name="uq_snapshot_person"),
+        CheckConstraint(
+            "carry_balance >= 0 AND typeof(carry_balance) = 'integer'", name="ck_records_carry"
+        ),
+        CheckConstraint("amount >= 0 AND typeof(amount) = 'integer'", name="ck_records_amount"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     snapshot_id: Mapped[int] = mapped_column(ForeignKey("monthly_snapshots.id"), index=True)
@@ -69,3 +89,4 @@ class AdminUser(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(String(50), unique=True)
     password_hash: Mapped[str] = mapped_column(String(200))
+    auth_version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")

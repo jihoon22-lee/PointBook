@@ -20,4 +20,4 @@ USER pointbook
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "python -m scripts.init_db && exec uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+CMD ["sh", "-c", "python -m scripts.init_db && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --forwarded-allow-ips \"${FORWARDED_ALLOW_IPS:-}\""]

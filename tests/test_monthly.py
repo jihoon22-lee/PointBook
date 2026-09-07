@@ -1,3 +1,5 @@
+import base64
+
 import pytest
 from sqlalchemy import select
 
@@ -23,7 +25,7 @@ def test_mock_provider_custom_json():
     )
     rows = provider.extract_table(b"", "x.png")
     assert len(rows) == 1
-    assert rows[0].amount == 1000
+    assert rows[0].amount == "1000"
 
 
 def test_parse_pasted_spec_order():
@@ -88,13 +90,21 @@ def test_upload_empty_returns_error(auth_client):
 
 
 def test_upload_with_image_uses_provider(auth_client, monkeypatch):
-    from app.routers import monthly as monthly_router
+    from app.services import vision
 
-    monkeypatch.setattr(monthly_router, "get_provider", lambda: MockProvider())
+    monkeypatch.setattr(vision, "get_provider", lambda: MockProvider())
     resp = auth_client.post(
         "/monthly/upload",
         data={"month": "2026-07"},
-        files={"file": ("req.png", b"fake-image", "image/png")},
+        files={
+            "file": (
+                "req.png",
+                base64.b64decode(
+                    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII="
+                ),
+                "image/png",
+            )
+        },
     )
     assert resp.status_code == 200
     assert "김소방" in resp.text
@@ -319,20 +329,29 @@ def test_review_new_person_no_hint(auth_client):
 
 
 def test_upload_provider_error_shows_message(auth_client, monkeypatch):
-    from app.routers import monthly as monthly_router
+    from app.services import vision
 
     class FailingProvider:
         def extract_table(self, image_bytes, filename):
             raise ValueError("Gemini API 오류 (400): invalid key")
 
-    monkeypatch.setattr(monthly_router, "get_provider", lambda: FailingProvider())
+    monkeypatch.setattr(vision, "get_provider", lambda: FailingProvider())
     resp = auth_client.post(
         "/monthly/upload",
         data={"month": "2026-07"},
-        files={"file": ("req.png", b"fake", "image/png")},
+        files={
+            "file": (
+                "req.png",
+                base64.b64decode(
+                    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII="
+                ),
+                "image/png",
+            )
+        },
     )
     assert resp.status_code == 400
-    assert "Gemini API 오류" in resp.text
+    assert "AI 인식에 실패" in resp.text
+    assert "invalid key" not in resp.text
 
 
 def test_confirm_syncs_person_current_balance(auth_client, db):

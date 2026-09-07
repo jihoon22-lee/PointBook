@@ -201,7 +201,7 @@ sequenceDiagram
     participant DB as SQLite
     U->>M: 요청서 사진 업로드 또는 표 붙여넣기
     M->>AI: extract_table(이미지)
-    AI-->>M: RequestRow[] (포인트번호·개인번호·이름·팀·계급·금액·비고)
+    AI-->>M: RawRequestRow[] (포인트번호·개인번호·이름·팀·계급·금액·비고)
     M->>S: analyze(rows) — dry-run
     S-->>M: SyncAnalysis (신규/복귀/유지·팀변경/비재직 예상)
     M-->>U: 검수 화면 — 행 수정 + 변경 예상 + 이월 잔액 입력(직전 잔액 안내)
@@ -307,16 +307,14 @@ flowchart LR
 
 ## 8. 마이그레이션·백업 전략
 
-- **마이그레이션**: Alembic이 스키마 변경을 관리. 서버 기동 시 `init_db()`가 `upgrade head`를
-  실행하고, 기존 1.0.x DB는 `alembic_version` 부재 시 현재 스키마를 head로 자동 표식(stamp)한다.
-  `migrations/env.py`가 `app` 설정의 DB URL을 주입하므로 테스트·개발·운영이 같은 대상을 쓴다.
-- **백업**: SQLite 단일 파일 특성상 파일 복사가 곧 백업. 월간 확정 커밋 전에
-  `data/backups/pointbook-<타임스탬프>.db`를 생성하고 `BACKUP_KEEP`(기본 30)개만 유지한다.
-  호스트 `data/`가 bind mount되므로 컨테이너 교체 뒤에도 DB와 백업이 유지된다. 수동 백업은
-  `scripts/backup.py`로 가능하며, 복구는 Compose 서버 중지 후 파일 복사로 끝난다.
-- **배포 백업**: `scripts/deploy.sh`는 새 이미지를 먼저 빌드하고 PointBook 컨테이너 또는
-  소유권이 확인된 legacy Uvicorn의 종료를 확인한 뒤 DB를 복사한다. 종료 실패 시 배포를
-  중단하며, 새 컨테이너의 healthcheck와 호스트 `/login` 응답이 모두 성공해야 완료된다.
+- **마이그레이션**: Alembic이 관리하며 서버 기동 시 적용한다. 무버전 DB는 알려진
+  전체 schema signature로 과거 revision을 판별한다. 알 수 없는 구조는 보존하고 중단한다.
+  신규 연결은 foreign_keys를 활성화하며 엔진 교체·lifespan 종료 시 연결을 해제한다.
+- **백업**: SQLite backup API로 WAL을 포함한 일관된 사본을 취득하고 무결성·외래키·
+  구조·장부 합계·SHA-256 metadata를 검증한다. 같은 DB 소유권 UUID의 검증 사본만 정리한다.
+- **복원·배포**: immutable 이미지 ID와 canonical mount를 고정한다. 사전 rehearsal,
+  기존 DB 보존, 기동·DB readiness·재시작 영속성 대사를 수행한다. 쓰기 재개 뒤 자동
+  DB rollback은 하지 않는다. 상세 명령과 실패 경계는 [운영 절차](backup-restore.md)를 따른다.
 
 ### 누적 장부 이관
 
@@ -326,3 +324,13 @@ flowchart LR
 한 트랜잭션으로 저장하고 사후 합계를 다시 검사한 뒤에만 commit한다.
 `--replace-empty-history-people`는 스냅샷·잔액 기록이 없고 전체 기존 계정이 미매칭
 테스트 계정 정확히 2개일 때만 삭제 계획을 생성한다.
+
+### 인증과 AI 실행 경계
+
+모든 POST에 CSRF를 적용하고 DB의 관리자 auth_version으로 세션을 검사한다. 암호 변경은
+기존 세션을 폐기한다. 전달 IP는 명시한 프록시만 신뢰한다. `/health`는 DB revision과 구조를 검사한다.
+
+AI 호출은 제한된 thread executor에서 실행한다. timeout 뒤에도 실행 중인 worker는 슬롯을
+계속 점유해 반복 요청으로 한도를 우회하지 못한다. 이미지 형식·크기와 전체 JSON 응답을
+검증하고 불완전 행의 원문·행 위치를 검수로 전달한다. Gemini 키는 header로 보내며 외부
+오류 원문 대신 고정 메시지와 참조 ID를 제공한다. 원본 사진은 영구 저장하지 않는다.

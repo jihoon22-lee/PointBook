@@ -1,10 +1,10 @@
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import create_engine, pool
+from sqlalchemy import Connection, create_engine, pool
 
 from app import models  # noqa: F401  # 모델을 Base.metadata에 등록
-from app.db import Base, current_database_url
+from app.db import Base, current_database_url, migration_transaction
 
 config = context.config
 
@@ -26,16 +26,29 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
-def run_migrations_online() -> None:
-    connectable = create_engine(current_database_url(), poolclass=pool.NullPool)
-    with connectable.connect() as connection:
+def _run_on_connection(connection: Connection) -> None:
+    with migration_transaction(connection):
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
             render_as_batch=True,
+            transactional_ddl=True,
         )
         with context.begin_transaction():
             context.run_migrations()
+
+
+def run_migrations_online() -> None:
+    supplied = config.attributes.get("connection")
+    if supplied is not None:
+        _run_on_connection(supplied)
+        return
+    connectable = create_engine(current_database_url(), poolclass=pool.NullPool)
+    try:
+        with connectable.connect() as connection:
+            _run_on_connection(connection)
+    finally:
+        connectable.dispose()
 
 
 if context.is_offline_mode():

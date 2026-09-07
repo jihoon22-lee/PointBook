@@ -36,7 +36,7 @@ def _synthetic_data() -> LedgerData:
 def _prepare_cli(monkeypatch, tmp_path: Path) -> Path:
     database_path = tmp_path / "cli.db"
     db_module.configure_database(f"sqlite:///{database_path}")
-    db_module.Base.metadata.create_all(db_module.engine)
+    db_module.run_migrations()
     monkeypatch.setattr(db_module, "default_database_url", lambda: f"sqlite:///{database_path}")
     monkeypatch.setattr(import_ledger, "parse_ledger", lambda path: _synthetic_data())
     monkeypatch.setattr(import_ledger, "validate_expected_totals", lambda data: None)
