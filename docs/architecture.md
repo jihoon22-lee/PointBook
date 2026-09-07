@@ -286,14 +286,24 @@ flowchart LR
         SS["secret-scan — gitleaks"]
         E["e2e — 구버전 Chromium(≈110) Playwright Docker"]
     end
-    L --> T --> TS --> M --> SEC --> E
-    SS -.-> E
-    E --> R["squash merge"]
+    L --> E
+    T --> E
+    TS --> E
+    L --> Q["Quality gate — 필수 7개 모두 success"]
+    T --> Q
+    TS --> Q
+    M --> Q
+    SEC --> Q
+    SS --> Q
+    E --> Q
+    Q --> R["squash merge"]
 ```
 
 - 단위 테스트: 도메인 로직(sync/balance) 중심 + 라우터 폼 흐름 (TestClient)
-- E2E: Win7 마지막 Chrome(109)과 같은 Blink 세대의 구버전 Chromium으로 핵심 사용 흐름 검증
-- 주의: CI는 PR 머지 ref(`refs/pull/N/merge`) 기준 실행 — 공용 테스트 파일은 main과 동일하게 유지 (AGENTS.md 참고)
+- E2E: 구버전 Chromium으로 핵심 사용 흐름 자동 검증. Win7 Chrome 109·Android 실기 수용과 구분한다.
+- 필수 7개 job의 실패·취소·건너뜀은 품질 게이트 실패로 처리한다.
+- CI는 PR 머지 ref(`refs/pull/N/merge`) 기준 실행한다. 공용 테스트 파일은 필요한 부분만 수정하고,
+  main 갱신·충돌 해결의 영향을 검증한다 ([개발 안내](agent-workflow.md) 참고).
 
 ## 8. 마이그레이션·백업 전략
 

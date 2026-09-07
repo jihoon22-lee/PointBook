@@ -1,117 +1,114 @@
-# PointBook Guidelines
+# PointBook 작업 지침
 
-소방서 포인트 충전 요청서(엑셀)를 웹에서 관리하는 서비스. 매달 소방서가 보내는
-포인트 충전 요청서(테이블 형식: 순번, 팀, 이름, 계급, 금액, 개인번호, 포인트번호, 비고)를
-웹에서 관리·조회한다.
+소방서의 월간 포인트 충전 요청서를 인식·검수하고 인원, 잔액, 월별 이력을 관리한다.
 
-## 핵심 도메인 규칙
+## 작업 시작과 범위
 
-- 업무 식별자는 구분자를 제거한 **8자리 포인트번호**. 개인번호·이름은 중복될 수 있다.
-- `account_type=person|shared`; 공용 계정은 개인번호 NULL과 팀 없음이 가능하고 항상 active다.
-- 매달 요청서 수령 시 AI가 사진을 인식해 리스트를 추출하고, DB의 **전체 인원과 대조
-  동기화**한다. (요청서에 있는 사람만 처리하는 것이 아님)
-  - 요청서에 있음 → 재직 (기존 재직자 유지 / 복귀자는 비재직 → 재직 전환)
-  - 요청서에 없고 기존 DB에 재직자로 존재 → **비재직 처리** (타지역 전출로 판단)
-  - 요청서에 있고 기존 DB에 없음 → 신규 재직자 추가
-- AI 인식 결과는 사람이 검수·수정 후 확정
-- 팀 변경은 팀 필드만 갱신. 팀은 팀 마스터로 관리(추가/삭제 가능), 팀별 색상으로 구분 표시
-- 매달 요청서 수령 시점에 사용자가 **처리 대상 전체 인원**(재직 유지·복귀자,
-  비재직 전환 대상자, 신규 인원 모두)의 이월 잔액을 인원별로 한 번씩 입력
-  - 순사용 = 가장 최근 이전 기록의 총 잔액 − 이번 달 입력한 이월 잔액 (음수도 정상 보존)
-  - 총 잔액 = 이번 달 들어온 금액 + 이번 달 입력한 이월 잔액
-- **비재직자의 잔액은 보존**, 복귀 시 이전 잔액을 이어서 계산
-- 월간 일괄 처리와 별개로, **개별 인원 단위 수정** 지원 (재직/비재직 전환, 팀 변경,
-  금액·잔액 수정)
-- **인원 삭제는 없음** — 퇴직은 항상 비재직 처리로만 관리
-- 월별 이력 조회와 **대시보드**(월별 사용량·금액/잔액, 전체/개인별 통계) 제공
-- 로그인(관리자 인증) 필요
-- 기존 엑셀 데이터의 DB 이관 필요 (초기 마이그레이션)
+- 기본 작업 위치는 `/home/jihoon/projects/PointBook`(WSL ext4). 격리 worktree도 허용한다.
+  시작할 때 현재 브랜치·변경 사항·원격 main을 확인하고 사용자 작업을 보존한다.
+- v1.4.0 작업은 [메인 계획 #47](https://github.com/jihoon22-lee/PointBook/issues/47),
+  [요구사항 #48](https://github.com/jihoon22-lee/PointBook/issues/48), 대상 WP를 읽는다.
+  범위·의존성·진행은 GitHub가 기준이며, 계획된 기능을 이미 구현된 기능으로 설명하지 않는다.
+- 기본 순서는 B01 → B02 → B03 → B04. PR 묶음과 예외는 #47을 따른다.
+  현재 요청이 검토·준비 작업이면 후속 기능 구현까지 임의로 시작하지 않는다.
+- 구현 요청의 승인된 범위에서는 조사·수정·합성 데이터 검증·자체 검토를 계속한다.
+  일상적인 구현 선택은 기존 계약으로 판단하고 이미 받은 승인을 반복해서 묻지 않는다.
+- 운영 DB·기존 `.env` 변경, 실자료 외부 반출, 배포·태그·릴리스·마일스톤 종료는
+  해당 작업에 대한 승인이 필요하다. 추가 승인이 필요하면 변경안과 가능한 검증을 먼저
+  준비한다. PR 머지를 운영 배포 승인으로 해석하지 않는다.
 
-## 기술 스택 (확정)
+## 업무 불변식
 
-- 백엔드: **Python(FastAPI + Uvicorn)**, 패키지 관리 **uv** (lockfile로 재현성 보장)
-- DB: **SQLite + SQLAlchemy 2.x** (파일 기반, `data/pointbook.db`)
-- 운영: **Docker Compose 단일 앱 컨테이너** + 호스트 `data/` bind mount
-- 프론트: **Jinja2 서버 렌더링 + 바닐라 JS + 반응형 CSS** (빌드 단계 없음)
-- 인증: 세션 쿠키 기반 단일 관리자 계정 (werkzeug 해시)
-- AI: **VisionProvider 인터페이스 추상화** + **Gemini 구현체**(REST, `GEMINI_MODEL`) + 개발용
-  Mock 구현체. GPT-4o 등은 키 확보 후 플러그인으로 추가 (키는 `.env`로 관리, 커밋 금지)
-- 엑셀 이관: openpyxl 스크립트
-- 테스트: pytest(단위) + Playwright E2E(구버전 Chromium, Docker)
+- 구분자를 제거한 **8자리 포인트번호**가 업무 식별자다. 선행 0을 보존하고,
+  이름·개인번호의 중복을 허용한다.
+- `account_type=person|shared`. 공용계정은 개인번호 NULL·팀 없음이 가능하고 항상 active다.
+  요청서에 없다는 이유로 공용계정을 비재직화하지 않는다.
+- 월간 확정은 DB의 **전체 인원과 대조**한다. 요청서의 기존 일반 인원은 재직 유지·복귀,
+  없는 기존 재직 일반 인원은 비재직 전환, 신규 인원은 추가한다. 사람은 삭제하지 않는다.
+- AI 인식은 제안이며 사람이 검수·수정 후 확정한다. 재직 유지·복귀·비재직 전환·신규를
+  포함한 처리 대상의 이월 잔액을 각각 한 번 입력받는다.
+- `총 잔액 = 이번 충전액 + 이번 이월 잔액`.
+  `순사용 = 가장 최근 이전 실제 기록의 총 잔액 − 이번 이월 잔액`.
+  최초 관측에 별도 근거가 없으면 순사용은 0이며, 음수 순사용·기록 없는 달은 정상이다.
+  비재직자의 잔액을 보존하고 복귀 시 이전 기록에서 이어 계산한다.
+- 팀은 추가·삭제 가능한 팀 마스터와 팀별 색상으로 관리한다. 팀 이동은 팀 필드만 갱신한다.
+  월간 처리와 별개로 개별 인원의 재직/비재직·팀·금액/잔액 수정을 지원한다.
+  공용계정의 active 예외를 유지하고 일반 프로필·팀 변경과 금액 정정을 구분한다.
+  정정·역사 보존·감사·동시성의 목표 계약은 #48을 따른다. 현재값으로 알 수 없는 과거를
+  사실처럼 채우거나, 관측 없는 달에 새 관측을 만들어서는 안 된다.
+- 월간 처리 모집단과 기준 시점의 보유 잔액 모집단을 구분한다. 공용·비재직·미관측 계정의
+  잔액을 집계에서 조용히 누락하지 않는다. 기존 누적 장부 이관기는 월간 업로더와 구분한다.
 
-## 대상 환경 제약 (최우선 고려 사항)
+## 스택과 호환성
 
-- 개발 및 서버 구동은 **WSL** 환경. 실제 사용은 **Windows 7**과 **Android(갤럭시) 실기기** 위주
-- **Windows 7 브라우저**: Chrome 109(마지막 지원 버전) 또는 IE11
-  - IE11 지원 시 최신 프레임워크(React 18+, Next.js 12+, Vite 기본 설정)와 최신 JS 문법 사용 불가
-  - 가능하면 "Chrome 109 지원 + IE11은 안내 페이지" 기준으로 수렴하는 것을 권장
-- **TLS 1.3은 레거시 브라우저에서 불가** → 서버는 TLS 1.2 협상을 유지
-- Android(갤럭시)는 모바일 뷰포트 대응 필요
-- 접속은 **HTTP 기본**(내부망). 필요 시 HTTPS(TLS 1.2) 전환 가능한 구조 유지
+- Python FastAPI + Uvicorn, `uv`와 `uv.lock`; SQLite + SQLAlchemy 2.x + Alembic.
+- Jinja2 서버 렌더링 + 바닐라 JS + 반응형 CSS. 프론트 빌드 단계는 없다.
+  UI 변경에도 기존 구조를 유지하며 Next.js·React·ShadCN 중심 skill은 적용하지 않는다.
+- 단일 관리자 세션 쿠키 인증(werkzeug 해시), Docker Compose 단일 앱 컨테이너와
+  호스트 `data/` bind mount. 기본 DB는 `data/pointbook.db`다.
+- 사진 인식은 `VisionProvider` + Gemini REST(`GEMINI_MODEL`) + 개발용 Mock.
+  개발 에이전트의 모델 선택을 제품의 AI 제공자 변경으로 연결하지 않는다.
+- 대상은 Win7 Chrome 109와 Android(갤럭시). v1.4.0의 IE11 범위는 안내이며 기능 동등성이
+  아니다. 안내 구현 여부는 코드에서 확인한다. 구버전 Chromium 자동 테스트와 실기기 수용을
+  구분하고, 실기 미실행을 자동 테스트 통과로 대체하지 않는다.
+- HTTP 내부망 운영을 기본으로 하며 HTTPS 전환 시 TLS 1.2 협상 가능성을 유지한다.
+  네트워크·TLS 호환성은 OS 이름만으로 단정하지 말고 실제 브라우저·프록시 구성을 확인한다.
 
-## 테스트 전략 (Win7/IE11은 로컬 재현 불가)
+## 개발과 검증
 
-- 개발 중 자동 테스트: Docker 컨테이너의 구버전 Chromium(Playwright)으로 Blink 엔진 기준 검증
-- 배포 전 호환성 검증: BrowserStack(실제 Win7 + IE11/Chrome 109 VM) 스모크 테스트
-- WSL 개발 서버 접속: Windows 브라우저는 `localhost:<port>`로 접속 가능.
-  갤럭시 실기기는 `.wslconfig`의 `networkingMode=mirrored` 또는 `netsh portproxy` +
-  방화벽 규칙 필요. Android 에뮬레이터는 `10.0.2.2:<port>`
-
-## Build, Test, and Development Commands
+운영 `.env`·DB를 복사하지 않은 worktree와 합성 자료를 사용한다. 개발·검증에서 DB를 여는 명령은
+명시적인 임시 `DATABASE_PATH`로 실행한다. 서버 기동도 마이그레이션을 수행한다.
+격리 명령과 운영 명령의 구분은 [개발 에이전트 작업 안내](docs/agent-workflow.md)를 따른다.
 
 ```bash
-uv sync --group dev        # 의존성 설치 (uv.lock 기준)
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8000   # 개발 서버 (WSL)
-scripts/run.sh             # 운영 Docker Compose 빌드·기동 (127.0.0.1:8002, healthy 대기)
-scripts/stop.sh            # PointBook Compose 서버 중지
-scripts/deploy.sh          # main 최신화·이미지 빌드·DB 백업·Compose 재기동
-docker compose ps          # 운영 컨테이너 상태
-docker compose logs -f app # 운영 서버 로그
-uv run pytest              # 단위 테스트
-uv run pytest --cov=app --cov-report=term-missing --cov-fail-under=85  # 커버리지 확인
-uv run ruff check .        # 린트
-uv run ruff format --check .  # 포맷 검사
-uv run mypy app scripts    # 타입 체크
-uv run python -m scripts.init_db   # DB 초기화 (관리자 계정 생성)
-uv run python -m scripts.import_excel --file 기존파일.xlsx  # 엑셀 이관 (빈 DB 전용)
-uv run python -m scripts.import_ledger --file 누적장부.xlsx --dry-run  # 누적 장부 검증
-uv run alembic upgrade head        # 스키마 마이그레이션 (기동 시 자동 적용)
-uv run alembic check               # 모델-마이그레이션 드리프트 확인
-uv run python -m scripts.backup    # DB 수동 백업 (data/backups/)
-docker compose -f e2e/compose.yml up --build --abort-on-container-exit --exit-code-from e2e  # E2E (구버전 Chromium)
-bash e2e/production-smoke.sh  # 운영 Compose health·SQLite 재시작 영속성
+uv sync --locked --group dev
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy app scripts
+uv run pytest --cov=app --cov-report=term-missing --cov-fail-under=85
 ```
 
-## CI / 머지 워크플로 (GitHub Actions)
+- 수정 중에는 관련 재현·회귀 검사를 먼저 실행한다. PR은 필수 CI 전체를 통과해야 한다.
+  새 변경·실패·미해결 우려가 없으면 같은 검사를 반복하지 않는다.
+- 문구만 바꾼 작업에 구현을 그대로 반복하는 테스트를 추가하지 않는다.
+  금액·확정·정정·인증·백업 변경에는 해당 실패를 재현하는 검증을 포함한다.
+- 필수 CI는 `lint`, `typecheck`, `test`(coverage ≥ 85%), `migrations`, `security`,
+  `secret-scan`, `e2e`다. `Quality gate`는 7개 모두 `success`일 때만 통과한다.
+  실행 순서와 명령의 실제 정의는 [.github/workflows/ci.yml](.github/workflows/ci.yml)에 있다.
+- 실제 장부·사진·인식 원문·DB·개인번호·포인트번호·스크린샷·키를 공개 PR/CI에 넣지 않는다.
+  공개 증거는 합성 자료만 사용한다. `.env`, `data/`, 원본 자료는 Git 밖에 보존한다.
 
-- PR 기준 CI job: `lint`(ruff check+format) → `typecheck`(mypy) → `test`
-  (pytest + coverage **85% 이상**) → `migrations`(alembic upgrade+check) → `security`(pip-audit)
-  → `secret-scan`(gitleaks) → `e2e` (구버전 Chromium Playwright + 운영 Compose 스모크)
-- 각 단계 완료 후: **계획 대비 자체 검토 → PR(한글, 리뷰 가능 상태) → CI 전체 통과
-  → squash merge**. `main`에 직접 푸시 금지
-- **Ruleset "main-protection" 활성화** (public 전환 이후, SoolJang 저장소와 동일 구성):
-  - 대상: `main` 브랜치, bypass 없음 (소유자 포함 전원 적용)
-  - 규칙: PR 필수(승인 0건) / 브랜치 삭제 금지 / force push(non-fast-forward) 금지 /
-    **`Quality gate` 체크 필수(strict)** — lint·typecheck·test·migrations·security·secret-scan·e2e
-    7개 job을 집계하는 최종 관문 (모든 job 통과 시에만 게이트 통과)
-  - 승인 필수 없음: GitHub는 PR 작성자의 자기 PR 승인을 차단하므로, 단독 개발에서
-    "본인 승인 필수"는 데드락. **외부인의 승인은 효력이 없고**(write 권한 없음 — 머지 불가),
-    본인이 리뷰 후 CI 통과 상태에서 머지
-  - 워크플로: PR 생성 → 본인 리뷰·검토 → CI 통과 → squash merge
-- PR 머지 전 모든 CI job 통과 필수
-- **주의**: CI는 PR 머지 ref(`refs/pull/N/merge`) 기준으로 실행된다. conftest 등
-  공용 테스트 파일을 PR에서 전면 재작성하면 git 3-way 머지가 양쪽 변경을 섞어
-  깨진 파일이 생길 수 있다 — 공용 파일은 main과 내용을 동일하게 유지하거나
-  최소 diff로 수정할 것 (실제 사례: P3에서 발생, 수정 이력 참고)
-- **공개 저장소 주의**: 커밋 전 히스토리 보안 점검 필수. `.env`·DB·스크린샷 등
-  민감 파일은 절대 커밋 금지 (PR ref에도 남으므로 삭제 불가 — P24 실사례)
+## Skills와 병렬 작업
 
-## 작업 컨벤션
+- 기능·버그·설정 변경에는
+  [pointbook-change](.agents/skills/pointbook-change/SKILL.md)를 필요할 때 읽는다.
+  단순 문구 수정과 읽기 전용 답변에는 전체 구현 절차를 적용하지 않는다.
+- 잔액·동기화·정정·이관·집계 로직의 검토에는
+  [pointbook-ledger-review](.agents/skills/pointbook-ledger-review/SKILL.md)를 사용한다.
+- `workthrough`가 제공되면 PR 묶음당 기록 하나를 갱신한다. 없으면 같은 형식으로
+  `workthrough/YYYY-MM-DD-scope.md`에 문제·변경·실제 검사·한계만 기록한다.
+- 독립 탐색·검토가 시간을 줄이거나 품질을 높일 때는 subagent에 범위를 한정해 위임한다.
+  기본은 구현 담당 한 명과 독립 검토 담당이며, 동일 파일을 동시에 수정하지 않는다.
+  병렬 구현은 파일 담당·worktree·DB·Compose 프로젝트·포트를 분리할 수 있을 때만 사용한다.
+- 모델·추론 강도는 작업 난도에 맞춰 선택한다. 사용자 지정 컨텍스트 윈도우·자동 압축
+  설정은 보존한다. 관련 없는 개인 설정이나 설치된 skill을 이 작업의 부수 효과로 바꾸지 않는다.
 
-- 작업 위치는 `/home/jihoon/projects/PointBook`(WSL ext4)이다. 대용량 생성물은 저장소에
-  커밋하지 않고, 운영 SQLite와 환경 파일은 Git 밖의 `data/`·`.env` 경계를 유지한다
-- Conventional Commits(`type(scope): subject`) 사용, `feature/<task-slug>` 브랜치,
-  `main`에 직접 푸시 금지. PR은 명시적으로 미완료인 경우 외에는 review 가능한 상태로 생성
-- README, PR 설명, 커밋 메시지 등 사용자가 읽는 내용은 **한글 우선**, 기술 식별자와
-  명령어는 원문 표기 유지
-- `.env`(API 키, 관리자 비밀번호)와 SQLite DB 파일(`data/*.db`)은 커밋 금지
+## 리뷰와 완료
+
+- `feature/<task-slug>` 브랜치, Conventional Commits(`type(scope): subject`), 한글 설명.
+  자체 검토 → 리뷰 가능한 PR → 필수 CI 전체 통과 → squash merge. main 직접 푸시 금지.
+  미완료인 경우만 draft로 표시한다. 보호 규칙을 우회하지 않는다.
+- PR 머지 ref 기준 CI 결과와 변경 파일을 확인한다. 공용 `conftest.py` 등은 필요한 부분만
+  수정하고, main 갱신·충돌 해결 뒤에는 영향받은 검증을 다시 수행한다.
+- 커밋·푸시 전에 변경 파일과 새 커밋의 민감정보를 점검한다. 기존 히스토리가 미점검이면
+  히스토리도 검사한다. 같은 기반의 검사를 이유 없이 반복하지 않는다.
+- 코드·테스트·관련 문서는 같은 PR에서 검토한다. 기록은
+  `R/S → WP → PR → source SHA → 환경/명령 → 결과/한계`로 연결한다.
+  준비·구현·자동 검증·실환경 수용을 구분하고, 단순 기록용 추가 PR을 의무화하지 않는다.
+
+## Code Review Rules
+
+- 식별자를 이름·개인번호로 대체하거나 공용·비재직 잔액을 잃는 변경을 지적한다.
+- 일반 수정이 과거 장부를 덮어쓰거나 다음 실제 관측의 순사용을 잘못 계산하면 지적한다.
+- 검수 후 행·월·DB 변경, 중복 제출, 오래된 탭이 잘못된 확정을 만드는 경로를 검토한다.
+- 합성 DB 격리, 인증, 일관된 백업·복원 경계를 검토한다. 포맷·정렬은 CI에 맡긴다.
