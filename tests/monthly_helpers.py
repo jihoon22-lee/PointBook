@@ -9,6 +9,7 @@ class ReviewFields(HTMLParser):
         self.fields = {}
         self.active = False
         self.select_name = None
+        self.textarea_name = None
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
@@ -20,6 +21,10 @@ class ReviewFields(HTMLParser):
             self.fields[attrs["name"]] = attrs.get("value", "")
         if tag == "select":
             self.select_name = attrs.get("name")
+        if tag == "textarea":
+            self.textarea_name = attrs.get("name")
+            if self.textarea_name:
+                self.fields[self.textarea_name] = ""
         if (
             tag == "option"
             and self.select_name
@@ -32,6 +37,15 @@ class ReviewFields(HTMLParser):
             self.active = False
         if tag == "select":
             self.select_name = None
+        if tag == "textarea" and self.textarea_name:
+            # HTML textarea의 시작 태그 직후 줄바꿈 하나는 브라우저가 생략한다.
+            value = self.fields[self.textarea_name]
+            self.fields[self.textarea_name] = value.removeprefix("\n")
+            self.textarea_name = None
+
+    def handle_data(self, data):
+        if self.active and self.textarea_name:
+            self.fields[self.textarea_name] += data
 
 
 def review_fields(response):

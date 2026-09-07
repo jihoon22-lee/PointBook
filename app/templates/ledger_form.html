@@ -22,7 +22,8 @@
   {% else %}
   <label>현재 확인한 총잔액<input type="text" inputmode="numeric" name="total" value="{{ values.total }}" required></label>
   {% endif %}
-  <label>비고<input type="text" name="note" value="{{ values.note }}" maxlength="1000"></label>
+  <label>비고<textarea name="note" rows="1" maxlength="1000">
+{{ values.note }}</textarea></label>
   <label>변경 사유<textarea name="reason" required maxlength="1000">{{ values.reason }}</textarea></label>
   <button type="submit" class="btn">전후 차이 검토</button>
   {% if plan %}

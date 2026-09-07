@@ -270,10 +270,10 @@ def test_observation_and_trend_queries_are_bounded_as_months_grow(client, db):
         assert len(calls) == 1
         calls.clear()
         assert len(stats.trend(db)) == 60
-        assert len(calls) == 3
+        assert len(calls) == 4  # 월간 확정 전환 기록을 배치 조회하는 상수 1회 포함
         calls.clear()
         assert stats.report(db, "2024-12", scope="as_of").summary.total_balance == 100
-        assert len(calls) == 4
+        assert len(calls) == 5  # 인원·기간에 비례하지 않는 월간 확정 배치 조회 포함
         assert time.monotonic() - started < 3
     finally:
         event.remove(engine, "before_cursor_execute", count_queries)
@@ -451,10 +451,10 @@ def test_report_scale_keeps_query_count_and_uses_python_integer_totals(client, d
         result = stats.report(db, "2025-12", scope="as_of", account_type="all")
         assert result.summary.total_balance == population * 100
         assert result.summary.count == population
-        assert len(queries) == 4
+        assert len(queries) == 5  # 월간 확정 전환 기록을 배치 조회하는 상수 1회 포함
         queries.clear()
         assert len(stats.trend(db, scope="as_of", account_type="all")) == 12
-        assert len(queries) == 3
+        assert len(queries) == 4  # 월 수와 무관하게 확정 기록을 한 번에 조회
         elapsed = time.monotonic() - started
         assert elapsed < 5
         print(

@@ -44,7 +44,8 @@ class ProfileForm(HTMLParser):
             self.values[self.textarea_name] += text
 
     def handle_endtag(self, tag):
-        if tag == "textarea":
+        if tag == "textarea" and self.textarea_name:
+            self.values[self.textarea_name] = self.values[self.textarea_name].removeprefix("\n")
             self.textarea_name = None
 
 

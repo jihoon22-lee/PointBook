@@ -9,12 +9,13 @@ from sqlalchemy.orm import Session, joinedload
 from app.models import BalanceRecord, BalanceRevision, Person, utcnow
 
 LEGACY_SOURCES = frozenset({"master_at_migration", "legacy_import"})
+PAYMENT_STATUS_SOURCES = LEGACY_SOURCES | {"reference_at_correction"}
 
 
 def monthly_profile(profile: dict[str, Any], amount: int | None, provenance: str) -> dict[str, Any]:
-    """기존 엑셀 장부의 지급 이력으로 월별 상태를 읽는다. 원본은 변경하지 않는다."""
+    """기존 장부·과거 삽입은 월별 지급액으로 상태를 읽는다. 원본은 변경하지 않는다."""
     result = dict(profile)
-    if provenance in LEGACY_SOURCES and amount is not None:
+    if provenance in PAYMENT_STATUS_SOURCES and amount is not None:
         if result.get("account_type") == "person":
             result["status"] = "active" if amount > 0 else "inactive"
         elif result.get("account_type") == "shared":
