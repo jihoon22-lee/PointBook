@@ -1,11 +1,11 @@
 from dataclasses import dataclass
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
-from app.models import Person
+from app.models import Person, Team
 from app.services.identifiers import normalize_point_no
-from app.services.teams import get_or_create_team
+from app.services.validation import parse_money
 
 
 @dataclass
@@ -17,9 +17,17 @@ class RequestRow:
     grade: str = ""
     amount: int = 0
     note: str = ""
+    account_type: str = "person"
 
     def __post_init__(self) -> None:
         self.point_no = normalize_point_no(self.point_no)
+        self.amount = parse_money(self.amount)
+        if self.account_type not in {"person", "shared"}:
+            raise ValueError("계정 유형은 person 또는 shared여야 합니다.")
+        if not self.name.strip():
+            raise ValueError("이름을 입력해 주세요.")
+        if self.account_type == "person" and not self.personal_no.strip():
+            raise ValueError("일반 인원은 개인번호를 입력해 주세요. 공용계정은 유형을 선택하세요.")
 
 
 ACTION_KEPT = "kept"
@@ -40,6 +48,8 @@ class PersonChange:
     person_id: int | None = None
     team_changed: bool = False
     profile_changed: bool = False
+    account_type: str = "person"
+    note: str = ""
 
 
 @dataclass
@@ -51,70 +61,52 @@ class SyncAnalysis:
         return sum(1 for c in self.changes if c.action != ACTION_DEACTIVATED)
 
 
-def _find_person(db: Session, row: RequestRow) -> Person | None:
-    return db.scalar(select(Person).where(Person.point_no == row.point_no))
-
-
-def _team_changed(person: Person, row: RequestRow) -> bool:
-    if not row.team:
-        return False
-    return person.team is None or person.team.name != row.team
-
-
-def _profile_changed(person: Person, row: RequestRow) -> bool:
-    return (
-        person.name != row.name
-        or person.personal_no != row.personal_no
-        or bool(row.grade and person.grade != row.grade)
-    )
-
-
 def analyze(db: Session, rows: list[RequestRow]) -> SyncAnalysis:
-    """요청서 리스트를 DB 전체 인원과 대조해 변경 계획을 계산한다. DB를 변경하지 않는다."""
+    """전체 인원과 대조한다. 읽기 쿼리 수는 인원 수에 비례하지 않는다."""
+    people = list(db.scalars(select(Person).options(joinedload(Person.team))).all())
+    by_point = {p.point_no: p for p in people}
     changes: list[PersonChange] = []
-    seen_ids: set[int] = set()
-    seen_point_nos: set[str] = set()
-
+    seen: set[str] = set()
     for row in rows:
-        if row.point_no in seen_point_nos:
+        if row.point_no in seen:
             raise ValueError("요청서에 중복된 포인트번호가 있습니다.")
-        seen_point_nos.add(row.point_no)
-        person = _find_person(db, row)
-        if person is None:
-            changes.append(
-                PersonChange(
-                    action=ACTION_NEW,
-                    point_no=row.point_no,
-                    personal_no=row.personal_no,
-                    name=row.name,
-                    team_name=row.team,
-                    grade=row.grade,
-                    amount=row.amount,
-                )
-            )
-            continue
-        seen_ids.add(person.id)
-        action = ACTION_RETURNED if person.status == "inactive" else ACTION_KEPT
+        seen.add(row.point_no)
+        person = by_point.get(row.point_no)
+        if person is not None and person.account_type != row.account_type:
+            raise ValueError("기존 계정 유형과 다릅니다. 유형 변경은 인원 편집에서 확인해 주세요.")
         changes.append(
             PersonChange(
-                action=action,
-                point_no=person.point_no,
+                action=ACTION_NEW
+                if person is None
+                else (ACTION_RETURNED if person.status == "inactive" else ACTION_KEPT),
+                point_no=row.point_no,
                 personal_no=row.personal_no,
                 name=row.name,
                 team_name=row.team,
-                grade=row.grade or person.grade,
+                grade=row.grade or (person.grade if person else ""),
                 amount=row.amount,
-                person_id=person.id,
-                team_changed=_team_changed(person, row),
-                profile_changed=_profile_changed(person, row),
+                person_id=person.id if person else None,
+                account_type=row.account_type,
+                note=row.note,
+                team_changed=bool(
+                    person and row.team and (not person.team or person.team.name != row.team)
+                ),
+                profile_changed=bool(
+                    person
+                    and (
+                        person.name != row.name
+                        or (person.personal_no or "") != row.personal_no
+                        or (row.grade and person.grade != row.grade)
+                    )
+                ),
             )
         )
-
-    active = db.scalars(
-        select(Person).where(Person.status == "active", Person.account_type == "person")
-    ).all()
-    for person in active:
-        if person.id not in seen_ids:
+    for person in people:
+        if (
+            person.status == "active"
+            and person.account_type == "person"
+            and person.point_no not in seen
+        ):
             changes.append(
                 PersonChange(
                     action=ACTION_DEACTIVATED,
@@ -122,44 +114,43 @@ def analyze(db: Session, rows: list[RequestRow]) -> SyncAnalysis:
                     personal_no=person.personal_no or "",
                     name=person.name,
                     person_id=person.id,
+                    team_name=person.team.name if person.team else "",
+                    grade=person.grade,
                 )
             )
     return SyncAnalysis(changes=changes)
 
 
 def apply_analysis(db: Session, analysis: SyncAnalysis) -> None:
-    """분석 결과를 DB에 반영한다. (재직/비재직 전환, 팀 변경, 신규 추가)"""
+    """검증된 계획을 현재 쓰기 트랜잭션에 반영한다. 커밋은 호출자가 담당한다."""
+    people = {p.id: p for p in db.scalars(select(Person)).all()}
+    teams = {t.name: t for t in db.scalars(select(Team)).all()}
     for change in analysis.changes:
+        person = people.get(change.person_id) if change.person_id is not None else None
         if change.action == ACTION_NEW:
-            team = get_or_create_team(db, change.team_name) if change.team_name else None
-            db.add(
-                Person(
-                    point_no=change.point_no,
-                    personal_no=change.personal_no,
-                    name=change.name,
-                    grade=change.grade,
-                    status="active",
-                    account_type="person",
-                    team_id=team.id if team else None,
-                    current_amount=change.amount,
-                )
+            person = Person(
+                point_no=change.point_no,
+                personal_no=change.personal_no or None,
+                name=change.name,
+                grade=change.grade,
+                status="active",
+                account_type=change.account_type,
+                current_amount=change.amount,
             )
-            continue
-        if change.person_id is None:
-            continue
-        person = db.get(Person, change.person_id)
+            db.add(person)
         if person is None:
-            continue
+            raise ValueError("기준 인원이 변경되었습니다. 다시 검수해 주세요.")
         if change.action == ACTION_DEACTIVATED:
             person.status = "inactive"
             continue
-        if change.action == ACTION_RETURNED:
-            person.status = "active"
+        person.status = "active"
         person.name = change.name
-        person.personal_no = change.personal_no
+        person.personal_no = change.personal_no or None
+        person.grade = change.grade
         if change.team_name:
-            team = get_or_create_team(db, change.team_name)
-            if person.team_id != team.id:
-                person.team_id = team.id
-        if change.grade:
-            person.grade = change.grade
+            team = teams.get(change.team_name)
+            if team is None:
+                team = Team(name=change.team_name)
+                db.add(team)
+                teams[change.team_name] = team
+            person.team = team

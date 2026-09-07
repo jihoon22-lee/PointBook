@@ -1,8 +1,9 @@
-import re
+from dataclasses import asdict
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse, Response
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 from starlette.datastructures import FormData
 from starlette.datastructures import UploadFile as StarletteUploadFile
@@ -12,216 +13,254 @@ from app.auth import require_login
 from app.config import get_settings
 from app.db import get_db
 from app.logging import get_logger
-from app.models import MonthlySnapshot, Person
+from app.models import Person
 from app.services import stats
 from app.services.backup import backup_database
-from app.services.balance import build_balance_records, create_monthly_snapshot, previous_total
+from app.services.balance import build_balance_records, create_monthly_snapshot
 from app.services.dates import current_month
-from app.services.parsing import _to_int, parse_pasted
-from app.services.sync import ACTION_DEACTIVATED, RequestRow, SyncAnalysis, analyze, apply_analysis
+from app.services.parsing import MAX_REQUEST_ROWS, RawRequestRow, parse_pasted_raw
+from app.services.review import (
+    Review,
+    carry_values,
+    deactivated_from_form,
+    matches_token,
+    raw_rows_from_form,
+    review_rows,
+)
+from app.services.sync import ACTION_DEACTIVATED, RequestRow, apply_analysis
 from app.template_utils import render
 
 router = APIRouter(prefix="/monthly", dependencies=[Depends(require_login)], tags=["monthly"])
-
-MONTH_RE = re.compile(r"^\d{4}-\d{2}$")
-
 ALLOWED_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".heic"}
 
 
-def _parse_indexed_row_fields(form: FormData) -> list[tuple[int, RequestRow]]:
-    rows: list[tuple[int, RequestRow]] = []
-    i = 0
-    row_fields = ("point_no", "personal_no", "name", "team", "grade", "amount", "note")
-    while any(f"{field}_{i}" in form for field in row_fields):
-        point_no = str(form.get(f"point_no_{i}", "")).strip()
-        personal_no = str(form.get(f"personal_no_{i}", "")).strip()
-        name = str(form.get(f"name_{i}", "")).strip()
-        if personal_no and name:
-            rows.append(
-                (
-                    i,
-                    RequestRow(
-                        point_no=point_no,
-                        personal_no=personal_no,
-                        name=name,
-                        team=str(form.get(f"team_{i}", "")).strip(),
-                        grade=str(form.get(f"grade_{i}", "")).strip(),
-                        amount=_to_int(str(form.get(f"amount_{i}", "0"))),
-                        note=str(form.get(f"note_{i}", "")).strip(),
-                    ),
-                )
-            )
-        i += 1
-    return rows
+async def monthly_form(request: Request) -> FormData:
+    return await request.form(max_files=1, max_fields=MAX_REQUEST_ROWS * 14 + 20)
 
 
 def _parse_row_fields(form: FormData) -> list[RequestRow]:
-    return [row for _, row in _parse_indexed_row_fields(form)]
-
-
-def _required_carry(form: FormData, key: str) -> int:
-    if key not in form or not str(form.get(key, "")).strip():
-        raise ValueError("모든 처리 대상의 이월 잔액을 입력해 주세요.")
-    return _to_int(str(form.get(key)))
-
-
-def _parse_carry_fields(
-    form: FormData,
-    indexed_rows: list[tuple[int, RequestRow]],
-    analysis: SyncAnalysis,
-) -> dict[str, int]:
-    carries: dict[str, int] = {}
-    for index, row in indexed_rows:
-        carries[row.point_no] = _required_carry(form, f"carry_{index}")
-    for change in analysis.changes:
-        if change.action == ACTION_DEACTIVATED:
-            carries[change.point_no] = _required_carry(form, f"deactivated_carry_{change.point_no}")
-    return carries
+    return [r.validated() for r in raw_rows_from_form(form)]
 
 
 @router.get("")
 def monthly_home(request: Request, db: Session = Depends(get_db)) -> Response:
-    months = stats.available_months(db)
-    summary = [stats.month_summary(db, month) for month in months]
     return render(
         request,
         "monthly.html",
-        {"summary": summary, "month": current_month(), "done": request.query_params.get("done")},
+        {
+            "summary": [stats.month_summary(db, m) for m in stats.available_months(db)],
+            "month": current_month(),
+            "done": request.query_params.get("done"),
+        },
     )
 
 
-def _error_response(request: Request, db: Session, month: str, message: str) -> Response:
-    months = stats.available_months(db)
-    summary = [stats.month_summary(db, m) for m in months]
+def _error_response(
+    request: Request,
+    db: Session,
+    month: str,
+    message: str,
+    pasted: str = "",
+) -> Response:
     return render(
         request,
         "monthly.html",
-        {"month": month, "error": message, "summary": summary},
+        {
+            "month": month,
+            "error": message,
+            "pasted": pasted,
+            "summary": [stats.month_summary(db, m) for m in stats.available_months(db)],
+        },
         400,
+    )
+
+
+def review_response(
+    request: Request,
+    month: str,
+    review: Review,
+    *,
+    deactivated: dict[str, str] | None = None,
+    expected_count: str = "",
+    expected_amount: str = "",
+    message: str = "",
+    status: int = 200,
+) -> Response:
+    deactivated = deactivated or {}
+    needed = {c.point_no for c in review.analysis.changes if c.action == ACTION_DEACTIVATED}
+    obsolete = {point: value for point, value in deactivated.items() if point not in needed}
+    return render(
+        request,
+        "review.html",
+        {
+            "rows": review.raw_rows,
+            "analysis": review.analysis,
+            "month": month,
+            "errors": review.errors,
+            "warnings": review.warnings,
+            "review_token": review.token,
+            "prev_totals": review.prev_totals,
+            "request_amount": review.request_amount,
+            "previous_count": review.previous_count,
+            "previous_amount": review.previous_amount,
+            "expected_count": expected_count,
+            "expected_amount": expected_amount,
+            "deactivated_carries": deactivated,
+            "obsolete_carries": obsolete,
+            "error": message,
+        },
+        status,
     )
 
 
 @router.post("/upload")
 async def upload(request: Request, db: Session = Depends(get_db)) -> Response:
-    form = await request.form()
-    month = str(form.get("month", "")).strip() or current_month()
-    rows: list[RequestRow] = []
-    pasted = str(form.get("pasted", "")).strip()
-    if pasted:
-        try:
-            rows = parse_pasted(pasted)
-        except ValueError as exc:
-            return _error_response(request, db, month, str(exc))
+    form = await monthly_form(request)
+    month = str(form.get("month", ""))
+    pasted = str(form.get("pasted", ""))
+    rows: list[RawRequestRow] = []
     file = form.get("file")
-    if isinstance(file, StarletteUploadFile) and file.filename:
-        settings = get_settings()
-        ext = f".{file.filename.lower().rsplit('.', 1)[-1]}" if "." in file.filename else ""
-        if ext not in ALLOWED_IMAGE_EXTS:
-            return _error_response(
-                request, db, month, "지원하지 않는 이미지 형식입니다. (png, jpg, jpeg, webp, heic)"
-            )
-        data = await file.read()
-        if len(data) > settings.max_upload_mb * 1024 * 1024:
-            return _error_response(
-                request, db, month, f"파일이 너무 큽니다. (최대 {settings.max_upload_mb}MB)"
-            )
-        provider = get_provider()
-        try:
-            rows = provider.extract_table(data, file.filename)
-        except ValueError as exc:
-            return _error_response(request, db, month, str(exc))
-    if not rows:
+    if pasted.strip() and isinstance(file, StarletteUploadFile) and file.filename:
         return _error_response(
-            request,
-            db,
-            month,
-            "인식된 인원이 없습니다. 사진을 다시 업로드하거나 표를 붙여넣기해 주세요.",
+            request, db, month, "사진과 붙여넣기 중 하나만 선택해 주세요.", pasted
         )
     try:
-        analysis = analyze(db, rows)
+        if pasted.strip():
+            rows = parse_pasted_raw(pasted)
+        if isinstance(file, StarletteUploadFile) and file.filename:
+            settings = get_settings()
+            ext = f".{file.filename.lower().rsplit('.', 1)[-1]}" if "." in file.filename else ""
+            if ext not in ALLOWED_IMAGE_EXTS:
+                raise ValueError("지원하지 않는 이미지 형식입니다. (png, jpg, jpeg, webp, heic)")
+            data = await file.read(settings.max_upload_mb * 1024 * 1024 + 1)
+            if len(data) > settings.max_upload_mb * 1024 * 1024:
+                raise ValueError(f"파일이 너무 큽니다. (최대 {settings.max_upload_mb}MB)")
+            extracted = get_provider().extract_table(data, file.filename)
+            rows = [RawRequestRow(**{k: str(v) for k, v in asdict(r).items()}) for r in extracted]
+        if not rows:
+            raise ValueError(
+                "인식된 인원이 없습니다. 사진을 다시 업로드하거나 표를 붙여넣기해 주세요."
+            )
+    except ValueError as exc:
+        return _error_response(request, db, month, str(exc), pasted)
+    finally:
+        if isinstance(file, StarletteUploadFile):
+            await file.close()
+    # 기존 공용계정 유형은 DB에서 확인한다. 신규 유형은 검수 화면에서 명시한다.
+    shared_points = set(db.scalars(select(Person.point_no).where(Person.account_type == "shared")))
+    for row in rows:
+        if row.point_no.replace(" ", "").replace("-", "") in shared_points:
+            row.account_type = "shared"
+    review = review_rows(db, month, rows)
+    return review_response(request, month, review, status=400 if review.errors else 200)
+
+
+@router.post("/review")
+async def review(request: Request, db: Session = Depends(get_db)) -> Response:
+    form = await monthly_form(request)
+    month = str(form.get("month", ""))
+    try:
+        rows = raw_rows_from_form(form)
     except ValueError as exc:
         return _error_response(request, db, month, str(exc))
-    prev_totals: dict[str, int] = {}
-    for change in analysis.changes:
-        prev = 0
-        if change.person_id is not None:
-            prev = previous_total(db, change.person_id, month)
-            if prev == 0:
-                person = db.get(Person, change.person_id)
-                if person is not None:
-                    prev = person.current_carry_balance
-        prev_totals[change.point_no] = prev
-    return render(
+    expected_count, expected_amount = (
+        str(form.get("expected_count", "")),
+        str(form.get("expected_amount", "")),
+    )
+    result = review_rows(db, month, rows, expected_count, expected_amount)
+    return review_response(
         request,
-        "review.html",
-        {"rows": rows, "analysis": analysis, "month": month, "prev_totals": prev_totals},
+        month,
+        result,
+        deactivated=deactivated_from_form(form),
+        expected_count=expected_count,
+        expected_amount=expected_amount,
+        status=400 if result.errors else 200,
     )
 
 
 @router.post("/confirm")
 async def confirm(request: Request, db: Session = Depends(get_db)) -> Response:
-    form = await request.form()
-    month = str(form.get("month", "")).strip()
-    empty = {"rows": [], "analysis": SyncAnalysis(changes=[]), "month": month}
-    if not MONTH_RE.match(month):
-        return render(
+    form = await monthly_form(request)
+    month = str(form.get("month", ""))
+    expected_count, expected_amount = (
+        str(form.get("expected_count", "")),
+        str(form.get("expected_amount", "")),
+    )
+    try:
+        rows = raw_rows_from_form(form)
+    except ValueError as exc:
+        return _error_response(request, db, month, str(exc))
+    deactivated = deactivated_from_form(form)
+    result = review_rows(db, month, rows, expected_count, expected_amount)
+
+    def response(message: str = "", status: int = 400) -> Response:
+        return review_response(
             request,
-            "review.html",
-            {**empty, "error": "월 형식이 올바르지 않습니다. (YYYY-MM)"},
-            400,
-        )
-    if db.scalar(select(MonthlySnapshot).where(MonthlySnapshot.month == month)) is not None:
-        return render(
-            request, "review.html", {**empty, "error": f"{month} 월은 이미 처리되었습니다."}, 400
+            month,
+            result,
+            deactivated=deactivated,
+            expected_count=expected_count,
+            expected_amount=expected_amount,
+            message=message,
+            status=status,
         )
 
+    if result.errors:
+        return response()
+    carries, errors = carry_values(result, deactivated)
+    if errors:
+        result.errors.update(errors)
+        return response("모든 처리 대상의 이월 잔액을 확인해 주세요.")
+    token = str(form.get("review_token", ""))
+    if not matches_token(token, result.digest):
+        return response(
+            "목록·월·기준 정보가 변경되었거나 검수가 만료되었습니다. 새 변경 예상을 확인하고 다시 확정하세요.",
+            409,
+        )
+    if result.warnings and form.get("ack_warnings") != "yes":
+        return response("처리 월과 누락·합계 경고를 확인한 뒤 확인란을 선택해 주세요.")
+    # SQLite writer를 먼저 직렬화하고 승인한 상태를 같은 트랜잭션 안에서 재검증한다.
+    db.rollback()
     try:
-        indexed_rows = _parse_indexed_row_fields(form)
-        rows = [row for _, row in indexed_rows]
-    except ValueError as exc:
-        return render(request, "review.html", {**empty, "error": str(exc)}, 400)
-    if not rows:
-        return render(request, "review.html", {**empty, "error": "인원 행이 없습니다."}, 400)
-    try:
-        analysis = analyze(db, rows)
-        carries = _parse_carry_fields(form, indexed_rows, analysis)
-    except ValueError as exc:
-        return render(request, "review.html", {**empty, "error": str(exc)}, 400)
-    if not analysis.changes:
-        return render(request, "review.html", {**empty, "error": "동기화할 인원이 없습니다."}, 400)
-
-    try:
+        db.execute(text("BEGIN IMMEDIATE"))
+        locked = review_rows(db, month, rows, expected_count, expected_amount)
+        if locked.errors or not matches_token(token, locked.digest):
+            result = locked
+            db.rollback()
+            return response("다른 작업으로 기준이 변경되었습니다. 다시 검수해 주세요.", 409)
+        result = locked
+        carries, locked_errors = carry_values(result, deactivated)
+        if locked_errors:
+            result.errors.update(locked_errors)
+            db.rollback()
+            return response()
         backup_database()
-        apply_analysis(db, analysis)
+        apply_analysis(db, result.analysis)
         db.flush()
-
-        carry_map: dict[int, int] = {}
-        amount_map: dict[int, int] = {}
-        for change in analysis.changes:
-            person = db.scalar(select(Person).where(Person.point_no == change.point_no))
-            if person is None:
-                continue
-            carry_map[person.id] = carries.get(change.point_no, 0)
-            amount_map[person.id] = sum(r.amount for r in rows if r.point_no == change.point_no)
-
+        people = {p.point_no: p for p in db.scalars(select(Person)).all()}
+        carry_map = {people[c.point_no].id: carries[c.point_no] for c in result.analysis.changes}
+        amount_map = {people[c.point_no].id: c.amount for c in result.analysis.changes}
         records = build_balance_records(db, month, carry_map, amount_map)
+        by_id = {p.id: p for p in people.values()}
         for record in records:
-            person = db.get(Person, record.person_id)
-            if person is not None:
-                person.current_carry_balance = record.carry_balance
-                person.current_amount = record.amount
+            person = by_id[record.person_id]
+            person.current_carry_balance, person.current_amount = (
+                record.carry_balance,
+                record.amount,
+            )
         create_monthly_snapshot(db, month, records, commit=False)
         db.commit()
     except ValueError as exc:
         db.rollback()
-        return render(request, "review.html", {**empty, "error": str(exc)}, 400)
-    except Exception:  # noqa: BLE001 — 예상 밖 오류도 롤백 후 친절한 메시지로 안내
+        return response(str(exc))
+    except (IntegrityError, OperationalError):
         db.rollback()
-        get_logger().exception("월간 확정 처리 실패")
-        return render(
-            request,
-            "review.html",
-            {**empty, "error": "확정 처리 중 오류가 발생했습니다. 다시 시도해 주세요."},
-            500,
+        return response("다른 작업과 충돌했습니다. 다시 검수한 뒤 확정해 주세요.", 409)
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        get_logger().error("월간 확정 실패: 변경을 롤백했습니다.")
+        return response(
+            "확정 처리 중 오류가 발생했습니다. 입력을 보존했습니다. 다시 시도해 주세요.", 500
         )
     return RedirectResponse("/monthly?done=1", status_code=303)

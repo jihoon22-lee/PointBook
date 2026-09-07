@@ -69,3 +69,36 @@ def test_team_views_show_status_counts_active_first_and_total_balance(page):
     assert page.locator("tbody tr td:first-child").first.inner_text().strip() == "하재직"
     active_row = page.locator('tbody tr:has-text("하재직")')
     assert active_row.locator("td:nth-child(6)").inner_text().strip() == "20,000원"
+
+
+def test_review_change_preserves_carry_and_requires_new_analysis(page):
+    login(page)
+    page.goto(f"{BASE_URL}/monthly")
+    page.fill('input[name="month"]', "2099-06")
+    page.fill(
+        'textarea[name="pasted"]',
+        "1팀\t하재직\t소방위\t10000\t782\t00000782\n1팀\t새검수\t소방위\t20000\t783\t00000783",
+    )
+    page.click('.card button[type="submit"]')
+    page.wait_for_selector("#review-form")
+    kept_id = page.locator('input[name="row_id_1"]').input_value()
+    page.fill('input[name="carry_0"]', "777")
+    page.fill('input[name="carry_1"]', "123")
+    page.locator("#rows .row-del").first.click()
+    assert page.locator(".confirm-monthly").is_disabled()
+    assert page.locator('input[name="row_id_0"]').input_value() == kept_id
+    assert page.locator('input[name="carry_0"]').input_value() == "123"
+    page.click('button:has-text("수정 내용 재검수")')
+    page.wait_for_selector('input[name="deactivated_carry_00000782"]')
+    assert page.locator('input[name="deactivated_carry_00000782"]').input_value() == ""
+    page.fill('input[name="deactivated_carry_00000782"]', "777")
+    page.fill('input[name="amount_0"]', "5O000")
+    page.click('button:has-text("수정 내용 재검수")')
+    assert page.locator('input[name="amount_0"]').input_value() == "5O000"
+    assert page.locator('input[name="carry_0"]').input_value() == "123"
+    page.fill('input[name="amount_0"]', "20000")
+    page.click('button:has-text("수정 내용 재검수")')
+    assert page.locator('input[name="deactivated_carry_00000782"]').input_value() == "777"
+    page.check('input[name="ack_warnings"]')
+    page.click(".confirm-monthly")
+    page.wait_for_selector("text=처리가 완료되었습니다", timeout=15000)

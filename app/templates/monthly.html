@@ -8,9 +8,10 @@
 
 <div class="card">
   <h2>요청서 등록</h2>
-  <p class="muted">요청서 사진을 업로드하거나, 표를 복사해 붙여넣기하면 AI가 인원 목록을 추출합니다.<br>
+  <p class="muted">요청서 사진을 업로드하거나, 표를 복사해 붙여넣어 검수할 수 있습니다. 사진은 AI가 인식하며, 붙여넣기는 표를 직접 읽습니다.<br>
     붙여넣기 형식(탭/콤마 구분): 순번 팀 이름 계급 금액 개인번호 포인트번호 비고 (순번 없이 6컬럼도 가능)</p>
   <form method="post" action="/monthly/upload" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token|default('') }}">
     <label>처리 월
       <input type="month" name="month" value="{{ month }}">
     </label>
@@ -18,7 +19,7 @@
       <input type="file" name="file" accept="image/*">
     </label>
     <label>또는 표 붙여넣기
-      <textarea name="pasted" rows="5" placeholder="팀\t이름\t계급\t금액\t개인번호\t포인트번호&#10;1팀\t김소방\t소방경\t50000\t101\t00026147"></textarea>
+      <textarea name="pasted" rows="5" placeholder="팀\t이름\t계급\t금액\t개인번호\t포인트번호&#10;1팀\t김소방\t소방경\t50000\t101\t00026147">{{ pasted|default('') }}</textarea>
     </label>
     <button type="submit" class="btn btn-primary">인식 · 검수하기</button>
   </form>

@@ -4,46 +4,65 @@
 <h1>{{ '인원 수정' if person else '인원 추가' }}</h1>
 {% if error %}<p class="alert alert-error">{{ error }}</p>{% endif %}
 
+{% if values is not defined %}
+{% set values = {
+  'account_type': person.account_type if person else 'person',
+  'point_no': person.point_no|point_no if person else '',
+  'personal_no': (person.personal_no or '') if person else '',
+  'name': person.name if person else '',
+  'grade': person.grade if person else '',
+  'team_id': person.team_id|string if person and person.team_id else '',
+  'status': person.status if person else 'active',
+  'carry_balance': person.current_carry_balance if person else 0,
+  'amount': person.current_amount if person else 0
+} %}
+{% endif %}
 <div class="card">
   <form method="post" action="{{ '/people/%d/edit' % person.id if person else '/people/new' }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token|default('') }}">
     <label>계정 구분
       <select name="account_type">
-        <option value="person" {% if not person or person.account_type == 'person' %}selected{% endif %}>일반 인원</option>
-        <option value="shared" {% if person and person.account_type == 'shared' %}selected{% endif %}>공용 계정</option>
+        {% if values.account_type not in ['person', 'shared'] %}<option value="{{ values.account_type }}" selected>잘못된 값: {{ values.account_type }}</option>{% endif %}
+        <option value="person" {% if values.account_type == 'person' %}selected{% endif %}>일반 인원</option>
+        <option value="shared" {% if values.account_type == 'shared' %}selected{% endif %}>공용 계정</option>
       </select>
     </label>
     <label>포인트번호 *
-      <input type="text" name="point_no" required value="{{ person.point_no|point_no if person else '' }}" placeholder="예: 0000 0001">
+      <input type="text" name="point_no" required value="{{ values.point_no }}" placeholder="예: 0000 0001">
     </label>
     <label>개인번호 <span class="muted">(공용 계정은 생략)</span>
-      <input type="text" name="personal_no" value="{{ person.personal_no or '' if person else '' }}" placeholder="예: 901234">
+      <input type="text" name="personal_no" value="{{ values.personal_no }}" placeholder="예: 901234">
     </label>
     <label>이름 *
-      <input type="text" name="name" required value="{{ person.name if person else '' }}">
+      <input type="text" name="name" required value="{{ values.name }}">
     </label>
     <label>계급
-      <input type="text" name="grade" value="{{ person.grade if person else '' }}" placeholder="예: 소방위">
+      <input type="text" name="grade" value="{{ values.grade }}" placeholder="예: 소방위">
     </label>
     <label>팀
       <select name="team_id">
-        <option value="">팀 없음</option>
+        <option value="" {% if values.team_id == '' %}selected{% endif %}>팀 없음</option>
+        {% set team_ids = teams|map(attribute='id')|map('string')|list %}
+        {% if values.team_id and values.team_id not in team_ids %}<option value="{{ values.team_id }}" selected>잘못된 값: {{ values.team_id }}</option>{% endif %}
         {% for team in teams %}
-        <option value="{{ team.id }}" {% if person and person.team_id == team.id %}selected{% endif %}>{{ team.name }}</option>
+        <option value="{{ team.id }}" {% if values.team_id == team.id|string %}selected{% endif %}>{{ team.name }}</option>
         {% endfor %}
       </select>
     </label>
     <label>상태
       <select name="status">
-        <option value="active" {% if not person or person.status == 'active' %}selected{% endif %}>재직</option>
-        <option value="inactive" {% if person and person.status == 'inactive' %}selected{% endif %}>비재직</option>
+        {% if values.status not in ['active', 'inactive'] %}<option value="{{ values.status }}" selected>잘못된 값: {{ values.status }}</option>{% endif %}
+        <option value="active" {% if values.status == 'active' %}selected{% endif %}>재직</option>
+        <option value="inactive" {% if values.status == 'inactive' %}selected{% endif %}>비재직</option>
       </select>
     </label>
     <label>이월 잔액 (원)
-      <input type="number" name="carry_balance" min="0" step="1" value="{{ person.current_carry_balance if person else 0 }}">
+      <input type="text" inputmode="numeric" name="carry_balance" required value="{{ values.carry_balance }}">
     </label>
     <label>당월 충전 금액 (원)
-      <input type="number" name="amount" min="0" step="1" value="{{ person.current_amount if person else 0 }}">
+      <input type="text" inputmode="numeric" name="amount" required value="{{ values.amount }}">
     </label>
+    <p class="muted">금액은 0~999,999,999,999원 정수로 입력합니다. 천단위 쉼표와 ₩ 접두사·원 접미사를 사용할 수 있습니다.</p>
     <button type="submit" class="btn btn-primary">{{ '저장' if person else '추가' }}</button>
     <a class="btn" href="{{ '/people/%d' % person.id if person else '/people' }}">취소</a>
   </form>

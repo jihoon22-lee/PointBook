@@ -1,7 +1,10 @@
-from sqlalchemy import select
+from collections.abc import Collection
+
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import BalanceRecord, MonthlySnapshot, Person
+from app.services.validation import parse_money
 
 
 def compute_usage(prev_total: int, carry_balance: int) -> int:
@@ -15,7 +18,33 @@ def compute_usage(prev_total: int, carry_balance: int) -> int:
 
 def compute_total(amount: int, carry_balance: int) -> int:
     """총 잔액 = 이번 달 들어온 금액 + 이번 달 입력한 이월 잔액."""
-    return amount + carry_balance
+    return parse_money(amount) + parse_money(carry_balance, label="이월 잔액")
+
+
+def previous_totals(
+    db: Session, month: str, person_ids: Collection[int] | None = None
+) -> dict[int, int]:
+    """직전 실제 관측을 일괄 조회한다. 관측 없는 인원은 맵에 포함하지 않는다."""
+    stmt = (
+        select(
+            BalanceRecord.person_id,
+            BalanceRecord.total,
+            func.row_number()
+            .over(partition_by=BalanceRecord.person_id, order_by=MonthlySnapshot.month.desc())
+            .label("position"),
+        )
+        .join(MonthlySnapshot, MonthlySnapshot.id == BalanceRecord.snapshot_id)
+        .where(MonthlySnapshot.month < month)
+    )
+    if person_ids is not None:
+        stmt = stmt.where(BalanceRecord.person_id.in_(person_ids))
+    ranked = stmt.subquery()
+    return {
+        person_id: total
+        for person_id, total in db.execute(
+            select(ranked.c.person_id, ranked.c.total).where(ranked.c.position == 1)
+        ).all()
+    }
 
 
 def previous_total_or_none(db: Session, person_id: int, month: str) -> int | None:
@@ -46,10 +75,12 @@ def build_balance_records(
 ) -> list[BalanceRecord]:
     """이월 잔액/당월 금액 입력값으로 인원별 BalanceRecord를 계산한다. (저장은 하지 않음)"""
     records: list[BalanceRecord] = []
-    for person_id in sorted(set(carry_map) | set(amount_map)):
+    person_ids = sorted(set(carry_map) | set(amount_map))
+    totals = previous_totals(db, month, person_ids)
+    for person_id in person_ids:
         carry = carry_map.get(person_id, 0)
         amount = amount_map.get(person_id, 0)
-        prev = previous_total_or_none(db, person_id, month)
+        prev = totals.get(person_id)
         records.append(
             BalanceRecord(
                 person_id=person_id,

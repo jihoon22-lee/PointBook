@@ -49,5 +49,8 @@ def monthly_flow(
     page.fill('input[name="carry_0"]', carry)
     for deactivated_carry in page.locator('input[name^="deactivated_carry_"]').all():
         deactivated_carry.fill("0")
+    acknowledgement = page.locator('input[name="ack_warnings"]')
+    if acknowledgement.count():
+        acknowledgement.check()
     page.locator('button:has-text("확정 · 동기화")').last.click()
     page.wait_for_selector("text=처리가 완료되었습니다", timeout=15000)

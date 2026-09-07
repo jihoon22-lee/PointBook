@@ -1,7 +1,19 @@
+import pytest
 from sqlalchemy import select
 
 from app.models import Person
 from tests.factories import make_person, make_team
+
+
+def _person_input(**overrides):
+    """정상 브라우저 폼처럼 필수 유형·상태·금액을 명시한다."""
+    return {
+        "account_type": "person",
+        "status": "active",
+        "carry_balance": "0",
+        "amount": "0",
+        **overrides,
+    }
 
 
 def test_people_page_empty(auth_client):
@@ -14,14 +26,14 @@ def test_create_person(auth_client, db):
     team = make_team(db, "구조대")
     resp = auth_client.post(
         "/people/new",
-        data={
-            "point_no": "0000 0001",
-            "personal_no": "1001",
-            "name": "홍길동",
-            "grade": "소방위",
-            "team_id": str(team.id),
-            "status": "active",
-        },
+        data=_person_input(
+            point_no="0000 0001",
+            personal_no="1001",
+            name="홍길동",
+            grade="소방위",
+            team_id=str(team.id),
+            status="active",
+        ),
         follow_redirects=False,
     )
     assert resp.status_code == 303
@@ -31,7 +43,7 @@ def test_create_person(auth_client, db):
 
 
 def test_create_person_missing_fields(auth_client):
-    resp = auth_client.post("/people/new", data={"point_no": "", "personal_no": "", "name": ""})
+    resp = auth_client.post("/people/new", data=_person_input(point_no="", personal_no="", name=""))
     assert resp.status_code == 400
     assert "포인트번호" in resp.text
 
@@ -40,7 +52,7 @@ def test_create_person_duplicate_point_number(auth_client, db):
     make_person(db, "1001", "홍길동", point_no="00000001")
     resp = auth_client.post(
         "/people/new",
-        data={"point_no": "0000-0001", "personal_no": "S1002", "name": "다른사람"},
+        data=_person_input(point_no="0000-0001", personal_no="S1002", name="다른사람"),
     )
     assert resp.status_code == 400
     assert "이미 등록된 인원" in resp.text
@@ -50,12 +62,9 @@ def test_create_person_allows_duplicate_personal_number_and_name(auth_client, db
     make_person(db, "S0815", "동명이인", point_no="00000001")
     resp = auth_client.post(
         "/people/new",
-        data={
-            "point_no": "00000002",
-            "personal_no": "S0815",
-            "name": "동명이인",
-            "account_type": "person",
-        },
+        data=_person_input(
+            point_no="00000002", personal_no="S0815", name="동명이인", account_type="person"
+        ),
         follow_redirects=False,
     )
     assert resp.status_code == 303
@@ -64,12 +73,9 @@ def test_create_person_allows_duplicate_personal_number_and_name(auth_client, db
 def test_create_shared_account_without_personal_number(auth_client, db):
     resp = auth_client.post(
         "/people/new",
-        data={
-            "point_no": "00000009",
-            "personal_no": "",
-            "name": "1팀 공용",
-            "account_type": "shared",
-        },
+        data=_person_input(
+            point_no="00000009", personal_no="", name="1팀 공용", account_type="shared"
+        ),
         follow_redirects=False,
     )
     assert resp.status_code == 303
@@ -135,14 +141,14 @@ def test_edit_person_team_and_status(auth_client, db):
     person = make_person(db, "1001", "홍길동", team=team_a)
     resp = auth_client.post(
         f"/people/{person.id}/edit",
-        data={
-            "point_no": "00001001",
-            "personal_no": "1001",
-            "name": "홍길동",
-            "grade": "소방경",
-            "team_id": str(team_b.id),
-            "status": "inactive",
-        },
+        data=_person_input(
+            point_no="00001001",
+            personal_no="1001",
+            name="홍길동",
+            grade="소방경",
+            team_id=str(team_b.id),
+            status="inactive",
+        ),
         follow_redirects=False,
     )
     assert resp.status_code == 303
@@ -157,7 +163,7 @@ def test_edit_person_duplicate_point_number_rejected(auth_client, db):
     other = make_person(db, "S1002", "김철수", point_no="00000002")
     resp = auth_client.post(
         f"/people/{other.id}/edit",
-        data={"point_no": "0000 0001", "personal_no": "S1002", "name": "김철수"},
+        data=_person_input(point_no="0000 0001", personal_no="S1002", name="김철수"),
     )
     assert resp.status_code == 400
     assert "이미 등록된 인원" in resp.text
@@ -166,7 +172,7 @@ def test_edit_person_duplicate_point_number_rejected(auth_client, db):
 def test_edit_person_missing(auth_client):
     resp = auth_client.post(
         "/people/9999/edit",
-        data={"point_no": "00000001", "personal_no": "1", "name": "x"},
+        data=_person_input(point_no="00000001", personal_no="1", name="x"),
         follow_redirects=False,
     )
     assert resp.status_code == 303
@@ -213,14 +219,14 @@ def test_filter_team_id_works(auth_client, db):
 def test_create_person_team_less(auth_client, db):
     resp = auth_client.post(
         "/people/new",
-        data={
-            "point_no": "00002001",
-            "personal_no": "2001",
-            "name": "팀없는사람",
-            "grade": "",
-            "team_id": "",
-            "status": "active",
-        },
+        data=_person_input(
+            point_no="00002001",
+            personal_no="2001",
+            name="팀없는사람",
+            grade="",
+            team_id="",
+            status="active",
+        ),
         follow_redirects=False,
     )
     assert resp.status_code == 303
@@ -231,14 +237,14 @@ def test_edit_person_team_less(auth_client, db):
     person = make_person(db, "1001", "홍길동")
     resp = auth_client.post(
         f"/people/{person.id}/edit",
-        data={
-            "point_no": person.point_no,
-            "personal_no": "1001",
-            "name": "홍길동",
-            "grade": "",
-            "team_id": "",
-            "status": "active",
-        },
+        data=_person_input(
+            point_no=person.point_no,
+            personal_no="1001",
+            name="홍길동",
+            grade="",
+            team_id="",
+            status="active",
+        ),
         follow_redirects=False,
     )
     assert resp.status_code == 303
@@ -271,16 +277,16 @@ def test_edit_form_has_balance_fields(auth_client, db):
 def test_create_person_with_balance(auth_client, db):
     resp = auth_client.post(
         "/people/new",
-        data={
-            "point_no": "00003001",
-            "personal_no": "3001",
-            "name": "잔액있는사람",
-            "grade": "",
-            "team_id": "",
-            "status": "active",
-            "carry_balance": "15000",
-            "amount": "50000",
-        },
+        data=_person_input(
+            point_no="00003001",
+            personal_no="3001",
+            name="잔액있는사람",
+            grade="",
+            team_id="",
+            status="active",
+            carry_balance="15000",
+            amount="50000",
+        ),
         follow_redirects=False,
     )
     assert resp.status_code == 303
@@ -294,16 +300,16 @@ def test_edit_person_balance(auth_client, db):
     person = make_person(db, "1001", "홍길동")
     resp = auth_client.post(
         f"/people/{person.id}/edit",
-        data={
-            "point_no": person.point_no,
-            "personal_no": "1001",
-            "name": "홍길동",
-            "grade": "",
-            "team_id": "",
-            "status": "active",
-            "carry_balance": "7000",
-            "amount": "30000",
-        },
+        data=_person_input(
+            point_no=person.point_no,
+            personal_no="1001",
+            name="홍길동",
+            grade="",
+            team_id="",
+            status="active",
+            carry_balance="7000",
+            amount="30000",
+        ),
         follow_redirects=False,
     )
     assert resp.status_code == 303
@@ -316,16 +322,16 @@ def test_edit_person_updates_current_without_snapshot(auth_client, db):
     person = make_person(db, "1001", "홍길동")
     resp = auth_client.post(
         f"/people/{person.id}/edit",
-        data={
-            "point_no": person.point_no,
-            "personal_no": "1001",
-            "name": "홍길동",
-            "grade": "",
-            "team_id": "",
-            "status": "active",
-            "carry_balance": "9000",
-            "amount": "20000",
-        },
+        data=_person_input(
+            point_no=person.point_no,
+            personal_no="1001",
+            name="홍길동",
+            grade="",
+            team_id="",
+            status="active",
+            carry_balance="9000",
+            amount="20000",
+        ),
         follow_redirects=False,
     )
     assert resp.status_code == 303
@@ -351,16 +357,16 @@ def test_edit_person_preserves_earlier_records(auth_client, db):
     )
     resp = auth_client.post(
         f"/people/{person.id}/edit",
-        data={
-            "point_no": person.point_no,
-            "personal_no": "1001",
-            "name": "홍길동",
-            "grade": "",
-            "team_id": "",
-            "status": "active",
-            "carry_balance": "1500",
-            "amount": "0",
-        },
+        data=_person_input(
+            point_no=person.point_no,
+            personal_no="1001",
+            name="홍길동",
+            grade="",
+            team_id="",
+            status="active",
+            carry_balance="1500",
+            amount="0",
+        ),
         follow_redirects=False,
     )
     assert resp.status_code == 303
@@ -453,3 +459,170 @@ def test_people_pagination_preserves_filters_and_sort(auth_client, db):
     assert "sort=name&dir=desc&page=2" in resp.text
     assert "status=active" in resp.text
     assert "q=%EC%A0%95%EB%A0%AC" in resp.text
+
+
+@pytest.mark.parametrize("editing", [False, True])
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("carry_balance", ""),
+        ("amount", ""),
+        ("amount", "-1,000"),
+        ("amount", "12.5"),
+        ("amount", "5O000"),
+        ("amount", "abc"),
+        ("amount", "1000000000000"),
+        ("account_type", "unknown"),
+        ("account_type", ""),
+        ("status", "unknown"),
+        ("status", ""),
+        ("team_id", "abc"),
+        ("team_id", "-1"),
+        ("team_id", "999999"),
+        ("team_id", "1" * 100),
+        ("point_no", "invalid"),
+        ("name", " "),
+    ],
+)
+def test_person_invalid_form_preserves_values_and_database(auth_client, db, editing, field, value):
+    from html.parser import HTMLParser
+
+    from app.models import BalanceRecord
+    from app.services.balance import create_monthly_snapshot
+
+    class FormInputs(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.inputs = {}
+            self.select_name = None
+
+        def handle_starttag(self, tag, attrs):
+            attrs = dict(attrs)
+            if tag == "input":
+                self.inputs[attrs.get("name")] = attrs.get("value")
+            elif tag == "select":
+                self.select_name = attrs.get("name")
+            elif tag == "option" and "selected" in attrs:
+                self.inputs[self.select_name] = attrs.get("value")
+
+    person = make_person(db, "1001", "기존 합성 인원", point_no="00000001")
+    create_monthly_snapshot(
+        db,
+        "2026-01",
+        [BalanceRecord(person_id=person.id, carry_balance=300, amount=700, usage=0, total=1000)],
+    )
+    before_person = (
+        person.name,
+        person.point_no,
+        person.account_type,
+        person.status,
+        person.team_id,
+        person.current_carry_balance,
+        person.current_amount,
+    )
+    record = person.balances[0]
+    before_record = (record.carry_balance, record.amount, record.usage, record.total)
+    values = {
+        "point_no": "0000 0002",
+        "personal_no": " S1001 ",
+        "name": " 새 합성 이름 ",
+        "account_type": "person",
+        "grade": " 합성 계급 ",
+        "team_id": "",
+        "status": "active",
+        "carry_balance": "12,000",
+        "amount": "30,000",
+    }
+    values[field] = value
+    response = auth_client.post(
+        f"/people/{person.id}/edit" if editing else "/people/new",
+        data=values,
+    )
+    assert response.status_code == 400
+    parsed = FormInputs()
+    parsed.feed(response.text)
+    for key, raw in values.items():
+        assert parsed.inputs[key] == raw
+    db.expire_all()
+    assert len(list(db.scalars(select(Person)))) == 1
+    assert (
+        person.name,
+        person.point_no,
+        person.account_type,
+        person.status,
+        person.team_id,
+        person.current_carry_balance,
+        person.current_amount,
+    ) == before_person
+    assert (record.carry_balance, record.amount, record.usage, record.total) == before_record
+
+
+@pytest.mark.parametrize("editing", [False, True])
+def test_shared_inactive_rejected_without_writes(auth_client, db, editing):
+    person = make_person(db, "1001", "기존 합성 인원", point_no="00000001")
+    response = auth_client.post(
+        f"/people/{person.id}/edit" if editing else "/people/new",
+        data=_person_input(
+            point_no="00000002",
+            name="합성 공용",
+            account_type="shared",
+            status="inactive",
+            amount="0",
+            carry_balance="0",
+        ),
+    )
+    assert response.status_code == 400
+    assert "공용 계정은 항상 재직" in response.text
+    db.refresh(person)
+    assert person.account_type == "person"
+    assert len(list(db.scalars(select(Person)))) == 1
+
+
+def test_person_valid_money_boundaries_and_raw_zero(auth_client, db):
+    from app.services.validation import MAX_MONEY
+
+    response = auth_client.post(
+        "/people/new",
+        data=_person_input(
+            point_no="00000001",
+            name="합성 공용",
+            account_type="shared",
+            carry_balance="0",
+            amount="₩999,999,999,999원",
+        ),
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    person = db.scalar(select(Person))
+    assert person.current_carry_balance == 0
+    assert person.current_amount == MAX_MONEY
+    assert person.status == "active"
+
+
+@pytest.mark.parametrize("editing", [False, True])
+@pytest.mark.parametrize("field", ["amount", "carry_balance", "account_type", "status"])
+def test_person_missing_required_fields_never_default_or_write(auth_client, db, editing, field):
+    person = make_person(db, "1001", "합성 기존 인원", point_no="00000001")
+    person.current_carry_balance = 700
+    person.current_amount = 300
+    db.commit()
+    values = _person_input(
+        point_no="00000002",
+        personal_no="1002",
+        name="합성 새 이름",
+        carry_balance="200",
+        amount="800",
+    )
+    del values[field]
+    response = auth_client.post(
+        f"/people/{person.id}/edit" if editing else "/people/new",
+        data=values,
+    )
+    assert response.status_code == 400
+    assert f'name="{field}"' in response.text
+    db.refresh(person)
+    assert person.name == "합성 기존 인원"
+    assert person.point_no == "00000001"
+    assert person.current_carry_balance == 700
+    assert person.current_amount == 300
+    assert len(list(db.scalars(select(Person)))) == 1

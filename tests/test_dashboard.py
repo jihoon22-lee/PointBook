@@ -2,6 +2,7 @@ from app.models import BalanceRecord
 from app.services import stats
 from app.services.balance import create_monthly_snapshot
 from tests.factories import make_person, make_team
+from tests.monthly_helpers import reviewed_confirm
 
 
 def _confirm(client, month, rows, carries):
@@ -14,7 +15,7 @@ def _confirm(client, month, rows, carries):
         data[f"grade_{i}"] = row[4]
         data[f"amount_{i}"] = str(row[5])
         data[f"carry_{i}"] = str(carries[row[0]])
-    resp = client.post("/monthly/confirm", data=data, follow_redirects=False)
+    resp = reviewed_confirm(client, data=data, follow_redirects=False)
     assert resp.status_code == 303
 
 
