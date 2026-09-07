@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     ai_max_concurrency: int = Field(default=2, ge=1, le=8)
     ai_timeout_seconds: float = Field(default=90, ge=1, le=300)
     ai_max_response_bytes: int = Field(default=2_000_000, ge=1024, le=8_000_000)
+    session_cookie_name: str = Field(
+        default="session", min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$"
+    )
     cookie_samesite: Literal["lax", "strict", "none"] = "lax"
     cookie_secure: bool = False
     draft_keep_days: int = Field(default=30, ge=1, le=365)

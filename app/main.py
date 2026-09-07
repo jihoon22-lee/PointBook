@@ -144,6 +144,7 @@ def create_app() -> FastAPI:
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.secret_key,
+        session_cookie=settings.session_cookie_name,
         max_age=60 * 60 * 24 * 7,
         same_site=settings.cookie_samesite,
         https_only=settings.cookie_secure,
