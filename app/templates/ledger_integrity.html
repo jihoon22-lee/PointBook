@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}장부 정합성 검사 - PointBook{% endblock %}
+{% block content %}
+<h1>장부 정합성 검사</h1>
+<p class="muted">검사는 장부를 변경하지 않습니다. 총잔액·직전 관측의 순사용·현재 잔액과 기록 연결을 확인합니다.</p>
+{% if error %}<p class="alert alert-error">{{ error }}</p>{% endif %}
+<p>월별 기록 {{ report.record_count }}건 · 명시적 보정 {{ report.adjustment_count }}건 · 당시 정보 미확인 {{ report.unknown_history }}건</p>
+{% if report.healthy %}<p class="alert alert-success">계산·연결 정합성 검사 통과. 미확인 역사 정보를 확인된 사실로 바꾸지는 않습니다.</p>{% endif %}
+{% for issue in report.blocking %}<p class="alert alert-error">{{ issue }}</p>{% endfor %}
+{% if report.issues %}<div class="alert alert-warning"><ul>{% for issue in report.issues %}<li>{{ issue }}</li>{% endfor %}</ul></div>{% endif %}
+{% if report.issues and not report.blocking %}
+<form method="post" action="/ledger/repair/preview" class="card">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="request_key" value="{{ values.request_key }}">
+  <label>복구 사유<textarea name="reason" maxlength="1000" required>{{ values.reason }}</textarea></label>
+  <p>원문 충전액·이월액을 기준으로 계산 필드만 복구합니다. 미확인 소속·상태는 그대로 보존합니다.</p>
+  <button type="submit" class="btn">복구 전후 검토</button>
+  {% if plan %}
+    <input type="hidden" name="plan_token" value="{{ plan.token }}">
+    {% include "ledger_plan.html" %}
+    <p class="muted">계산 오류를 포함한 사전 사본은 별도 보존됩니다. 정상 검증 백업과 구분하며 자동 복원하지 않습니다.</p>
+    <button type="submit" formaction="/ledger/repair/apply" class="btn btn-primary" onclick="return confirm('계산 필드 복구 계획을 반영할까요?')">검토한 복구 반영</button>
+  {% endif %}
+</form>
+{% endif %}
+<a href="/ledger" class="btn">변경 이력</a>
+{% endblock %}

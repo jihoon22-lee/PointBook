@@ -17,6 +17,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.models import BalanceRecord, MonthlySnapshot, Person, Team
+from app.services.history import freeze_new_records, preserve_revision
 from app.services.identifiers import is_legacy_point_no, normalize_point_no
 
 
@@ -535,24 +536,29 @@ def apply_ledger_import(db: Session, plan: LedgerImportPlan) -> LedgerApplyResul
         db.flush()
 
         latest: dict[str, LedgerRecord] = {}
+        inserted_records: list[BalanceRecord] = []
         for source in plan.data.records:
             person = account_by_point[source.point_no]
-            db.add(
-                BalanceRecord(
-                    snapshot_id=snapshots[source.month].id,
-                    person_id=person.id,
-                    carry_balance=source.carry_balance,
-                    amount=source.amount,
-                    usage=source.usage,
-                    total=source.total,
-                )
+            record = BalanceRecord(
+                snapshot_id=snapshots[source.month].id,
+                snapshot=snapshots[source.month],
+                person_id=person.id,
+                carry_balance=source.carry_balance,
+                amount=source.amount,
+                usage=source.usage,
+                total=source.total,
             )
+            db.add(record)
+            inserted_records.append(record)
             latest[source.point_no] = source
         for point_no, source in latest.items():
             person = account_by_point[point_no]
             person.current_carry_balance = source.carry_balance
             person.current_amount = source.amount
         db.flush()
+        freeze_new_records(db, inserted_records, source="legacy_import")
+        for record in inserted_records:
+            preserve_revision(db, record, None, source="legacy_import")
         _validate_database_invariants(db, plan.data)
         return LedgerApplyResult(
             accounts=len(source_accounts),

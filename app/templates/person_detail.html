@@ -4,45 +4,66 @@
 <div class="toolbar">
   <h1>{{ person.name }} <span class="muted">({{ person.point_no|point_no }})</span></h1>
   <div class="spacer"></div>
-  <a class="btn" href="/people/{{ person.id }}/edit">수정</a>
+  <a class="btn" href="/people/{{ person.id }}/edit">기본 정보 수정</a>
+  <a class="btn" href="/ledger/adjust/{{ person.id }}">현재 잔액 보정</a>
+  <a class="btn" href="/ledger">변경 감사 이력</a>
   <a class="btn" href="/people">목록</a>
 </div>
 
 <div class="card">
+  <h2>현재 정보</h2>
   <table>
     <tr><th>계급</th><td>{{ person.grade or '-' }}</td></tr>
-    <tr><th>팀</th><td>{% if person.team %}<span class="badge" style="background: {{ person.team.color }}; color: {{ person.team.color|contrast_color }}">{{ person.team.name }}</span>{% else %}-{% endif %}</td></tr>
-    <tr><th>상태</th><td>{% if person.status == 'active' %}<span class="badge badge-active">재직</span>{% else %}<span class="badge badge-inactive">비재직</span>{% endif %}</td></tr>
-    <tr><th>계정 구분</th><td>{{ '공용' if person.account_type == 'shared' else '일반' }}</td></tr>
+    <tr><th>팀</th><td>{% if person.team %}<span class="badge" style="background: {{ person.team.color }}; color: {{ person.team.color|contrast_color }}">{{ person.team.name }}</span>{% else %}팀 없음{% endif %}</td></tr>
+    <tr><th>상태</th><td>{{ '재직' if person.status == 'active' else '비재직' }}</td></tr>
+    <tr><th>계정 구분</th><td>{{ '공용 계정' if person.account_type == 'shared' else '일반 인원' }}</td></tr>
     <tr><th>개인번호</th><td>{{ person.personal_no or '-' }}</td></tr>
-    <tr><th>이월 잔액</th><td>{{ person.current_carry_balance|number_format }}원</td></tr>
-    <tr><th>당월 충전</th><td>{{ person.current_amount|number_format }}원</td></tr>
-    <tr><th>총 잔액</th><td><strong>{{ (person.current_carry_balance + person.current_amount)|number_format }}원</strong></td></tr>
+    <tr><th>현재 총 잔액</th><td><strong>{{ (person.current_carry_balance + person.current_amount)|number_format }}원</strong></td></tr>
+    <tr><th>실제 관측 기준</th><td>{% if latest %}{{ latest.month }} · {{ '월간 기록' if latest.kind == 'monthly' else '별도 잔액 관측' }}{% if latest.observed_at %} · {{ latest.observed_at }} UTC{% endif %}{% else %}관측 기준 월 미확인 — 기존 보유값{% endif %}</td></tr>
+    {% if latest and latest.kind == 'monthly' %}
+    <tr><th>{{ latest.month }} 이월 잔액</th><td>{{ latest.carry_balance|number_format }}원</td></tr>
+    <tr><th>{{ latest.month }} 충전 금액</th><td>{{ latest.amount|number_format }}원</td></tr>
+    {% elif not latest %}
+    <tr><th>기존 이월 구성값</th><td>{{ person.current_carry_balance|number_format }}원</td></tr>
+    <tr><th>기존 금액 구성값</th><td>{{ person.current_amount|number_format }}원</td></tr>
+    {% endif %}
+    <tr><th>현재 정보 버전</th><td>{{ person.version }}</td></tr>
   </table>
-  <p class="muted" style="margin-top:10px">금액 수정은 <a href="/people/{{ person.id }}/edit">수정</a> 페이지에서 할 수 있습니다.</p>
+  <p class="muted">잔액은 마지막으로 확인한 값입니다. 기록 없는 달의 소비를 0원으로 의미하지 않습니다. 기본 정보 수정은 장부 금액을 변경하지 않습니다.</p>
 </div>
 
 <div class="card">
   <h2>월별 포인트 이력</h2>
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr><th>월</th><th>이월 잔액</th><th>당월 충전</th><th>순사용</th><th>총 잔액</th></tr>
-      </thead>
-      <tbody>
-      {% for b in balances %}
-        <tr>
-          <td>{{ b.snapshot.month }}</td>
-          <td>{{ b.carry_balance|number_format }}</td>
-          <td>{{ b.amount|number_format }}</td>
-          <td>{{ b.usage|number_format }}</td>
-          <td><strong>{{ b.total|number_format }}</strong></td>
-        </tr>
-      {% else %}
-        <tr><td colspan="5" class="muted">아직 기록된 월별 데이터가 없습니다. (월간 처리에서 생성)</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
+  <p class="muted">각 월의 당시 정보와 현재 유효한 정정판입니다. 미확인 당시 정보는 참고 출처를 함께 표시합니다.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>월·정정판</th><th>당시 이름·포인트번호</th><th>당시 팀·계급</th><th>당시 구분·상태</th><th>출처</th><th>이월 잔액</th><th>충전</th><th>순사용</th><th>총 잔액</th><th>비고</th><th>정정</th></tr></thead>
+    <tbody>
+    {% for item in history %}{% set b = item.record %}{% set p = item.profile %}
+      <tr>
+        <td>{{ b.snapshot.month }} · v{{ b.version }}</td>
+        <td>{{ p.get('name') or '당시 이름 미확인' }}<br>{{ p.get('point_no')|point_no if p.get('point_no') else '당시 번호 미확인' }}<br><span class="muted">{{ p.get('personal_no') or '-' }}</span></td>
+        <td>{{ p.get('team_name') or ('팀 없음' if b.provenance == 'observed' else '당시 팀 미확인') }}<br>{{ p.get('grade') or '-' }}</td>
+        <td>{{ {'person':'일반 인원','shared':'공용 계정'}.get(p.get('account_type'), '당시 구분 미확인') }}<br>{{ {'active':'재직','inactive':'비재직'}.get(p.get('status'), '당시 상태 미확인') }}</td>
+        <td>{% if b.provenance == 'observed' %}확정 당시 관측{% elif b.provenance == 'master_at_migration' %}당시 정보 미확인 · 이관 시점 인원 정보 참고{% elif b.provenance == 'legacy_import' %}당시 정보 미확인 · 기존 장부 이관 참고{% elif b.provenance == 'reference_at_correction' %}당시 정보 미확인 · 정정 시점 참고{% else %}당시 정보 미확인{% endif %}</td>
+        <td>{{ b.carry_balance|number_format }}</td><td>{{ b.amount|number_format }}</td><td>{{ b.usage|number_format }}</td><td><strong>{{ b.total|number_format }}</strong></td>
+        <td>{{ b.note or '-' }}</td><td><a class="btn btn-sm" href="/ledger/correct/{{ person.id }}?month={{ b.snapshot.month }}">이 월 정정</a></td>
+      </tr>
+    {% else %}<tr><td colspan="11" class="muted">아직 기록된 월별 데이터가 없습니다. (월간 처리에서 생성)</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+  <a class="btn" href="/ledger/correct/{{ person.id }}">과거 월 기록 삽입·정정</a>
+</div>
+
+<div class="card">
+  <h2>초기 잔액·현재 보정 관측</h2>
+  <p class="muted">명시적으로 확인한 잔액입니다. 월간 충전 실적과 구분합니다.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>관측 월·시각</th><th>관측 당시 정보</th><th>확인 잔액</th><th>비고</th><th>작업</th></tr></thead>
+    <tbody>{% for item in adjustments %}{% set a = item.record %}{% set p = item.profile %}<tr>
+      <td>{{ a.month }}<br>{{ a.observed_at }} UTC</td>
+      <td>{{ p.get('name') or '미확인' }} · {{ p.get('point_no')|point_no if p.get('point_no') else '번호 미확인' }}<br>{{ p.get('team_name') or '팀 없음' }} · {{ '공용 계정' if p.get('account_type') == 'shared' else '일반 인원' }}</td>
+      <td>{{ a.total|number_format }}원</td><td>{{ a.note or '-' }}</td><td>#{{ a.operation_id }}</td>
+    </tr>{% else %}<tr><td colspan="5" class="muted">별도로 확인한 잔액 관측이 없습니다.</td></tr>{% endfor %}</tbody>
+  </table></div>
 </div>
 {% endblock %}

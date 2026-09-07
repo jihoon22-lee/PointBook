@@ -3,6 +3,7 @@ from sqlalchemy import select
 
 from app.models import Person
 from tests.factories import make_person, make_team
+from tests.test_profiles import _submit_profile
 
 
 def _person_input(**overrides):
@@ -16,6 +17,10 @@ def _person_input(**overrides):
     }
 
 
+def _profile_input(**overrides):
+    return {"account_type": "person", "status": "active", **overrides}
+
+
 def test_people_page_empty(auth_client):
     resp = auth_client.get("/people")
     assert resp.status_code == 200
@@ -24,7 +29,8 @@ def test_people_page_empty(auth_client):
 
 def test_create_person(auth_client, db):
     team = make_team(db, "구조대")
-    resp = auth_client.post(
+    resp = _submit_profile(
+        auth_client,
         "/people/new",
         data=_person_input(
             point_no="0000 0001",
@@ -43,14 +49,17 @@ def test_create_person(auth_client, db):
 
 
 def test_create_person_missing_fields(auth_client):
-    resp = auth_client.post("/people/new", data=_person_input(point_no="", personal_no="", name=""))
+    resp = _submit_profile(
+        auth_client, "/people/new", data=_person_input(point_no="", personal_no="", name="")
+    )
     assert resp.status_code == 400
     assert "포인트번호" in resp.text
 
 
 def test_create_person_duplicate_point_number(auth_client, db):
     make_person(db, "1001", "홍길동", point_no="00000001")
-    resp = auth_client.post(
+    resp = _submit_profile(
+        auth_client,
         "/people/new",
         data=_person_input(point_no="0000-0001", personal_no="S1002", name="다른사람"),
     )
@@ -60,7 +69,8 @@ def test_create_person_duplicate_point_number(auth_client, db):
 
 def test_create_person_allows_duplicate_personal_number_and_name(auth_client, db):
     make_person(db, "S0815", "동명이인", point_no="00000001")
-    resp = auth_client.post(
+    resp = _submit_profile(
+        auth_client,
         "/people/new",
         data=_person_input(
             point_no="00000002", personal_no="S0815", name="동명이인", account_type="person"
@@ -71,7 +81,8 @@ def test_create_person_allows_duplicate_personal_number_and_name(auth_client, db
 
 
 def test_create_shared_account_without_personal_number(auth_client, db):
-    resp = auth_client.post(
+    resp = _submit_profile(
+        auth_client,
         "/people/new",
         data=_person_input(
             point_no="00000009", personal_no="", name="1팀 공용", account_type="shared"
@@ -139,9 +150,10 @@ def test_edit_person_team_and_status(auth_client, db):
     team_a = make_team(db, "A팀")
     team_b = make_team(db, "B팀")
     person = make_person(db, "1001", "홍길동", team=team_a)
-    resp = auth_client.post(
+    resp = _submit_profile(
+        auth_client,
         f"/people/{person.id}/edit",
-        data=_person_input(
+        data=_profile_input(
             point_no="00001001",
             personal_no="1001",
             name="홍길동",
@@ -161,18 +173,20 @@ def test_edit_person_team_and_status(auth_client, db):
 def test_edit_person_duplicate_point_number_rejected(auth_client, db):
     make_person(db, "1001", "홍길동", point_no="00000001")
     other = make_person(db, "S1002", "김철수", point_no="00000002")
-    resp = auth_client.post(
+    resp = _submit_profile(
+        auth_client,
         f"/people/{other.id}/edit",
-        data=_person_input(point_no="0000 0001", personal_no="S1002", name="김철수"),
+        data=_profile_input(point_no="0000 0001", personal_no="S1002", name="김철수"),
     )
     assert resp.status_code == 400
     assert "이미 등록된 인원" in resp.text
 
 
 def test_edit_person_missing(auth_client):
-    resp = auth_client.post(
+    resp = _submit_profile(
+        auth_client,
         "/people/9999/edit",
-        data=_person_input(point_no="00000001", personal_no="1", name="x"),
+        data=_profile_input(point_no="00000001", personal_no="1", name="x"),
         follow_redirects=False,
     )
     assert resp.status_code == 303
@@ -184,7 +198,7 @@ def test_edit_person_form_missing(auth_client):
 
 
 def test_no_delete_person_route(auth_client):
-    resp = auth_client.post("/people/1/delete")
+    resp = _submit_profile(auth_client, "/people/1/delete")
     assert resp.status_code != 303 or "/people" not in resp.headers.get("location", "")
 
 
@@ -217,7 +231,8 @@ def test_filter_team_id_works(auth_client, db):
 
 
 def test_create_person_team_less(auth_client, db):
-    resp = auth_client.post(
+    resp = _submit_profile(
+        auth_client,
         "/people/new",
         data=_person_input(
             point_no="00002001",
@@ -235,9 +250,10 @@ def test_create_person_team_less(auth_client, db):
 
 def test_edit_person_team_less(auth_client, db):
     person = make_person(db, "1001", "홍길동")
-    resp = auth_client.post(
+    resp = _submit_profile(
+        auth_client,
         f"/people/{person.id}/edit",
-        data=_person_input(
+        data=_profile_input(
             point_no=person.point_no,
             personal_no="1001",
             name="홍길동",
@@ -266,16 +282,17 @@ def test_person_detail_shows_balance_display_only(auth_client, db):
     assert 'name="amount"' not in resp.text
 
 
-def test_edit_form_has_balance_fields(auth_client, db):
+def test_edit_form_separates_balance_fields(auth_client, db):
     person = make_person(db, "1001", "홍길동")
     resp = auth_client.get(f"/people/{person.id}/edit")
     assert resp.status_code == 200
-    assert 'name="carry_balance"' in resp.text
-    assert 'name="amount"' in resp.text
+    assert 'name="carry_balance"' not in resp.text
+    assert 'name="amount"' not in resp.text
 
 
 def test_create_person_with_balance(auth_client, db):
-    resp = auth_client.post(
+    resp = _submit_profile(
+        auth_client,
         "/people/new",
         data=_person_input(
             point_no="00003001",
@@ -292,13 +309,14 @@ def test_create_person_with_balance(auth_client, db):
     assert resp.status_code == 303
     person = db.scalar(select(Person).where(Person.personal_no == "3001"))
     assert person is not None
-    assert person.current_carry_balance == 15000
-    assert person.current_amount == 50000
+    assert person.current_carry_balance == 65000
+    assert person.current_amount == 0
 
 
 def test_edit_person_balance(auth_client, db):
     person = make_person(db, "1001", "홍길동")
-    resp = auth_client.post(
+    resp = _submit_profile(
+        auth_client,
         f"/people/{person.id}/edit",
         data=_person_input(
             point_no=person.point_no,
@@ -312,15 +330,16 @@ def test_edit_person_balance(auth_client, db):
         ),
         follow_redirects=False,
     )
-    assert resp.status_code == 303
+    assert resp.status_code == 400
     db.refresh(person)
-    assert person.current_carry_balance == 7000
-    assert person.current_amount == 30000
+    assert person.current_carry_balance == 0
+    assert person.current_amount == 0
 
 
 def test_edit_person_updates_current_without_snapshot(auth_client, db):
     person = make_person(db, "1001", "홍길동")
-    resp = auth_client.post(
+    resp = _submit_profile(
+        auth_client,
         f"/people/{person.id}/edit",
         data=_person_input(
             point_no=person.point_no,
@@ -334,10 +353,10 @@ def test_edit_person_updates_current_without_snapshot(auth_client, db):
         ),
         follow_redirects=False,
     )
-    assert resp.status_code == 303
+    assert resp.status_code == 400
     db.refresh(person)
-    assert person.current_carry_balance == 9000
-    assert person.current_amount == 20000
+    assert person.current_carry_balance == 0
+    assert person.current_amount == 0
 
 
 def test_edit_person_preserves_earlier_records(auth_client, db):
@@ -355,25 +374,24 @@ def test_edit_person_preserves_earlier_records(auth_client, db):
         "2026-06",
         [BalanceRecord(person_id=person.id, carry_balance=0, amount=2000, usage=0, total=2000)],
     )
-    resp = auth_client.post(
+    resp = _submit_profile(
+        auth_client,
         f"/people/{person.id}/edit",
-        data=_person_input(
+        data=_profile_input(
             point_no=person.point_no,
             personal_no="1001",
             name="홍길동",
             grade="",
             team_id="",
             status="active",
-            carry_balance="1500",
-            amount="0",
         ),
         follow_redirects=False,
     )
     assert resp.status_code == 303
     records = sorted(person.balances, key=lambda b: b.snapshot.month)
-    assert [r.total for r in records] == [1000, 1500]
+    assert [r.total for r in records] == [1000, 2000]
     assert records[0].carry_balance == 0
-    assert records[1].carry_balance == 1500
+    assert records[1].carry_balance == 0
 
 
 def test_people_pagination(auth_client, db):
@@ -534,7 +552,8 @@ def test_person_invalid_form_preserves_values_and_database(auth_client, db, edit
         "amount": "30,000",
     }
     values[field] = value
-    response = auth_client.post(
+    response = _submit_profile(
+        auth_client,
         f"/people/{person.id}/edit" if editing else "/people/new",
         data=values,
     )
@@ -542,7 +561,11 @@ def test_person_invalid_form_preserves_values_and_database(auth_client, db, edit
     parsed = FormInputs()
     parsed.feed(response.text)
     for key, raw in values.items():
-        assert parsed.inputs[key] == raw
+        if editing and key in {"carry_balance", "amount"}:
+            assert key not in parsed.inputs
+            assert raw in response.text
+        else:
+            assert parsed.inputs[key] == raw
     db.expire_all()
     assert len(list(db.scalars(select(Person)))) == 1
     assert (
@@ -560,7 +583,8 @@ def test_person_invalid_form_preserves_values_and_database(auth_client, db, edit
 @pytest.mark.parametrize("editing", [False, True])
 def test_shared_inactive_rejected_without_writes(auth_client, db, editing):
     person = make_person(db, "1001", "기존 합성 인원", point_no="00000001")
-    response = auth_client.post(
+    response = _submit_profile(
+        auth_client,
         f"/people/{person.id}/edit" if editing else "/people/new",
         data=_person_input(
             point_no="00000002",
@@ -581,7 +605,8 @@ def test_shared_inactive_rejected_without_writes(auth_client, db, editing):
 def test_person_valid_money_boundaries_and_raw_zero(auth_client, db):
     from app.services.validation import MAX_MONEY
 
-    response = auth_client.post(
+    response = _submit_profile(
+        auth_client,
         "/people/new",
         data=_person_input(
             point_no="00000001",
@@ -594,8 +619,8 @@ def test_person_valid_money_boundaries_and_raw_zero(auth_client, db):
     )
     assert response.status_code == 303
     person = db.scalar(select(Person))
-    assert person.current_carry_balance == 0
-    assert person.current_amount == MAX_MONEY
+    assert person.current_carry_balance == MAX_MONEY
+    assert person.current_amount == 0
     assert person.status == "active"
 
 
@@ -614,12 +639,17 @@ def test_person_missing_required_fields_never_default_or_write(auth_client, db, 
         amount="800",
     )
     del values[field]
-    response = auth_client.post(
+    response = _submit_profile(
+        auth_client,
         f"/people/{person.id}/edit" if editing else "/people/new",
         data=values,
     )
     assert response.status_code == 400
-    assert f'name="{field}"' in response.text
+    if editing and field in {"carry_balance", "amount"}:
+        assert f'name="{field}"' not in response.text
+        assert "금액을 변경할 수 없습니다" in response.text
+    else:
+        assert f'name="{field}"' in response.text
     db.refresh(person)
     assert person.name == "합성 기존 인원"
     assert person.point_no == "00000001"

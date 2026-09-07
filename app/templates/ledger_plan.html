@@ -1,0 +1,18 @@
+<div class="card">
+  <h2>반영 전후</h2>
+  {% if plan.kind == 'adjustment' %}
+  <p>현재 총잔액: {{ plan.current_before.total|number_format }}원 → <strong>{{ plan.current_after.total|number_format }}원</strong></p>
+  <p class="muted">보정 사유는 확인한 내용만 기록합니다. 거래 종류나 소비·적립 원인을 자동으로 추정하지 않습니다.</p>
+  {% else %}
+  <div class="table-wrap"><table><thead><tr><th>대상 월</th><th>항목</th><th>전</th><th>후</th></tr></thead><tbody>
+  {% for change in plan.changes %}
+    {% for field,label in [('carry_balance','이월 잔액'),('amount','충전액'),('usage','순사용'),('total','총잔액'),('note','비고')] %}
+    <tr><td>{{ change.after.month }}</td><td>{{ label }}</td><td>{% if change.before %}{{ change.before[field]|number_format if field != 'note' else change.before[field] }}{% else %}새 관측{% endif %}</td><td>{{ change.after[field]|number_format if field != 'note' else change.after[field] }}</td></tr>
+    {% endfor %}
+    {% if change.after.profile %}<tr><td>{{ change.after.month }}</td><td>당시 정보</td><td>{% if change.before %}{{ change.before.profile.name }} / {{ change.before.profile.team_name or '팀 없음' }} / {{ change.before.profile.account_type }}{% else %}미확인{% endif %}</td><td>{{ change.after.profile.name }} / {{ change.after.profile.team_name or '팀 없음' }} / {{ change.after.profile.account_type }}{% if change.after.provenance not in ['observed','manual_correction'] %} · 당시 사실 미확인{% endif %}</td></tr>{% endif %}
+  {% endfor %}
+  </tbody></table></div>
+  {% if plan.current_before %}<p>현재 총잔액: {{ plan.current_before.total|number_format }}원 → {{ plan.current_after.total|number_format }}원</p>{% endif %}
+  {% for current in plan.current_changes %}<p>인원 {{ current.person_id }} 현재 총잔액: {{ (current.before.carry_balance + current.before.amount)|number_format }}원 → {{ (current.after.carry_balance + current.after.amount)|number_format }}원</p>{% endfor %}
+  {% endif %}
+</div>

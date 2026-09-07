@@ -8,6 +8,7 @@
 
 <form method="post" action="/monthly/confirm" id="review-form">
   <input type="hidden" name="csrf_token" value="{{ csrf_token|default('') }}">
+  <input type="hidden" name="request_key" value="{{ request_key }}">
   <input type="hidden" name="review_token" id="review-token" value="{{ review_token }}">
   <div class="toolbar">
     <label class="month-label">처리 월 <input type="text" name="month" value="{{ month }}" placeholder="YYYY-MM" inputmode="numeric" style="width:130px"></label>

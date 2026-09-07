@@ -224,7 +224,7 @@ def test_confirm_returns_balance_after_return(auth_client, db):
     assert person.status == "active"
 
 
-def test_edit_person_syncs_latest_record(auth_client, db):
+def test_profile_edit_rejects_money_and_preserves_latest_record(auth_client, db):
     person = make_person(db, "101", "김소방")
     data = {
         "month": "2026-06",
@@ -252,17 +252,17 @@ def test_edit_person_syncs_latest_record(auth_client, db):
         },
         follow_redirects=False,
     )
-    assert resp.status_code == 303
+    assert resp.status_code == 400
     from app.services.balance import last_record_for_person
 
     record = last_record_for_person(db, person)
     assert record is not None
-    assert record.carry_balance == 3000
+    assert record.carry_balance == 10000
     assert record.usage == 0
-    assert record.total == 3000
+    assert record.total == 60000
     db.refresh(person)
-    assert person.current_carry_balance == 3000
-    assert person.current_amount == 0
+    assert person.current_carry_balance == 10000
+    assert person.current_amount == 50000
 
 
 def test_monthly_requires_login(client):
