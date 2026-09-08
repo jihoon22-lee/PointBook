@@ -59,7 +59,7 @@
   });
   form.addEventListener('submit', function (event) {
     var submitter = event.submitter || document.activeElement;
-    if (submitter && submitter.getAttribute('formaction') === '/monthly/review') {
+    if (submitter && (submitter.getAttribute('formaction') === '/monthly/review' || submitter.getAttribute('formaction') === '/monthly/link')) {
       if (window.pointbookDraft) { event.preventDefault(); window.pointbookDraft.submit(submitter); }
       return;
     }

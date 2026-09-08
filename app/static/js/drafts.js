@@ -93,6 +93,14 @@
       window.clearTimeout(timer);
       Promise.resolve(pending).then(function () { return save(false); }).then(function () {
         form.action = button && button.getAttribute('formaction') || '/monthly/confirm';
+        // form.submit()은 클릭한 버튼의 name/value를 전송하지 않는다.
+        var previousAction = form.querySelector('input[data-submit-action]');
+        if (previousAction) previousAction.parentNode.removeChild(previousAction);
+        if (button && button.name) {
+          var actionField = document.createElement('input');
+          actionField.type = 'hidden'; actionField.name = button.name; actionField.value = button.value;
+          actionField.setAttribute('data-submit-action', 'yes'); form.appendChild(actionField);
+        }
         var submitButtons = form.querySelectorAll('button[type="submit"]');
         for (var i = 0; i < submitButtons.length; i++) submitButtons[i].disabled = true;
         form.submit();

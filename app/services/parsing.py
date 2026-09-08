@@ -63,6 +63,7 @@ def _to_int(value: str) -> int:
 def parse_pasted_raw(text: str) -> list[RawRequestRow]:
     rows: list[RawRequestRow] = []
     has_sequence: bool | None = None
+    request_headers: list[str] | None = None
     for line in text.splitlines():
         if not line.strip():
             continue
@@ -71,6 +72,62 @@ def parse_pasted_raw(text: str) -> list[RawRequestRow]:
             cols = next(csv.reader([line], delimiter=delimiter, strict=True))
         except csv.Error:
             cols = [line]
+        headers = [c.strip() for c in cols]
+        if (
+            "이름" in headers
+            and "개인번호" in headers
+            and ("충전액" in headers or "금액" in headers)
+            and "포인트번호" not in headers
+        ):
+            if (
+                len(set(headers)) != len(headers)
+                or ("금액" in headers and "충전액" in headers)
+                or any(
+                    h
+                    not in {
+                        "순번",
+                        "계정 구분",
+                        "팀",
+                        "이름",
+                        "계급",
+                        "금액",
+                        "충전액",
+                        "개인번호",
+                        "비고",
+                        "이월 잔액",
+                    }
+                    for h in headers
+                )
+            ):
+                raise ValueError("붙여넣기 열 제목이 중복되었거나 지원하지 않는 열이 있습니다.")
+            request_headers = headers
+            continue
+        if request_headers is not None:
+            if len(cols) != len(request_headers):
+                rows.append(
+                    RawRequestRow(
+                        source_line=line, source_issue="열 수가 제목과 다릅니다. 원문을 확인하세요."
+                    )
+                )
+            else:
+                values = dict(zip(request_headers, cols, strict=True))
+                kind = values.get("계정 구분", "person").strip()
+                rows.append(
+                    RawRequestRow(
+                        team=values.get("팀", ""),
+                        name=values["이름"],
+                        grade=values.get("계급", ""),
+                        amount=values.get("충전액", values.get("금액", "")),
+                        personal_no=values["개인번호"],
+                        note=values.get("비고", ""),
+                        carry=values.get("이월 잔액", ""),
+                        account_type={"일반": "person", "공용": "shared"}.get(kind, kind),
+                        source_line=line,
+                    )
+                )
+            if len(rows) > MAX_REQUEST_ROWS:
+                raise ValueError(f"요청서는 최대 {MAX_REQUEST_ROWS}행까지 처리할 수 있습니다.")
+            continue
         if "포인트번호" in [c.strip() for c in cols] and "이름" in [c.strip() for c in cols]:
             has_sequence = cols[0].strip() == "순번"
             continue

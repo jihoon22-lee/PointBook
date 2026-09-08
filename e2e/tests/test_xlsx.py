@@ -26,7 +26,7 @@ def fill_template(data):
                         rows.remove(existing)
                 row = ET.SubElement(rows, "{" + namespace + "}row", {"r": "5"})
                 for column, value in zip(
-                    "ABCDEFGHIJ",
+                    "ABCDEFGHI",
                     [
                         "1",
                         "person",
@@ -35,7 +35,6 @@ def fill_template(data):
                         "",
                         "150",
                         "950",
-                        "00000950",
                         MULTILINE_NOTE,
                         "50",
                     ],
@@ -68,7 +67,11 @@ def test_standard_excel_and_report_download(page):
         },
     )
     page.click('#monthly-upload button[type="submit"]')
-    page.wait_for_url("**/drafts/*")
+    page.wait_for_selector("text=요청서 검수")
+    assert page.input_value('input[name="point_no_0"]') == ""
+    assert page.locator("button.confirm-monthly").is_disabled()
+    # 신규 인원의 외부 발급 번호를 관리자가 검수에서 입력한다.
+    page.fill('input[name="point_no_0"]', "00000950")
     assert page.input_value('input[name="point_no_0"]') == "00000950"
     note = page.locator('[name="note_0"]')
     assert note.input_value() == MULTILINE_NOTE
@@ -104,6 +107,42 @@ def test_standard_excel_and_report_download(page):
         namespace = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
         values = [node.text for node in ET.fromstring(content).findall(".//s:t", namespace)]
         assert edited_note in values
+
+
+def test_numberless_request_links_existing_account_and_resumes(page):
+    login(page)
+    page.goto(f"{BASE_URL}/monthly")
+    page.fill('input[name="month"]', "2100-02")
+    page.fill(
+        'textarea[name="pasted"]',
+        "팀\t이름\t계급\t충전액\t개인번호\n합성팀\tE2E엑셀\t소방사\t40\t950",
+    )
+    page.click('#monthly-upload button[type="submit"]')
+    page.wait_for_selector('select[name="link_person_0"]')
+    assert page.locator("button.confirm-monthly").is_disabled()
+    assert page.input_value('[name="point_no_0"]') == ""
+    page.fill('[name="carry_0"]', "999")
+    page.select_option('select[name="link_person_0"]', index=1)
+    # 자동 저장과 연결 submit이 겹쳐도 선택한 행/대상이 전달되어야 한다.
+    page.click('button[formaction="/monthly/link"]')
+    page.wait_for_function("document.querySelector('[name=point_no_0]').value === '00000950'")
+    assert page.input_value('[name="point_no_0"]') == "00000950"
+    assert page.input_value('[name="carry_0"]') == ""
+    assert page.input_value('[name="amount_0"]') == "40"
+    page.reload()
+    assert page.input_value('[name="point_no_0"]') == "00000950"
+    page.fill('[name="carry_0"]', "80")
+    for carry in page.locator('input[name^="deactivated_carry_"]').all():
+        carry.fill("0")
+    acknowledgement = page.locator('[name="ack_warnings"]')
+    if acknowledgement.count():
+        acknowledgement.check()
+    page.click("button.confirm-monthly")
+    page.wait_for_selector("text=처리가 완료되었습니다")
+    page.goto(f"{BASE_URL}/people")
+    assert page.locator('a:has-text("E2E엑셀")').count() == 1
+    page.click('a:has-text("E2E엑셀")')
+    assert "120원" in page.text_content("body")
 
 
 def test_ie_guidance_uses_no_app_form(browser):

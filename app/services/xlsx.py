@@ -24,8 +24,8 @@ from app.services.parsing import MAX_REQUEST_ROWS, RawRequestRow
 from app.services.stats import Report
 
 FORM_MARKER = "PointBook 월간 요청서"
-FORM_VERSION = "1"
-HEADERS = (
+FORM_VERSION = "2"
+HEADERS_V1 = (
     "순번",
     "계정 구분",
     "팀",
@@ -37,6 +37,8 @@ HEADERS = (
     "비고",
     "이월 잔액",
 )
+HEADERS = tuple(header for header in HEADERS_V1 if header != "포인트번호")
+FORM_HEADERS = {"1": HEADERS_V1, "2": HEADERS}
 MAX_ZIP_BYTES = 10 * 1024 * 1024
 MAX_UNPACKED_BYTES = 30 * 1024 * 1024
 MAX_MEMBER_BYTES = 10 * 1024 * 1024
@@ -93,23 +95,27 @@ def _bytes(workbook: Workbook) -> bytes:
         workbook.close()
 
 
-def request_template(month: str) -> bytes:
+def request_template(month: str, version: str = FORM_VERSION) -> bytes:
     month = validate_month(month)
+    if version not in FORM_HEADERS:
+        raise ValueError("지원하지 않는 요청서 양식 버전입니다.")
+    headers = FORM_HEADERS[version]
+    width = len(headers)
     workbook = Workbook()
     sheet = workbook.active
     assert sheet is not None
     sheet.title = "요청서"
     for row, key, value in [
-        (1, FORM_MARKER, FORM_VERSION),
+        (1, FORM_MARKER, version),
         (2, "처리 월", month),
         (3, "입력 안내", "번호는 텍스트로 보존하고 이월은 모르면 빈칸으로 두세요."),
     ]:
         text_cell(sheet, row, 1, key)
         text_cell(sheet, row, 2, value)
-    _header(sheet, 4, HEADERS)
+    _header(sheet, 4, headers)
     for row in range(5, 25):
-        for column in range(1, 11):
-            sheet.cell(row, column).number_format = "@" if column not in {1, 6, 10} else "0"
+        for column in range(1, width + 1):
+            sheet.cell(row, column).number_format = "@" if column not in {1, 6, width} else "0"
     choices = DataValidation(type="list", formula1='"person,shared"', allow_blank=False)
     choices.errorTitle, choices.error = "계정 구분", "person 또는 shared를 선택하세요."
     choices.showErrorMessage = True
@@ -118,11 +124,15 @@ def request_template(month: str) -> bytes:
     guide = workbook.create_sheet("안내")
     for row, value in enumerate(
         [
-            "PointBook 월간 요청서 v1",
+            f"PointBook 월간 요청서 v{version}",
             "요청서!B2의 처리 월과 웹의 선택 월을 일치시킵니다.",
             "4행 제목과 1행 양식 버전을 바꾸지 않습니다. 5행부터 최대 2000명입니다.",
-            "포인트번호는 구분자를 제외한 8자리 문자열입니다. 선행 0을 보존하세요.",
-            "계정 구분은 person(일반), shared(공용). 일반의 개인번호는 필수입니다.",
+            (
+                "포인트번호는 구분자를 제외한 8자리 문자열입니다. 선행 0을 보존하세요."
+                if version == "1"
+                else "소방서에서는 포인트번호 없이 작성합니다. 관리자가 웹 검수에서 기존 인원을 연결하고 신규 인원은 외부에서 발급된 번호를 입력합니다."
+            ),
+            "계정 구분은 person(일반), shared(공용). 일반의 개인번호는 웹 확정 전까지 확인합니다.",
             "개인번호·이름 중복은 허용하며 공용의 개인번호·팀은 생략할 수 있습니다.",
             "충전액은 0 이상 정수이며 필수입니다. 이월 미입력은 웹 검수에서 채웁니다.",
             "수식·매크로·외부 링크를 사용하지 않습니다. 빈 행 전체만 건너뜁니다.",
@@ -237,17 +247,20 @@ def read_request(data: bytes, filename: str) -> XlsxRequest:
                 "표준 요청서 시트 이름을 확인하세요. 보고서는 입력 양식으로 사용할 수 없습니다."
             )
         sheet = workbook["요청서"]
-        if sheet["A1"].value != FORM_MARKER or str(sheet["B1"].value) != FORM_VERSION:
+        version = str(sheet["B1"].value)
+        if sheet["A1"].value != FORM_MARKER or version not in FORM_HEADERS:
             raise ValueError(
-                "PointBook 월간 요청서 v1 양식이 아닙니다. 표준 템플릿을 내려받으세요."
+                "PointBook 월간 요청서 v1/v2 양식이 아닙니다. 표준 템플릿을 내려받으세요."
             )
         month = validate_month(str(sheet["B2"].value or ""))
-        if tuple(sheet.cell(4, column).value for column in range(1, 11)) != HEADERS:
+        headers = FORM_HEADERS[version]
+        width = len(headers)
+        if tuple(sheet.cell(4, column).value for column in range(1, width + 1)) != headers:
             raise ValueError("요청서!4행의 열 제목이 표준 양식과 다릅니다.")
-        if sheet.max_row > MAX_REQUEST_ROWS + 4 or sheet.max_column > 10:
+        if sheet.max_row > MAX_REQUEST_ROWS + 4 or sheet.max_column > width:
             raise ValueError("요청서의 행·열 한도를 넘었습니다.")
         result = []
-        for number, cells in enumerate(sheet.iter_rows(min_row=5, max_col=10), 5):
+        for number, cells in enumerate(sheet.iter_rows(min_row=5, max_col=width), 5):
             _check_time(started)
             if all(cell.value is None or cell.value == "" for cell in cells):
                 continue
@@ -258,7 +271,7 @@ def read_request(data: bytes, filename: str) -> XlsxRequest:
                     issues.append(
                         f"요청서!{cell.coordinate}: 수식 셀을 실제 값으로 바꾸어 입력하세요."
                     )
-            for index in (6, 7):
+            for index in (6, 7) if version == "1" else (6,):
                 if cells[index].value is not None and cells[index].data_type != "s":
                     issues.append(
                         f"요청서!{cells[index].coordinate}: 번호가 문자열이 아닙니다. 선행 0을 추정하지 않았으므로 원본 번호를 확인하세요."
@@ -272,9 +285,9 @@ def read_request(data: bytes, filename: str) -> XlsxRequest:
                     grade=values[4],
                     amount=values[5],
                     personal_no=values[6],
-                    point_no=values[7],
-                    note=values[8],
-                    carry=values[9],
+                    point_no=values[7] if version == "1" else "",
+                    note=values[width - 2],
+                    carry=values[width - 1],
                     source_line=f"요청서!{number}행 · "
                     + " · ".join(
                         f"{get_column_letter(index)}{number}={value}"
