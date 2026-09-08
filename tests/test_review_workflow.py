@@ -66,6 +66,10 @@ def test_changed_request_requires_new_review(auth_client, db, change):
     assert response.status_code == 409
     assert db.scalar(select(func.count(MonthlySnapshot.id))) == 0
     new_review = review_fields(response)
+    if "point_no_0" in change:
+        # 다른 계정으로 옮긴 이전 이월은 재사용하지 않고 사람이 다시 입력한다.
+        assert new_review["carry_0"] == ""
+        new_review["carry_0"] = "10000"
     new_review["ack_warnings"] = "yes"
     assert (
         auth_client.post("/monthly/confirm", data=new_review, follow_redirects=False).status_code

@@ -421,16 +421,16 @@ async def confirm(request: Request, db: Session = Depends(get_db)) -> Response:
         return response()
     if replay_error:
         return response(replay_error, 409)
-    carries, errors = carry_values(result, deactivated)
-    if errors:
-        result.errors.update(errors)
-        return response("모든 처리 대상의 이월 잔액을 확인해 주세요.")
     token = str(form.get("review_token", ""))
     if not matches_token(token, result.digest):
         return response(
             "목록·월·기준 정보가 변경되었거나 검수가 만료되었습니다. 새 변경 예상을 확인하고 다시 확정하세요.",
             409,
         )
+    carries, errors = carry_values(result, deactivated)
+    if errors:
+        result.errors.update(errors)
+        return response("모든 처리 대상의 이월 잔액을 확인해 주세요.")
     if result.warnings and form.get("ack_warnings") != "yes":
         return response("처리 월과 누락·합계 경고를 확인한 뒤 확인란을 선택해 주세요.")
     # SQLite writer를 먼저 직렬화하고 승인한 상태를 같은 트랜잭션 안에서 재검증한다.
