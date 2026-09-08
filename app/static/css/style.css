@@ -124,7 +124,7 @@ h2 { font-size: 1.05rem; margin: 0 0 12px; font-weight: 600; }
 
 /* ---------- 레이아웃 ---------- */
 .container { max-width: 1080px; margin: 0 auto; padding: 24px 16px 64px; }
-.container.review-container { max-width: none; }
+.container.review-container { max-width: 1200px; }
 
 .card {
   background: var(--card);
@@ -397,6 +397,7 @@ body:has(.login-wrap) .login-wrap .muted { color: #cbd5e1; }
 .review-input-table th:nth-child(4) { width: 92px; }
 .review-input-table th:nth-child(5) { width: 96px; }
 .review-input-table th:nth-child(6), .review-input-table th:nth-child(7) { width: 132px; }
+.review-input-table th:nth-child(8) { width: 180px; }
 .review-input-table th:nth-child(9) { width: 82px; }
 .review-input-table th:nth-child(10) { width: 64px; }
 .review-input-table .row-input, .review-input-table select {
