@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass, field
 
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from starlette.datastructures import FormData
 
 from app.config import get_settings
@@ -32,9 +32,10 @@ class Review:
     request_amount: int = 0
     previous_count: int | None = None
     previous_amount: int | None = None
+    candidates: dict[str, list[dict[str, str]]] = field(default_factory=dict)
 
 
-def raw_rows_from_form(form: FormData) -> list[RawRequestRow]:
+def raw_rows_from_form(form: FormData, *, clear_source_issues: bool = False) -> list[RawRequestRow]:
     indices = sorted(
         {
             int(match.group(1))
@@ -57,6 +58,7 @@ def raw_rows_from_form(form: FormData) -> list[RawRequestRow]:
             **values,
             carry=str(form.get(f"carry_{i}", "")),
             source_line=str(form.get(f"source_line_{i}", "")),
+            source_issue="" if clear_source_issues else str(form.get(f"source_issue_{i}", "")),
         )
         supplied_id = str(form.get(f"row_id_{i}", ""))
         if supplied_id:
@@ -150,6 +152,28 @@ def review_rows(
     expected_amount: str = "",
 ) -> Review:
     result = Review(raw_rows=raw_rows)
+    # 이름·개인번호는 후보 검색에만 쓴다. 관리자가 연결하기 전에는 식별하지 않는다.
+    unresolved = [raw for raw in raw_rows if not raw.point_no.strip()]
+    if unresolved:
+        people = list(
+            db.scalars(select(Person).options(joinedload(Person.team)).order_by(Person.id))
+        )
+        by_name: dict[str, list[Person]] = {}
+        by_personal: dict[str, list[Person]] = {}
+        for person in people:
+            by_name.setdefault(person.name, []).append(person)
+            if person.personal_no:
+                by_personal.setdefault(person.personal_no, []).append(person)
+        for raw in unresolved:
+            matches = {p.id: p for p in by_name.get(raw.name.strip(), [])}
+            matches.update({p.id: p for p in by_personal.get(raw.personal_no.strip(), [])})
+            result.candidates[raw.row_id] = [
+                {
+                    "value": f"{p.id}:{p.version}",
+                    "label": f"{p.name} · {p.team.name if p.team else '팀 없음'} · 개인번호 {p.personal_no or '-'} · {p.point_no} · {'재직' if p.status == 'active' else '비재직'} · {'공용' if p.account_type == 'shared' else '일반'}",
+                }
+                for p in matches.values()
+            ]
     month_error = new_month_error(db, month)
     if month_error:
         result.errors["month"] = month_error
@@ -162,6 +186,10 @@ def review_rows(
             result.errors[f"row-{index}"] = f"{index}행: 행 ID가 잘못되었거나 중복되었습니다."
         ids.add(raw.row_id)
         try:
+            if not raw.point_no.strip() and not raw.source_issue:
+                raise ValueError(
+                    "기존 인원을 연결하거나, 신규 인원은 외부 포인트 시스템에서 발급받은 번호를 입력하세요. 발급 전에는 초안으로 보관할 수 있습니다."
+                )
             row = raw.validated()
             if row.point_no in points:
                 raise ValueError("중복된 포인트번호입니다.")

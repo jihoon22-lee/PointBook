@@ -4,6 +4,7 @@
 <h1>요청서 검수 · 확정</h1>
 {% if error %}<p class="alert alert-error" role="alert">{{ error }}</p>{% endif %}
 {% if errors %}<div class="alert alert-error" role="alert"><strong>입력 내용을 확인해 주세요.</strong><ul>{% for key, message in errors.items() %}<li>{{ message }}</li>{% endfor %}</ul></div>{% endif %}
+<p class="muted">포인트번호는 외부 포인트 시스템에서 발급합니다. 기존 인원을 연결하면 등록된 기본 정보로 채우며, 충전액·비고는 유지하고 이월 잔액은 다시 입력합니다. 신규 인원은 번호 발급 전까지 초안으로 보관하세요.</p>
 <p class="muted">목록을 수정하면 <strong>수정 내용 재검수</strong>를 눌러 변경 예상을 확인하세요. 이월 잔액은 모든 처리 대상에 한 번씩 입력합니다.</p>
 
 <form method="post" action="/monthly/confirm" id="review-form">
@@ -39,15 +40,25 @@
         <p class="muted">필터로 숨긴 행도 전체 저장·검증·확정 대상입니다. 이월 칸에서 Enter를 누르면 다음 잔액으로 이동합니다.</p>
       </div>
       <table id="rows" class="review-input-table">
-        <thead><tr><th>포인트번호</th><th>유형</th><th>개인번호</th><th>이름</th><th>팀</th><th>계급</th><th>충전액</th><th>비고</th><th>이월 잔액</th><th></th></tr></thead>
+        <thead><tr><th>인원 연결 / 발급 번호</th><th>유형</th><th>개인번호</th><th>이름</th><th>팀</th><th>계급</th><th>충전액</th><th>비고</th><th>이월 잔액</th><th></th></tr></thead>
         <tbody>
         {% for row in rows %}
           {% set row_index = loop.index0 %}
           {% set row_change = row_changes.get(row.point_no|replace(' ','')|replace('-',''),{}) %}
           <tr data-action="{{ row_change.get('action','') }}" data-team-changed="{{ 'yes' if row_change.get('team_changed') else 'no' }}" data-profile-changed="{{ 'yes' if row_change.get('profile_changed') else 'no' }}" data-row-id="{{ row.row_id }}" data-original-order="{{ loop.index0 }}" data-has-error="{{ 'yes' if errors.get(row.row_id) else 'no' }}">
             <td><input type="hidden" data-field="row_id" name="row_id_{{ loop.index0 }}" value="{{ row.row_id }}">
+              <input type="hidden" data-field="source_issue" name="source_issue_{{ loop.index0 }}" value="{{ row.source_issue }}">
               <input type="hidden" data-field="source_line" name="source_line_{{ loop.index0 }}" value="{{ row.source_line }}">
-              <input type="text" data-field="point_no" name="point_no_{{ loop.index0 }}" value="{{ row.point_no }}" class="row-input" aria-label="{{ loop.index }}행 포인트번호">
+              {% if not row.point_no.strip() %}
+              {% if candidates.get(row.row_id) %}
+              <label>기존 인원 후보<select name="link_person_{{ loop.index0 }}" data-field="link_person" aria-label="{{ loop.index }}행 기존 인원 후보">
+                <option value="">연결할 인원 선택</option>
+                {% for candidate in candidates[row.row_id] %}<option value="{{ candidate.value }}">{{ candidate.label }}</option>{% endfor %}
+              </select></label>
+              <button type="submit" class="btn btn-sm" formaction="/monthly/link" name="link_row" value="{{ row.row_id }}" formnovalidate>선택 인원 연결</button>
+              {% else %}<p class="muted">일치 후보가 없습니다. 이름·개인번호를 확인해 재검수하거나 신규 발급 번호를 입력하세요.</p>{% endif %}
+              {% endif %}
+              <input type="text" data-field="point_no" name="point_no_{{ loop.index0 }}" value="{{ row.point_no }}" class="row-input" placeholder="신규: 외부에서 발급 후 입력" aria-label="{{ loop.index }}행 포인트번호">
               {% if errors.get(row.row_id) %}<span class="alert-error">{{ errors[row.row_id] }}</span>{% endif %}
               {% if row.source_line %}<details><summary>가져온 원문</summary><span>{{ row.source_line }}</span></details>{% endif %}
             </td>

@@ -1,3 +1,4 @@
+import re
 import uuid
 from dataclasses import asdict
 from typing import Any
@@ -41,7 +42,7 @@ from app.services.review import (
 )
 from app.services.sync import ACTION_DEACTIVATED, RequestRow, apply_analysis
 from app.services.vision import extract_image
-from app.services.xlsx import extract_request, request_template
+from app.services.xlsx import FORM_VERSION, extract_request, request_template
 from app.template_utils import render
 
 router = APIRouter(prefix="/monthly", dependencies=[Depends(require_login)], tags=["monthly"])
@@ -132,6 +133,7 @@ def review_response(
             "input_source": input_source,
             "draft_keep_days": get_settings().draft_keep_days,
             "rows": review.raw_rows,
+            "candidates": review.candidates,
             "analysis": review.analysis,
             "row_changes": {
                 change.point_no: {
@@ -214,12 +216,66 @@ async def upload(request: Request, db: Session = Depends(get_db)) -> Response:
     return store_review_response(request, db, month, rows, source=source)
 
 
+@router.post("/link")
+async def link_person(request: Request, db: Session = Depends(get_db)) -> Response:
+    """명시적으로 선택한 현재 인원 정보를 요청서에 보완한다. 장부는 쓰지 않는다."""
+    form = await monthly_form(request)
+    month = str(form.get("month", ""))
+    try:
+        rows = raw_rows_from_form(form)
+    except ValueError as exc:
+        return _error_response(request, db, month, str(exc))
+    try:
+        row_id = str(form.get("link_row", ""))
+        targets = [(index, row) for index, row in enumerate(rows) if row.row_id == row_id]
+        if len(targets) != 1:
+            raise ValueError("연결할 요청서 행을 확인하세요.")
+        index, row = targets[0]
+        selection = str(form.get(f"link_person_{index}", ""))
+        if not re.fullmatch(r"[1-9][0-9]{0,17}:[1-9][0-9]{0,17}", selection):
+            raise ValueError("연결할 기존 인원을 선택하세요.")
+        person_id, version = (int(value) for value in selection.split(":"))
+        person = db.scalar(
+            select(Person).options(joinedload(Person.team)).where(Person.id == person_id)
+        )
+        if person is None or person.version != version:
+            raise ValueError("선택한 인원 정보가 변경되었습니다. 다시 검수하여 후보를 확인하세요.")
+        row.point_no = person.point_no
+        row.account_type = person.account_type
+        row.name = person.name
+        row.personal_no = person.personal_no or ""
+        row.team = person.team.name if person.team else ""
+        row.grade = person.grade
+        # 연결 이전에 입력한 잔액이 다른 사람에게 적용되지 않도록 다시 확인받는다.
+        row.carry = ""
+    except ValueError as exc:
+        result = review_rows(db, month, rows)
+        result.errors["link"] = str(exc)
+        result.token = ""
+        return review_response(
+            request,
+            month,
+            result,
+            request_key=str(form.get("request_key", "")),
+            draft_info={
+                "draft_id": str(form.get("draft_id", "")),
+                "draft_version": str(form.get("draft_version", "")),
+            },
+            input_source=str(form.get("input_source", "manual")),
+            deactivated=deactivated_from_form(form),
+            expected_count=str(form.get("expected_count", "")),
+            expected_amount=str(form.get("expected_amount", "")),
+            status=400,
+        )
+    return store_review_response(request, db, month, rows, form=form)
+
+
 @router.post("/review")
 async def review(request: Request, db: Session = Depends(get_db)) -> Response:
     form = await monthly_form(request)
     month = str(form.get("month", ""))
     try:
-        rows = raw_rows_from_form(form)
+        rows = raw_rows_from_form(form, clear_source_issues=True)
     except ValueError as exc:
         return _error_response(request, db, month, str(exc))
     return store_review_response(request, db, month, rows, form=form)
@@ -475,7 +531,7 @@ def download_template(month: str, request: Request) -> Response:
         data,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
-            "Content-Disposition": f'attachment; filename="pointbook-request-{month}-v1.xlsx"',
+            "Content-Disposition": f'attachment; filename="pointbook-request-{month}-v{FORM_VERSION}.xlsx"',
             "Cache-Control": "no-store",
         },
     )

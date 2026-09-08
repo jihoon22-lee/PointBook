@@ -231,9 +231,12 @@ def _assemble(
             continue
         person = people[pid]
         balance, activity = balances.get(pid), activities.get(pid)
+        same_observation = balance is not None and balance is activity
         if balance:
             balance = replace(balance, profile=current_person_profile(balance.profile, person))
-        if activity:
+        if same_observation:
+            activity = balance
+        elif activity:
             activity = replace(activity, profile=current_person_profile(activity.profile, person))
         selected_balance = (
             balance if balance and _matches(balance.profile, account_type, team_name) else None

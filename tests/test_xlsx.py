@@ -15,8 +15,8 @@ from tests.monthly_helpers import review_fields
 from tests.test_ledger_corrections import apply, correction, setup_ledger
 
 
-def workbook_data(*, month="2026-08", rows=None, modify=None):
-    workbook = load_workbook(io.BytesIO(request_template(month)))
+def workbook_data(*, month="2026-08", rows=None, modify=None, version="1"):
+    workbook = load_workbook(io.BytesIO(request_template(month, version=version)))
     sheet = workbook["요청서"]
     rows = (
         rows
@@ -365,3 +365,68 @@ def test_explicit_excel_account_type_is_not_silently_overridden(auth_client, db)
     assert "기존 계정 유형과 다릅니다" in response.text
     db.refresh(person)
     assert person.account_type == "shared"
+
+
+def test_default_v2_template_omits_external_point_number():
+    with closing(load_workbook(io.BytesIO(request_template("2026-09")))) as workbook:
+        sheet = workbook["요청서"]
+        assert sheet["B1"].value == "2"
+        assert sheet["B2"].value == "2026-09"
+        assert [cell.value for cell in sheet[4]] == [
+            "순번",
+            "계정 구분",
+            "팀",
+            "이름",
+            "계급",
+            "충전액",
+            "개인번호",
+            "비고",
+            "이월 잔액",
+        ]
+        assert sheet["G5"].number_format == "@"
+        assert sheet["I5"].number_format == "0"
+
+
+def test_v2_without_identifiers_preserves_request_values_for_linking():
+    rows = [
+        [1, "person", "합성팀", "합성이름", "소방경", 100, "0011", "첫째\n\n둘째", 20],
+        [2, "person", "합성팀", "다른합성", "", 0, None, "확인 필요", None],
+    ]
+    parsed = read_request(workbook_data(version="2", rows=rows), "request.xlsx")
+    assert len(parsed.rows) == 2
+    row = parsed.rows[0]
+    assert row.point_no == "" and row.personal_no == "0011"
+    assert row.amount == "100" and row.carry == "20"
+    assert row.note == "첫째\n\n둘째" and row.source_issue == ""
+    assert "H5=첫째\n\n둘째" in row.source_line
+    assert parsed.rows[1].personal_no == "" and parsed.rows[1].carry == ""
+
+
+def test_v2_formula_and_numeric_personal_number_require_review():
+    parsed = read_request(
+        workbook_data(
+            version="2",
+            rows=[[1, "person", "", "합성", "", 100, 11, "", 0]],
+            modify=lambda wb: setattr(wb["요청서"]["I5"], "value", "=10+20"),
+        ),
+        "request.xlsx",
+    )
+    assert "G5" in parsed.rows[0].source_issue
+    assert "I5" in parsed.rows[0].source_issue
+
+
+def test_v2_rejects_tenth_column_and_unknown_version():
+    with pytest.raises(ValueError, match="행·열 한도"):
+        read_request(
+            workbook_data(
+                version="2", rows=[[1, "person", "", "합성", "", 100, "11", "", 0, "추가"]]
+            ),
+            "request.xlsx",
+        )
+    with pytest.raises(ValueError, match="양식"):
+        read_request(
+            workbook_data(modify=lambda wb: setattr(wb["요청서"]["B1"], "value", "999")),
+            "request.xlsx",
+        )
+    with pytest.raises(ValueError, match="버전"):
+        request_template("2026-09", version="999")

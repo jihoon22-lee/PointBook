@@ -274,6 +274,9 @@ def observation_events(
         details = json.loads(raw)
         for change in details["changes"]:
             actions[(details["month"], change["point_no"])] = change["action"]
+    # 월간 확정이 없는 이관 자료는 _read의 기본 monthly_action=None을 그대로 쓴다.
+    if not actions:
+        return events
     # 확정 당시 번호로 연결한다. 이후 번호 변경·개별 복귀에도 실제 전환 사실을 유지한다.
     return [
         replace(event, monthly_action=actions.get((event.month, event.profile.get("point_no"))))
