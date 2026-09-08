@@ -54,12 +54,46 @@ def review_fields(response):
     return parser.fields
 
 
+class PendingProfileChoices(HTMLParser):
+    def __init__(self, side):
+        super().__init__()
+        self.side = side
+        self.values = []
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if (
+            tag == "button"
+            and attrs.get("name") == "profile_choice"
+            and attrs.get("data-choice-pending") == "yes"
+            and attrs.get("value", "").endswith(":" + self.side)
+            and "disabled" not in attrs
+        ):
+            self.values.append(attrs["value"])
+
+
+def resolve_profile_choices(client, response, side="incoming"):
+    """보이는 미선택 비교를 실제 HTTP 선택으로 해결한다. 유형 금지는 우회하지 않는다."""
+    for _ in range(10_001):
+        parser = PendingProfileChoices(side)
+        parser.feed(response.text)
+        if not parser.values:
+            return response
+        values = review_fields(response)
+        values["profile_choice"] = parser.values[0]
+        response = client.post("/monthly/choose", data=values)
+        if response.status_code in {409, 500}:
+            return response
+    raise AssertionError("프로필 선택이 완료되지 않았습니다.")
+
+
 def reviewed_confirm(client, data, **kwargs):
     data = dict(data)
     for key in list(data):
         if key.startswith("point_no_"):
             data.setdefault(key.replace("point_no_", "account_type_"), "person")
     response = client.post("/monthly/review", data=data)
+    response = resolve_profile_choices(client, response)
     reviewed = review_fields(response)
     reviewed["ack_warnings"] = "yes"
     return client.post("/monthly/confirm", data=reviewed, **kwargs)

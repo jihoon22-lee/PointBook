@@ -20,6 +20,9 @@ class RequestRow:
     note: str = ""
     account_type: str = "person"
 
+    clear_team: bool = False
+    clear_grade: bool = False
+
     def __post_init__(self) -> None:
         self.point_no = normalize_point_no(self.point_no)
         self.amount = parse_money(self.amount)
@@ -47,6 +50,7 @@ class PersonChange:
     grade: str = ""
     amount: int = 0
     person_id: int | None = None
+    clear_team: bool = False
     team_changed: bool = False
     profile_changed: bool = False
     account_type: str = "person"
@@ -84,20 +88,27 @@ def analyze(db: Session, rows: list[RequestRow]) -> SyncAnalysis:
                 personal_no=row.personal_no,
                 name=row.name,
                 team_name=row.team,
-                grade=row.grade or (person.grade if person else ""),
+                grade=row.grade
+                if row.clear_grade
+                else row.grade or (person.grade if person else ""),
+                clear_team=row.clear_team,
                 amount=row.amount,
                 person_id=person.id if person else None,
                 account_type=row.account_type,
                 note=row.note,
                 team_changed=bool(
-                    person and row.team and (not person.team or person.team.name != row.team)
+                    person
+                    and (
+                        (row.clear_team and person.team is not None)
+                        or (row.team and (not person.team or person.team.name != row.team))
+                    )
                 ),
                 profile_changed=bool(
                     person
                     and (
                         person.name != row.name
                         or (person.personal_no or "") != row.personal_no
-                        or (row.grade and person.grade != row.grade)
+                        or ((row.grade or row.clear_grade) and person.grade != row.grade)
                     )
                 ),
             )
@@ -149,7 +160,9 @@ def apply_analysis(db: Session, analysis: SyncAnalysis) -> None:
         person.name = change.name
         person.personal_no = change.personal_no or None
         person.grade = change.grade
-        if change.team_name:
+        if change.clear_team:
+            person.team = None
+        elif change.team_name:
             team = teams.get(change.team_name)
             if team is None:
                 color = next(

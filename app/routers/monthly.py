@@ -32,6 +32,7 @@ from app.services.drafts import (
 from app.services.history import profile_for_person
 from app.services.ledger import LedgerConflict, add_operation, find_replay
 from app.services.parsing import MAX_REQUEST_ROWS, RawRequestRow, parse_pasted_raw
+from app.services.request_profiles import choose, reset_target
 from app.services.review import (
     Review,
     carry_values,
@@ -135,6 +136,9 @@ def review_response(
             "rows": review.raw_rows,
             "candidates": review.candidates,
             "pending_links": review.pending_links,
+            "row_states": review.row_states,
+            "profile_differences": review.profile_differences,
+            "pending_profiles": review.pending_profiles,
             "other_errors": {
                 key: value
                 for key, value in review.errors.items()
@@ -224,7 +228,7 @@ async def upload(request: Request, db: Session = Depends(get_db)) -> Response:
 
 @router.post("/link")
 async def link_person(request: Request, db: Session = Depends(get_db)) -> Response:
-    """명시적으로 선택한 현재 인원 정보를 요청서에 보완한다. 장부는 쓰지 않는다."""
+    """선택한 인원의 포인트번호를 보완하고 프로필 차이는 별도 확인한다."""
     form = await monthly_form(request)
     month = str(form.get("month", ""))
     try:
@@ -246,13 +250,10 @@ async def link_person(request: Request, db: Session = Depends(get_db)) -> Respon
         )
         if person is None or person.version != version:
             raise ValueError("선택한 인원 정보가 변경되었습니다. 다시 검수하여 후보를 확인하세요.")
+        if row.point_no != person.point_no:
+            reset_target(row)
         row.point_no = person.point_no
         row.link_state = f"manual:{person.point_no}"
-        row.account_type = person.account_type
-        row.name = person.name
-        row.personal_no = person.personal_no or ""
-        row.team = person.team.name if person.team else ""
-        row.grade = person.grade
         # 연결 이전에 입력한 잔액이 다른 사람에게 적용되지 않도록 다시 확인받는다.
         row.carry = ""
     except ValueError as exc:
@@ -273,6 +274,63 @@ async def link_person(request: Request, db: Session = Depends(get_db)) -> Respon
             expected_count=str(form.get("expected_count", "")),
             expected_amount=str(form.get("expected_amount", "")),
             status=400,
+        )
+    return store_review_response(request, db, month, rows, form=form)
+
+
+@router.post("/choose")
+@router.post("/new")
+async def choose_profile(request: Request, db: Session = Depends(get_db)) -> Response:
+    """화면에 표시된 비교에 대한 선택만 초안에 저장한다."""
+    form = await monthly_form(request)
+    month = str(form.get("month", ""))
+    try:
+        rows = raw_rows_from_form(form)
+    except ValueError as exc:
+        return _error_response(request, db, month, str(exc))
+    try:
+        if request.url.path.endswith("/new"):
+            row_id = str(form.get("new_row", ""))
+            field, side = "", ""
+        else:
+            parts = str(form.get("profile_choice", "")).split(":")
+            if len(parts) != 3:
+                raise ValueError("선택할 항목을 확인하세요.")
+            row_id, field, side = parts
+        targets = [row for row in rows if row.row_id == row_id]
+        if len(targets) != 1:
+            raise ValueError("선택할 요청서 행을 확인하세요.")
+        row = targets[0]
+        if request.url.path.endswith("/new"):
+            reset_target(row)
+            row.point_no, row.link_state, row.carry = "", "new", ""
+        else:
+            person = db.scalar(
+                select(Person)
+                .options(joinedload(Person.team))
+                .where(Person.point_no == row.point_no)
+            )
+            if person is None:
+                raise ValueError("연결된 인원이 변경되었습니다. 다시 연결하세요.")
+            choose(row, person, field, side)
+    except ValueError as exc:
+        result = review_rows(db, month, rows)
+        result.token = ""
+        return review_response(
+            request,
+            month,
+            result,
+            request_key=str(form.get("request_key", "")),
+            draft_info={
+                "draft_id": str(form.get("draft_id", "")),
+                "draft_version": str(form.get("draft_version", "")),
+            },
+            input_source=str(form.get("input_source", "manual")),
+            deactivated=deactivated_from_form(form),
+            expected_count=str(form.get("expected_count", "")),
+            expected_amount=str(form.get("expected_amount", "")),
+            message=str(exc),
+            status=409,
         )
     return store_review_response(request, db, month, rows, form=form)
 
@@ -408,6 +466,11 @@ async def confirm(request: Request, db: Session = Depends(get_db)) -> Response:
             status=status,
         )
 
+    if result.pending_profiles:
+        return response(
+            "기존 정보와 다른 항목의 값을 먼저 선택하세요.",
+            409 if form.get("review_token") else 400,
+        )
     if result.errors:
         if "month" in result.errors and form.get("review_token"):
             try:
@@ -442,7 +505,7 @@ async def confirm(request: Request, db: Session = Depends(get_db)) -> Response:
             db.rollback()
             return RedirectResponse(replay.result_url, status_code=303)
         locked = review_rows(db, month, rows, expected_count, expected_amount)
-        if locked.errors or not matches_token(token, locked.digest):
+        if locked.errors or locked.pending_profiles or not matches_token(token, locked.digest):
             result = locked
             db.rollback()
             return response("다른 작업으로 기준이 변경되었습니다. 다시 검수해 주세요.", 409)

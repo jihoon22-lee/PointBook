@@ -54,3 +54,18 @@ def monthly_flow(
         acknowledgement.check()
     page.locator('button:has-text("확정 · 동기화")').last.click()
     page.wait_for_selector("text=처리가 완료되었습니다", timeout=15000)
+
+
+def choose_incoming_profiles(page: Page) -> None:
+    """검수에서 달라진 합성 인원 정보를 명시적으로 선택한다."""
+    pending = 'button[data-choice-pending="yes"][value$=":incoming"]:not([disabled])'
+    while page.locator(pending).count():
+        button = page.locator(pending).first
+        value = button.get_attribute("value")
+        with page.expect_response(
+            lambda response: (
+                response.url.endswith("/monthly/choose") and response.request.method == "POST"
+            )
+        ):
+            button.click()
+        page.wait_for_selector(f'button[value="{value}"][aria-pressed="true"]')

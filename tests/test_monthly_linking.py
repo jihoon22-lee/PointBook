@@ -4,7 +4,7 @@ from sqlalchemy import func, select
 
 from app.models import BalanceRecord, MonthlyDraft, MonthlySnapshot, Person
 from tests.factories import make_person, make_team
-from tests.monthly_helpers import review_fields
+from tests.monthly_helpers import resolve_profile_choices, review_fields
 
 
 def upload(client, name="합성", personal="0011"):
@@ -59,12 +59,19 @@ def test_duplicate_names_require_choice_and_link_preserves_master_and_request(au
     assert linked.status_code == 200
     values = review_fields(linked)
     assert values["point_no_0"] == second.point_no
-    assert values["team_0"] == "현재 팀" and values["grade_0"] == second.grade
+    assert values["team_0"] == "1팀" and values["grade_0"] == "소방사"
+    assert "현재 팀" in linked.text and "이번 입력값" in linked.text
+    assert second.team.name == "현재 팀" and second.grade == "소방위"
     assert values["amount_0"] == "100" and values["carry_0"] == ""
     assert values["note_0"] == "\n첫째\n\n둘째\n"
     assert "1팀" in values["source_line_0"]
     resumed = auth_client.get("/drafts/" + values["draft_id"])
     assert review_fields(resumed)["point_no_0"] == second.point_no
+    assert auth_client.post("/monthly/confirm", data=values).status_code == 400
+    selected = resolve_profile_choices(auth_client, resumed, side="current")
+    values = review_fields(selected)
+    assert values["team_0"] == "현재 팀" and values["grade_0"] == second.grade
+    assert values["note_0"] == "\n첫째\n\n둘째\n"
     values.update(carry_0="30", ack_warnings="yes")
     values[f"deactivated_carry_{first.point_no}"] = "40"
     assert (
@@ -94,8 +101,12 @@ def test_shared_link_without_personal_number_and_duplicate_connection_rejected(a
     person = make_person(db, "", "공용 합성", point_no="00008888", account_type="shared")
     response = upload(auth_client, "공용 합성", "")
     linked = link(auth_client, response, person)
-    assert linked.status_code == 200
-    values = review_fields(linked)
+    assert linked.status_code == 400
+    before = review_fields(linked)
+    assert before["account_type_0"] == "person" and before["point_no_0"] == person.point_no
+    selected = resolve_profile_choices(auth_client, linked, side="current")
+    assert selected.status_code == 200
+    values = review_fields(selected)
     assert values["account_type_0"] == "shared" and values["personal_no_0"] == ""
     for key, value in list(values.items()):
         if key.endswith("_0"):
@@ -112,7 +123,11 @@ def test_relink_clears_carry_and_changed_form_cannot_reuse_review(auth_client, d
     relinked = link(auth_client, linked, other, carry_0="900")
     values = review_fields(relinked)
     assert values["point_no_0"] == other.point_no and values["carry_0"] == ""
-    values.update(carry_0="0", name_0="임의 변경", ack_warnings="yes")
+    resolved = resolve_profile_choices(auth_client, relinked, side="current")
+    values = review_fields(resolved)
+    assert values["name_0"] == other.name and values["personal_no_0"] == other.personal_no
+    assert values["review_token"]
+    values.update(carry_0="0", amount_0="101", ack_warnings="yes")
     values[f"deactivated_carry_{first.point_no}"] = "0"
     assert auth_client.post("/monthly/confirm", data=values).status_code == 409
     assert db.scalar(select(func.count(BalanceRecord.id))) == 0

@@ -63,5 +63,6 @@
   });
   document.getElementById('add-row').addEventListener('click', applyView);
   table.addEventListener('click', function (event) { if (event.target.classList.contains('row-del')) summary(); });
+  window.pointbookReviewInputs = {applyView: applyView};
   summary();
 })();

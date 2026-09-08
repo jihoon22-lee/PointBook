@@ -4,7 +4,7 @@ import io
 import zipfile
 from xml.etree import ElementTree as ET
 
-from conftest import BASE_URL, login
+from conftest import BASE_URL, choose_incoming_profiles, login
 
 MULTILINE_NOTE = "\n=문자열 <비고>\n둘째 줄\n"
 
@@ -130,6 +130,7 @@ def test_numberless_request_links_existing_account_and_resumes(page):
     page.reload()
     assert page.input_value('[name="point_no_0"]') == "00000950"
     assert page.input_value('[name="carry_0"]') == "80"
+    choose_incoming_profiles(page)
     for carry in page.locator('input[name^="deactivated_carry_"]').all():
         carry.fill("0")
     acknowledgement = page.locator('[name="ack_warnings"]')
@@ -176,7 +177,7 @@ def test_thirty_three_numberless_rows_link_without_manual_selection(page):
         'textarea[name="pasted"]',
         "팀\t이름\t계급\t충전액\t개인번호\n"
         + "\n".join(
-            f"합성팀\t{name}\t소방교\t40\t{personal}"
+            f"합성팀\t{name}\t소방사\t40\t{personal}"
             for name, personal in zip(names, personal_numbers)
         ),
     )

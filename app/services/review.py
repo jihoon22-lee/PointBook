@@ -16,6 +16,7 @@ from app.services.balance import previous_totals
 from app.services.dates import current_month, validate_month
 from app.services.identifiers import normalize_point_no
 from app.services.parsing import MAX_REQUEST_ROWS, ROW_FIELDS, RawRequestRow
+from app.services.request_profiles import prepare, reset_target
 from app.services.sync import ACTION_DEACTIVATED, RequestRow, SyncAnalysis, analyze
 from app.services.validation import parse_balance, parse_expected_count, parse_expected_total
 
@@ -35,6 +36,9 @@ class Review:
     previous_amount: int | None = None
     candidates: dict[str, list[dict[str, str]]] = field(default_factory=dict)
     pending_links: dict[str, str] = field(default_factory=dict)
+    row_states: dict[str, str] = field(default_factory=dict)
+    profile_differences: dict[str, dict[str, dict[str, object]]] = field(default_factory=dict)
+    pending_profiles: dict[str, str] = field(default_factory=dict)
 
 
 def raw_rows_from_form(form: FormData, *, clear_source_issues: bool = False) -> list[RawRequestRow]:
@@ -60,6 +64,7 @@ def raw_rows_from_form(form: FormData, *, clear_source_issues: bool = False) -> 
             **values,
             carry=str(form.get(f"carry_{i}", "")),
             link_state=str(form.get(f"link_state_{i}", "")),
+            profile_review=str(form.get(f"profile_review_{i}", "")),
             source_line=str(form.get(f"source_line_{i}", "")),
             source_issue="" if clear_source_issues else str(form.get(f"source_issue_{i}", "")),
         )
@@ -172,6 +177,7 @@ def review_rows(
             by_identity.setdefault(
                 (person.name.strip(), person.personal_no.strip(), person.account_type), []
             ).append(person)
+    by_point = {person.point_no: person for person in people}
     for raw in raw_rows:
         identity = (raw.name.strip(), raw.personal_no.strip(), raw.account_type)
         exact = by_identity.get(identity, []) if all(identity) else []
@@ -182,7 +188,7 @@ def review_rows(
             normalized_point = normalize_point_no(raw.point_no)
         except ValueError:
             normalized_point = ""
-        if raw.link_state not in {"", "manual"} and not automatic and not manual:
+        if raw.link_state not in {"", "manual", "new"} and not automatic and not manual:
             result.errors[raw.row_id] = "인원 연결 상태를 확인하세요."
         if manual and normalized_point != manual[1]:
             raw.link_state, raw.carry = "manual", ""
@@ -194,6 +200,7 @@ def review_rows(
                 raw.point_no, raw.link_state, raw.carry = "", "", ""
         if (
             not raw.point_no.strip()
+            and raw.link_state != "new"
             and not raw.link_state.startswith("manual")
             and not raw.source_issue
             and len(exact) == 1
@@ -202,6 +209,26 @@ def review_rows(
             raw.link_state = f"auto:{raw.point_no}:{signature}"
         if raw.point_no.strip() and normalized_point and raw.link_state in {"", "manual"}:
             raw.link_state = f"manual:{normalized_point}"
+        try:
+            point = normalize_point_no(raw.point_no)
+        except ValueError:
+            point = ""
+        linked_person = by_point.get(point)
+        if raw.link_state == "new" and linked_person:
+            result.errors[raw.row_id] = "이미 등록된 포인트번호입니다. 기존 인원을 연결하세요."
+        if linked_person and raw.link_state != "new":
+            differences = prepare(raw, linked_person)
+            result.profile_differences[raw.row_id] = differences
+            if any(diff["pending"] for diff in differences.values()):
+                result.pending_profiles[raw.row_id] = "기존 정보와 다른 항목의 값을 선택하세요."
+            result.row_states[raw.row_id] = (
+                "auto" if raw.link_state.startswith("auto:") else "manual"
+            )
+        else:
+            if raw.profile_review:
+                reset_target(raw)
+                raw.carry = ""
+            result.row_states[raw.row_id] = "new" if raw.link_state == "new" or point else "pending"
         matches = {p.id: p for p in by_name.get(raw.name.strip(), [])}
         matches.update({p.id: p for p in by_personal.get(raw.personal_no.strip(), [])})
         result.candidates[raw.row_id] = [
@@ -215,7 +242,9 @@ def review_rows(
             result.pending_links[raw.row_id] = (
                 "동일 이름·개인번호: 인원 선택"
                 if len(exact) > 1
-                else "일치 없음: 인원 또는 발급 번호 확인"
+                else "포인트번호 입력 필요"
+                if raw.link_state == "new"
+                else "기존 인원 연결 또는 신규 선택"
             )
     month_error = new_month_error(db, month)
     if month_error:
@@ -232,6 +261,15 @@ def review_rows(
             if not raw.point_no.strip() and not raw.source_issue:
                 raise ValueError(result.pending_links[raw.row_id])
             row = raw.validated()
+            # prepare가 검증한 비교 결과에서만 빈 값의 명시 선택을 파생한다.
+            differences = result.profile_differences.get(raw.row_id, {})
+            for field_name in ("team", "grade"):
+                difference = differences.get(field_name, {})
+                setattr(
+                    row,
+                    f"clear_{field_name}",
+                    difference.get("choice") == "incoming" and difference.get("incoming") == "",
+                )
             if row.point_no in points:
                 raise ValueError("중복된 포인트번호입니다.")
             points[row.point_no] = raw.row_id
@@ -306,7 +344,7 @@ def review_rows(
     result.digest = hashlib.sha256(
         json.dumps(payload, ensure_ascii=False, sort_keys=True).encode()
     ).hexdigest()
-    if not result.errors:
+    if not result.errors and not result.pending_profiles:
         result.token = _serializer().dumps(result.digest)
     return result
 

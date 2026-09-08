@@ -180,7 +180,7 @@ def save_draft(
         )
         draft.review_state = (
             "incomplete"
-            if review.errors or errors
+            if review.errors or review.pending_profiles or errors
             else (
                 "reviewed"
                 if matches_token(payload["review_token"], review.digest)
