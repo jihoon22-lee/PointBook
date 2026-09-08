@@ -124,6 +124,7 @@ h2 { font-size: 1.05rem; margin: 0 0 12px; font-weight: 600; }
 
 /* ---------- 레이아웃 ---------- */
 .container { max-width: 1080px; margin: 0 auto; padding: 24px 16px 64px; }
+.container.review-container { max-width: none; }
 
 .card {
   background: var(--card);
@@ -387,8 +388,27 @@ body:has(.login-wrap) .login-wrap .muted { color: #cbd5e1; }
   position: sticky; left: 0; background: #fff; z-index: 1;
 }
 .review-input-table th:first-child { background: #edf3f9; }
-.review-input-table td { min-width: 110px; vertical-align: top; }
-.review-input-table input { min-width: 75px; }
+/* Compare choices stay within their field; one differing row must not widen the column. */
+.review-input-table { table-layout: fixed; min-width: 1080px; }
+.review-input-table th, .review-input-table td { padding: 8px 6px; vertical-align: top; }
+.review-input-table th:nth-child(1) { width: 140px; }
+.review-input-table th:nth-child(2) { width: 90px; }
+.review-input-table th:nth-child(3) { width: 112px; }
+.review-input-table th:nth-child(4) { width: 92px; }
+.review-input-table th:nth-child(5) { width: 96px; }
+.review-input-table th:nth-child(6), .review-input-table th:nth-child(7) { width: 132px; }
+.review-input-table th:nth-child(9) { width: 82px; }
+.review-input-table th:nth-child(10) { width: 64px; }
+.review-input-table .row-input, .review-input-table select {
+  width: 100%; min-width: 0; max-width: 100%; min-height: 38px; margin: 0; padding: 7px;
+}
+.review-input-table input[data-field="point_no"],
+.review-input-table input[data-field="amount"],
+.review-input-table input[data-field="carry"] { font-variant-numeric: tabular-nums; }
+.review-input-table input[data-field="amount"],
+.review-input-table input[data-field="carry"] { text-align: right; }
+.review-input-table .row-del { width: 100%; padding-left: 4px; padding-right: 4px; }
+.review-input-table.focus-input { min-width: 620px; }
 .review-input-table.focus-input th:nth-child(2), .review-input-table.focus-input td:nth-child(2),
 .review-input-table.focus-input th:nth-child(4), .review-input-table.focus-input td:nth-child(4),
 .review-input-table.focus-input th:nth-child(5), .review-input-table.focus-input td:nth-child(5),
@@ -397,10 +417,10 @@ body:has(.login-wrap) .login-wrap .muted { color: #cbd5e1; }
 .draft-toolbar p { overflow-wrap: anywhere; }
 [hidden] { display: none !important; }
 
-.person-link-cell { width: 240px; min-width: 240px !important; max-width: 240px; }
-.person-name { display: flex; align-items: center; gap: 6px; }
-.person-name .badge { white-space: nowrap; margin: 0; }
-.person-link-editor, .person-source { margin-top: 6px; font-size: .85rem; }
+.person-link-cell { overflow-wrap: anywhere; }
+.person-name { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.person-name .badge { white-space: nowrap; margin: 0; padding: 2px 8px; }
+.person-link-editor, .person-source { margin-top: 4px; font-size: .85rem; }
 .person-link-editor > select { width: 100%; margin: 6px 0; }
 .person-link-editor .btn { margin-bottom: 4px; }
 .row-error { display: block; font-size: .85rem; overflow-wrap: anywhere; }
@@ -410,10 +430,10 @@ body:has(.login-wrap) .login-wrap .muted { color: #cbd5e1; }
 .link-state-auto { background: #d7efdf; color: #205e37; }
 .link-state-manual, .link-state-pending { background: #fff0b9; color: #704e00; }
 .link-state-new { background: #dbeaff; color: #244f89; }
-.profile-choices { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; min-width: 220px; }
-.profile-choice { flex: 1; padding: 7px; white-space: normal; border: 1px solid #b3becb; background: #fff; }
+.profile-choices { display: flex; flex-direction: column; gap: 5px; margin-top: 8px; min-width: 0; }
+.profile-choice { width: 100%; min-width: 0; padding: 6px 3px; white-space: normal; border: 2px solid #b3becb; background: #fff; }
 .profile-choice span, .profile-choice strong { display: block; }
 .profile-choice span { font-size: .75rem; color: #526176; }
 .profile-choice strong { margin-top: 4px; overflow-wrap: anywhere; }
-.profile-choice.is-selected { border: 2px solid #2463ac; background: #e6f0ff; }
-.profile-choices small { flex-basis: 100%; white-space: normal; }
+.profile-choice.is-selected { border-color: #2463ac; background: #e6f0ff; }
+.profile-choices small { white-space: normal; overflow-wrap: anywhere; }
