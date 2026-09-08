@@ -1,11 +1,23 @@
 {% extends "base.html" %}
 {% block title %}요청서 검수 - PointBook{% endblock %}
 {% block content %}
+{% macro profile_choices(row, field) %}
+  {% set difference = profile_differences.get(row.row_id, {}).get(field) %}
+  {% if difference %}
+  <div class="profile-choices" role="group" aria-label="{{ row.name }} {{ {'name':'이름','personal_no':'개인번호','team':'팀','grade':'계급','account_type':'유형'}[field] }} 선택">
+    {% for choice, label in [('current','현재 등록값'),('incoming','이번 입력값')] %}
+    <button type="submit" class="btn btn-sm profile-choice{% if difference.choice == choice %} is-selected{% endif %}" formaction="/monthly/choose" name="profile_choice" value="{{ row.row_id }}:{{ field }}:{{ choice }}" formnovalidate aria-pressed="{{ 'true' if difference.choice == choice else 'false' }}" {% if difference.pending %}data-choice-pending="yes"{% endif %} {% if choice == 'incoming' and not difference.incoming_allowed %}disabled{% endif %}><span>{{ label }}</span><strong>{% if field == 'account_type' %}{{ {'person':'일반','shared':'공용'}.get(difference[choice], difference[choice]) or '(비어 있음)' }}{% else %}{{ difference[choice] or '(비어 있음)' }}{% endif %}</strong></button>
+    {% endfor %}
+    {% if not difference.incoming_allowed %}<small>유형 변경은 인원 편집에서 진행하세요.</small>{% endif %}
+  </div>
+  {% endif %}
+{% endmacro %}
 <h1>요청서 검수 · 확정</h1>
 {% if error %}<p class="alert alert-error" role="alert">{{ error }}</p>{% endif %}
 {% if other_errors %}<div class="alert alert-error" role="alert"><strong>입력 내용을 확인해 주세요.</strong><ul>{% for key, message in other_errors.items() %}<li>{{ message }}</li>{% endfor %}</ul></div>{% endif %}
-{% if pending_links %}<p class="alert alert-warning" role="status">인원 연결 확인 {{ pending_links|length }}명: 이름·개인번호 중복 또는 일치하지 않는 행만 확인하세요. 신규 번호 발급 전에는 초안으로 보관할 수 있습니다.</p>{% endif %}
+{% if pending_links %}<p class="alert alert-warning" role="status">인원 연결 확인 {{ pending_links|length }}명: 이름·개인번호 중복 또는 일치하지 않는 행만 확인하세요. 신규 포인트번호 입력 전에는 초안으로 보관할 수 있습니다.</p>{% endif %}
 <p class="muted">이름과 개인번호가 모두 일치하는 기존 인원은 자동으로 연결합니다. 연결 변경에서 다른 인원을 선택할 수 있습니다. 신규 포인트번호는 외부 시스템에서 발급받습니다.</p>
+{% if pending_profiles %}<p class="alert alert-warning" role="status">인원 정보 확인 {{ pending_profiles|length }}명: 현재 등록값과 이번 입력값 중 사용할 값을 선택하세요. 확인을 마치면 변경 예상을 다시 계산합니다.</p>{% endif %}
 <p class="muted">목록을 수정하면 <strong>수정 내용 재검수</strong>를 눌러 변경 예상을 확인하세요. 자동 연결은 입력한 이월을 유지하며, 연결 대상을 바꾸면 이월 잔액을 다시 입력합니다.</p>
 
 <form method="post" action="/monthly/confirm" id="review-form">
@@ -41,44 +53,48 @@
         <p class="muted">필터로 숨긴 행도 전체 저장·검증·확정 대상입니다. 이월 칸에서 Enter를 누르면 다음 잔액으로 이동합니다.</p>
       </div>
       <table id="rows" class="review-input-table">
-        <thead><tr><th>인원 연결 / 발급 번호</th><th>유형</th><th>개인번호</th><th>이름</th><th>팀</th><th>계급</th><th>충전액</th><th>비고</th><th>이월 잔액</th><th></th></tr></thead>
+        <thead><tr><th>이름</th><th>개인번호</th><th>포인트번호</th><th>팀</th><th>계급</th><th>충전액</th><th>이월잔액</th><th>비고</th><th>유형</th><th>행 관리</th></tr></thead>
         <tbody>
         {% for row in rows %}
           {% set row_index = loop.index0 %}
           {% set row_change = row_changes.get(row.point_no|replace(' ','')|replace('-',''),{}) %}
-          <tr data-action="{{ row_change.get('action','') }}" data-team-changed="{{ 'yes' if row_change.get('team_changed') else 'no' }}" data-profile-changed="{{ 'yes' if row_change.get('profile_changed') else 'no' }}" data-row-id="{{ row.row_id }}" data-original-order="{{ loop.index0 }}" data-has-error="{{ 'yes' if errors.get(row.row_id) else 'no' }}">
+          {% set row_state = row_states.get(row.row_id, 'pending') %}
+          <tr class="review-row-{{ row_state }}" data-link-status="{{ row_state }}" data-action="{{ row_change.get('action','') }}" data-team-changed="{{ 'yes' if row_change.get('team_changed') or profile_differences.get(row.row_id, {}).get('team') else 'no' }}" data-profile-changed="{{ 'yes' if row_change.get('profile_changed') or profile_differences.get(row.row_id) else 'no' }}" data-row-id="{{ row.row_id }}" data-original-order="{{ loop.index0 }}" data-has-error="{{ 'yes' if errors.get(row.row_id) else 'no' }}">
             <td class="person-link-cell">
-              <input type="hidden" data-field="row_id" name="row_id_{{ loop.index0 }}" value="{{ row.row_id }}">
-              <input type="hidden" data-field="source_issue" name="source_issue_{{ loop.index0 }}" value="{{ row.source_issue }}">
-              <input type="hidden" data-field="source_line" name="source_line_{{ loop.index0 }}" value="{{ row.source_line }}">
-              <input type="hidden" data-field="link_state" name="link_state_{{ loop.index0 }}" value="{{ row.link_state }}">
-              {% if row.point_no.strip() %}<span class="badge">{{ '자동 연결' if row.link_state.startswith('auto:') else ('신규' if row_change.get('action') == 'new' else '연결됨') }}</span>{% endif %}
-              {% if pending_links.get(row.row_id) %}<span class="link-pending">{{ pending_links[row.row_id] }}</span>{% endif %}
-              <details class="person-link-editor" {% if not row.point_no.strip() %}open{% endif %}>
-                <summary>{{ '연결 변경' if row.point_no.strip() else '인원 / 번호 입력' }}</summary>
+              {% for field in ['row_id','source_issue','source_line','link_state','profile_review'] %}<input type="hidden" data-field="{{ field }}" name="{{ field }}_{{ row_index }}" value="{{ row[field] }}">{% endfor %}
+              <div class="person-name"><input type="text" data-field="name" name="name_{{ row_index }}" value="{{ row.name }}" class="row-input" aria-label="{{ loop.index }}행 이름"><span class="badge link-state-{{ row_state }}">{{ {'auto':'자동 연결','manual':'직접 연결','pending':'연결 확인','new':'신규'}[row_state] }}</span></div>
+              {{ profile_choices(row, 'name') }}
+              <details class="person-link-editor" {% if row_state == 'pending' %}open{% endif %}>
+                <summary>{{ '기존 인원 연결' if row_state in ['pending','new'] else '연결 변경' }}</summary>
                 {% if candidates.get(row.row_id) %}
-                <select name="link_person_{{ loop.index0 }}" data-field="link_person" aria-label="{{ loop.index }}행 기존 인원 후보">
+                <select name="link_person_{{ row_index }}" data-field="link_person" aria-label="{{ loop.index }}행 기존 인원 후보">
                   <option value="">연결할 인원 선택</option>
                   {% for candidate in candidates[row.row_id] %}<option value="{{ candidate.value }}">{{ candidate.label }}</option>{% endfor %}
                 </select>
                 <button type="submit" class="btn btn-sm" formaction="/monthly/link" name="link_row" value="{{ row.row_id }}" formnovalidate>선택 인원 연결</button>
                 {% endif %}
-                <input type="text" data-field="point_no" name="point_no_{{ loop.index0 }}" value="{{ row.point_no }}" class="row-input" placeholder="외부 발급 번호" aria-label="{{ loop.index }}행 포인트번호">
-                {% if row.source_line %}<details><summary>가져온 원문</summary><span>{{ row.source_line }}</span></details>{% endif %}
+                {% if row_state != 'new' %}<button type="submit" class="btn btn-sm" formaction="/monthly/new" name="new_row" value="{{ row.row_id }}" formnovalidate>신규로 추가</button>{% endif %}
+                {% if row.source_line %}<details class="person-source"><summary>가져온 원문</summary><span>{{ row.source_line }}</span></details>{% endif %}
               </details>
               {% if other_errors.get(row.row_id) %}<span class="alert-error row-error">{{ other_errors[row.row_id] }}</span>{% endif %}
             </td>
-            <td><select data-field="account_type" name="account_type_{{ loop.index0 }}" aria-label="{{ loop.index }}행 계정 유형">
-              {% if row.account_type not in ['person', 'shared'] %}<option value="{{ row.account_type }}" selected>{{ row.account_type or '유형 선택' }}</option>{% endif %}
-              <option value="person" {% if row.account_type == 'person' %}selected{% endif %}>일반</option>
-              <option value="shared" {% if row.account_type == 'shared' %}selected{% endif %}>공용</option>
-            </select></td>
-            {% for field, label in [('personal_no','개인번호'),('name','이름'),('team','팀'),('grade','계급'),('amount','충전액'),('note','비고')] %}
-            <td>{% if field == 'note' %}<textarea data-field="note" name="note_{{ row_index }}" rows="1" class="row-input" aria-label="{{ row_index + 1 }}행 {{ label }}">
-{{ row.note }}</textarea>{% else %}<input type="text" data-field="{{ field }}" name="{{ field }}_{{ row_index }}" value="{{ row[field] }}" class="row-input" aria-label="{{ row_index + 1 }}행 {{ label }}" {% if field == 'amount' %}inputmode="numeric"{% endif %}>{% endif %}</td>
+            {% for field, label in [('personal_no','개인번호'),('point_no','포인트번호'),('team','팀'),('grade','계급'),('amount','충전액'),('carry','이월 잔액'),('note','비고'),('account_type','유형')] %}
+            <td>
+              {% if field == 'account_type' %}
+              <select data-field="account_type" name="account_type_{{ row_index }}" aria-label="{{ row_index + 1 }}행 계정 유형">
+                {% if row.account_type not in ['person', 'shared'] %}<option value="{{ row.account_type }}" selected>{{ row.account_type or '유형 선택' }}</option>{% endif %}
+                <option value="person" {% if row.account_type == 'person' %}selected{% endif %}>일반</option>
+                <option value="shared" {% if row.account_type == 'shared' %}selected{% endif %}>공용</option>
+              </select>
+              {% elif field == 'note' %}<textarea data-field="note" name="note_{{ row_index }}" rows="1" class="row-input" aria-label="{{ row_index + 1 }}행 {{ label }}">
+{{ row.note }}</textarea>
+              {% else %}
+              {% set normalized = row.point_no|replace(' ', '')|replace('-', '') %}
+              <input type="text" data-field="{{ field }}" name="{{ field }}_{{ row_index }}" value="{{ row[field] }}" class="row-input" aria-label="{{ row_index + 1 }}행 {{ label }}" {% if field in ['amount','carry'] %}inputmode="numeric"{% endif %} {% if field == 'carry' %}placeholder="{% if normalized in prev_totals %}직전 잔액: {{ prev_totals[normalized]|number_format }}원{% else %}이월 잔액{% endif %}" required{% elif field == 'point_no' %}placeholder="포인트번호"{% endif %}>
+              {% endif %}
+              {{ profile_choices(row, field) }}
+            </td>
             {% endfor %}
-            {% set normalized = row.point_no|replace(' ', '')|replace('-', '') %}
-            <td><input type="text" inputmode="numeric" data-field="carry" name="carry_{{ loop.index0 }}" value="{{ row.carry }}" class="row-input" aria-label="{{ loop.index }}행 이월 잔액" placeholder="{% if normalized in prev_totals %}직전 잔액: {{ prev_totals[normalized]|number_format }}원{% else %}이월 잔액{% endif %}" required></td>
             <td><button type="button" class="btn btn-sm btn-danger row-del">삭제</button></td>
           </tr>
         {% endfor %}
@@ -127,4 +143,5 @@
 <script src="/static/js/review.js" defer></script>
 <script src="/static/js/drafts.js" defer></script>
 <script src="/static/js/review-input.js" defer></script>
+<script src="/static/js/review-position.js" defer></script>
 {% endblock %}

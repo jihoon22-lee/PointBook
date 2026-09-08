@@ -6,7 +6,7 @@ from app.services.balance import build_balance_records, create_monthly_snapshot
 from app.services.parsing import RawRequestRow, parse_pasted_raw
 from app.services.review import review_rows
 from app.services.sync import RequestRow, analyze
-from tests.factories import make_person
+from tests.factories import make_person, make_team
 from tests.monthly_helpers import review_fields, reviewed_confirm
 
 
@@ -78,7 +78,9 @@ def test_changed_request_requires_new_review(auth_client, db, change):
 
 
 def test_changed_database_requires_new_review(auth_client, db):
-    person = make_person(db, "11", "합성 이름", point_no="00000001")
+    person = make_person(
+        db, "11", "합성 이름", grade="소방사", team=make_team(db, "팀 A"), point_no="00000001"
+    )
     prepared = review_fields(auth_client.post("/monthly/review", data=data_row()))
     person.name = "다른 탭 수정"
     db.commit()
@@ -89,7 +91,7 @@ def test_changed_database_requires_new_review(auth_client, db):
 
 def test_deleted_row_gets_new_deactivation_carry_without_reusing_deleted_value(auth_client, db):
     old = make_person(db, "11", "기존", point_no="00000001")
-    other = make_person(db, "22", "유지", point_no="00000002")
+    other = make_person(db, "22", "유지", grade="", point_no="00000002")
     data = data_row(
         point_no_1=other.point_no,
         personal_no_1=other.personal_no,
@@ -174,7 +176,9 @@ def test_unknown_type_and_duplicate_stable_ids_rejected(auth_client):
 
 
 def test_past_insertion_blocked_and_gap_warned(auth_client, db):
-    person = make_person(db, "11", "합성 이름", point_no="00000001")
+    person = make_person(
+        db, "11", "합성 이름", grade="소방사", team=make_team(db, "팀 A"), point_no="00000001"
+    )
     create_monthly_snapshot(
         db,
         "2026-06",

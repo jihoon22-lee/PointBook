@@ -101,6 +101,7 @@
           actionField.type = 'hidden'; actionField.name = button.name; actionField.value = button.value;
           actionField.setAttribute('data-submit-action', 'yes'); form.appendChild(actionField);
         }
+        if (window.pointbookReviewView) window.pointbookReviewView.capture(button);
         var submitButtons = form.querySelectorAll('button[type="submit"]');
         for (var i = 0; i < submitButtons.length; i++) submitButtons[i].disabled = true;
         form.submit();

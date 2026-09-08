@@ -42,12 +42,22 @@
     var tr = document.createElement('tr');
     var id = 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2);
     tr.setAttribute('data-row-id', id);
-    var first = tr.insertCell(); field(first, 'row_id', id, true); field(first, 'link_state', '', true); field(first, 'point_no');
+    tr.className = 'review-row-new';
+    tr.setAttribute('data-link-status', 'new');
+    tr.setAttribute('data-action', 'new');
+    var first = tr.insertCell(); first.className = 'person-link-cell';
+    field(first, 'row_id', id, true); field(first, 'link_state', 'new', true);
+    field(first, 'profile_review', '', true); field(first, 'source_line', '', true); field(first, 'source_issue', '', true);
+    var nameGroup = document.createElement('div'); nameGroup.className = 'person-name';
+    field(nameGroup, 'name');
+    var badge = document.createElement('span'); badge.className = 'badge link-state-new'; badge.textContent = '신규';
+    nameGroup.appendChild(badge); first.appendChild(nameGroup);
+    ['personal_no','point_no','team','grade','amount','carry','note'].forEach(function (key) { field(tr.insertCell(), key); });
     var typeCell = tr.insertCell();
     var select = document.createElement('select'); select.setAttribute('data-field', 'account_type');
+    select.setAttribute('aria-label', '계정 유형');
     select.innerHTML = '<option value="person">일반</option><option value="shared">공용</option>';
     typeCell.appendChild(select);
-    ['personal_no','name','team','grade','amount','note','carry'].forEach(function (key) { field(tr.insertCell(), key); });
     var button = document.createElement('button'); button.type = 'button';
     button.className = 'btn btn-sm btn-danger row-del'; button.textContent = '삭제';
     tr.insertCell().appendChild(button); table.tBodies[0].appendChild(tr); reindex(); changed();
@@ -59,8 +69,9 @@
   });
   form.addEventListener('submit', function (event) {
     var submitter = event.submitter || document.activeElement;
-    if (submitter && (submitter.getAttribute('formaction') === '/monthly/review' || submitter.getAttribute('formaction') === '/monthly/link')) {
+    if (submitter && ['/monthly/review', '/monthly/link', '/monthly/choose', '/monthly/new'].indexOf(submitter.getAttribute('formaction')) >= 0) {
       if (window.pointbookDraft) { event.preventDefault(); window.pointbookDraft.submit(submitter); }
+      else if (window.pointbookReviewView) window.pointbookReviewView.capture(submitter);
       return;
     }
     if (!document.getElementById('review-token').value || !window.confirm('이 내용으로 확정할까요?')) {

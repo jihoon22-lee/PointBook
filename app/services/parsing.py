@@ -27,6 +27,7 @@ class RawRequestRow:
     source_line: str = ""
     source_issue: str = ""
     link_state: str = ""
+    profile_review: str = ""
 
     def __post_init__(self) -> None:
         # Excel LF와 브라우저 폼 CRLF를 같은 비고로 검수한다. 빈 줄도 보존한다.

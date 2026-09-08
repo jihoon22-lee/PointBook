@@ -10,7 +10,7 @@ from app.models import BalanceRecord, MonthlyDraft, Person
 from app.services.parsing import RawRequestRow
 from app.services.review import review_rows
 from tests.factories import make_person
-from tests.monthly_helpers import review_fields
+from tests.monthly_helpers import resolve_profile_choices, review_fields
 from tests.test_monthly_linking import link, upload
 from tests.test_xlsx import workbook_data
 
@@ -41,6 +41,15 @@ def test_33_rows_auto_connect_without_manual_click_and_keep_request_values(auth_
     assert json.loads(draft.payload_json)["rows"][0]["point_no"] == "00000001"
     resumed = auth_client.get("/drafts/" + values["draft_id"])
     assert review_fields(resumed)["point_no_32"] == "00000033"
+    blocked = auth_client.post("/monthly/confirm", data=values)
+    assert blocked.status_code == 400
+    assert db.scalar(select(func.count(BalanceRecord.id))) == 0
+    resolved = resolve_profile_choices(auth_client, resumed, side="incoming")
+    values = review_fields(resolved)
+    assert all(person.team is None for person in db.scalars(select(Person)))
+    restored = auth_client.get("/drafts/" + values["draft_id"])
+    values = review_fields(restored)
+    assert values["team_32"] == "요청 팀" and values["carry_32"] == "25"
     values["ack_warnings"] = "yes"
     for _ in range(2):
         assert (
@@ -49,6 +58,11 @@ def test_33_rows_auto_connect_without_manual_click_and_keep_request_values(auth_
         )
     assert db.scalar(select(func.count(Person.id))) == 33
     assert db.scalar(select(func.sum(BalanceRecord.total))) == 4125
+    db.expire_all()
+    assert all(
+        person.team.name == "요청 팀" and person.grade == "소방교"
+        for person in db.scalars(select(Person))
+    )
 
 
 @pytest.mark.parametrize(
@@ -67,7 +81,8 @@ def test_duplicate_pair_is_only_exception_and_manual_override_sticks(auth_client
     result = upload(auth_client)
     assert result.status_code == 400
     assert "인원 연결 확인 1명" in result.text
-    assert "동일 이름·개인번호" in result.text
+    assert f"{first.id}:{first.version}" in result.text
+    assert f"{other.id}:{other.version}" in result.text
     linked = link(auth_client, result, other)
     values = review_fields(linked)
     assert values["link_state_0"] == f"manual:{other.point_no}"
@@ -104,13 +119,14 @@ def test_auto_connection_rechecks_changed_identity_and_clears_old_carry(auth_cli
 def test_new_duplicate_after_auto_review_requires_choice(auth_client, db):
     make_person(db, "0011", "합성", point_no="00000011")
     values = review_fields(upload(auth_client))
-    make_person(db, "0011", "합성", point_no="00000012")
+    duplicate = make_person(db, "0011", "합성", point_no="00000012")
     values["carry_0"] = "700"
     response = auth_client.post("/monthly/confirm", data=values)
     assert response.status_code == 400
     current = review_fields(response)
     assert current["point_no_0"] == "" and current["carry_0"] == ""
-    assert "동일 이름·개인번호" in response.text
+    assert f"{duplicate.id}:{duplicate.version}" in response.text
+    assert "인원 연결 확인 1명" in response.text
 
 
 def test_direct_point_override_is_not_auto_replaced(auth_client, db):
