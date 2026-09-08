@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}요청서 검수 - PointBook{% endblock %}
+{% block container_class %} review-container{% endblock %}
 {% block content %}
 {% macro profile_choices(row, field) %}
   {% set difference = profile_differences.get(row.row_id, {}).get(field) %}
