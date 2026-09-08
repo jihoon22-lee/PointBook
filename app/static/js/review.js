@@ -42,7 +42,7 @@
     var tr = document.createElement('tr');
     var id = 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2);
     tr.setAttribute('data-row-id', id);
-    var first = tr.insertCell(); field(first, 'row_id', id, true); field(first, 'point_no');
+    var first = tr.insertCell(); field(first, 'row_id', id, true); field(first, 'link_state', '', true); field(first, 'point_no');
     var typeCell = tr.insertCell();
     var select = document.createElement('select'); select.setAttribute('data-field', 'account_type');
     select.innerHTML = '<option value="person">일반</option><option value="shared">공용</option>';

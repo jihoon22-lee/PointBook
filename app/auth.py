@@ -27,7 +27,7 @@ async def verify_csrf(request: Request) -> AsyncIterator[None]:
             supplied: object = request.headers.get("x-csrf-token")
             if supplied is None:
                 form = await request.form(
-                    max_files=1, max_fields=30000, max_part_size=2 * 1024 * 1024
+                    max_files=1, max_fields=35000, max_part_size=2 * 1024 * 1024
                 )
                 supplied = form.get("csrf_token")
             if (

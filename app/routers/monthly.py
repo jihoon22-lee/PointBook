@@ -50,7 +50,7 @@ ALLOWED_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".heic", ".xlsx"}
 
 
 async def monthly_form(request: Request) -> FormData:
-    return await request.form(max_files=1, max_fields=MAX_REQUEST_ROWS * 14 + 20)
+    return await request.form(max_files=1, max_fields=MAX_REQUEST_ROWS * 16 + 50)
 
 
 def _parse_row_fields(form: FormData) -> list[RequestRow]:
@@ -134,6 +134,12 @@ def review_response(
             "draft_keep_days": get_settings().draft_keep_days,
             "rows": review.raw_rows,
             "candidates": review.candidates,
+            "pending_links": review.pending_links,
+            "other_errors": {
+                key: value
+                for key, value in review.errors.items()
+                if key not in review.pending_links
+            },
             "analysis": review.analysis,
             "row_changes": {
                 change.point_no: {
@@ -241,6 +247,7 @@ async def link_person(request: Request, db: Session = Depends(get_db)) -> Respon
         if person is None or person.version != version:
             raise ValueError("선택한 인원 정보가 변경되었습니다. 다시 검수하여 후보를 확인하세요.")
         row.point_no = person.point_no
+        row.link_state = f"manual:{person.point_no}"
         row.account_type = person.account_type
         row.name = person.name
         row.personal_no = person.personal_no or ""
@@ -308,7 +315,7 @@ def store_review_response(
             owner_id=int(request.session["admin_id"]),
             payload=draft_payload(
                 month,
-                rows,
+                result.raw_rows,
                 deactivated=deactivated,
                 expected_count=expected_count,
                 expected_amount=expected_amount,
@@ -414,16 +421,16 @@ async def confirm(request: Request, db: Session = Depends(get_db)) -> Response:
         return response()
     if replay_error:
         return response(replay_error, 409)
-    carries, errors = carry_values(result, deactivated)
-    if errors:
-        result.errors.update(errors)
-        return response("모든 처리 대상의 이월 잔액을 확인해 주세요.")
     token = str(form.get("review_token", ""))
     if not matches_token(token, result.digest):
         return response(
             "목록·월·기준 정보가 변경되었거나 검수가 만료되었습니다. 새 변경 예상을 확인하고 다시 확정하세요.",
             409,
         )
+    carries, errors = carry_values(result, deactivated)
+    if errors:
+        result.errors.update(errors)
+        return response("모든 처리 대상의 이월 잔액을 확인해 주세요.")
     if result.warnings and form.get("ack_warnings") != "yes":
         return response("처리 월과 누락·합계 경고를 확인한 뒤 확인란을 선택해 주세요.")
     # SQLite writer를 먼저 직렬화하고 승인한 상태를 같은 트랜잭션 안에서 재검증한다.

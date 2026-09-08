@@ -12,7 +12,7 @@
 <div class="card">
   <h2>요청서 등록</h2>
   <p class="muted">요청서 사진을 업로드하거나, 표를 복사해 붙여넣어 검수할 수 있습니다. 사진은 AI가 인식하며, 표준 Excel과 붙여넣기는 외부 전송 없이 표를 직접 읽습니다.<br>
-    붙여넣기 형식(탭 구분, 제목 포함): 팀 이름 계급 충전액 개인번호. 포인트번호 없이 입력한 뒤 검수에서 기존 인원을 연결합니다. 신규는 외부 포인트 시스템에서 번호 발급 후 확정하며, 발급 전에는 초안으로 보관합니다. 기존 번호 포함 양식도 지원합니다.</p>
+    붙여넣기 형식(탭 구분, 제목 포함): 팀 이름 계급 충전액 개인번호. 이름과 개인번호가 모두 일치하는 기존 인원은 자동 연결합니다. 중복·미일치만 검수에서 확인합니다. 신규는 외부 포인트 시스템에서 번호 발급 후 확정하며, 발급 전에는 초안으로 보관합니다. 기존 번호 포함 양식도 지원합니다.</p>
   {% if ai_provider == 'mock' %}<p class="alert alert-warning">개발용 모의 인식입니다. 사진 내용 대신 예시 목록을 반환합니다.</p>{% else %}<p class="muted">사진은 Gemini로 전송해 인식합니다. 원본 사진은 서버에 영구 보관하지 않습니다. 붙여넣기는 외부 AI로 전송하지 않습니다.</p>{% endif %}
   <form method="post" action="/monthly/upload" enctype="multipart/form-data" id="monthly-upload">
     <input type="hidden" name="csrf_token" value="{{ csrf_token|default('') }}">

@@ -56,7 +56,7 @@ def draft_session(request: Request) -> Response:
 
 @router.post("/save")
 async def draft_save(request: Request, db: Session = Depends(get_db)) -> Response:
-    form = await request.form(max_files=0, max_fields=MAX_REQUEST_ROWS * 14 + 30)
+    form = await request.form(max_files=0, max_fields=MAX_REQUEST_ROWS * 16 + 50)
     try:
         payload = payload_from_form(form)
         fork = form.get("fork") == "yes"

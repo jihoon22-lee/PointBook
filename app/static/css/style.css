@@ -399,3 +399,12 @@ body:has(.login-wrap) .login-wrap .muted { color: #cbd5e1; }
 .review-input-table.focus-input th:nth-child(8), .review-input-table.focus-input td:nth-child(8) { display: none; }
 .draft-toolbar p { overflow-wrap: anywhere; }
 [hidden] { display: none !important; }
+
+/* 자동 연결한 행은 상태만 간결하게 표시하고 변경 도구는 접어 둔다. */
+.person-link-cell { width: 180px; min-width: 180px !important; max-width: 180px; }
+.review-input-table td:nth-child(4), .review-input-table th:nth-child(4) { left: 180px; }
+.person-link-editor { margin-top: 4px; font-size: .85rem; }
+.person-link-editor > select, .person-link-editor > input { width: 100%; max-width: 160px; margin: 4px 0; }
+.person-link-editor .btn { margin-bottom: 4px; }
+.link-pending, .row-error { display: block; font-size: .85rem; overflow-wrap: anywhere; }
+.link-pending { color: #805b13; }

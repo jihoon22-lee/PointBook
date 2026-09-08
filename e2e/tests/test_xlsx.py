@@ -115,23 +115,21 @@ def test_numberless_request_links_existing_account_and_resumes(page):
     page.fill('input[name="month"]', "2100-02")
     page.fill(
         'textarea[name="pasted"]',
-        "팀\t이름\t계급\t충전액\t개인번호\n합성팀\tE2E엑셀\t소방사\t40\t950",
+        "순번\t계정 구분\t팀\t이름\t계급\t충전액\t개인번호\t비고\t이월 잔액\n"
+        "1\tperson\t합성팀\tE2E엑셀\t소방사\t40\t950\t자동 연결 보존\t80",
     )
     page.click('#monthly-upload button[type="submit"]')
-    page.wait_for_selector('select[name="link_person_0"]')
-    assert page.locator("button.confirm-monthly").is_disabled()
-    assert page.input_value('[name="point_no_0"]') == ""
-    page.fill('[name="carry_0"]', "999")
-    page.select_option('select[name="link_person_0"]', index=1)
-    # 자동 저장과 연결 submit이 겹쳐도 선택한 행/대상이 전달되어야 한다.
-    page.click('button[formaction="/monthly/link"]')
-    page.wait_for_function("document.querySelector('[name=point_no_0]').value === '00000950'")
+    page.wait_for_selector("text=요청서 검수")
     assert page.input_value('[name="point_no_0"]') == "00000950"
-    assert page.input_value('[name="carry_0"]') == ""
+    assert page.input_value('[name="link_state_0"]').startswith("auto:")
+    assert page.input_value('[name="carry_0"]') == "80"
     assert page.input_value('[name="amount_0"]') == "40"
+    assert page.input_value('[name="grade_0"]') == "소방사"
+    assert page.input_value('[name="note_0"]') == "자동 연결 보존"
+    assert page.locator("details.person-link-editor[open]").count() == 0
     page.reload()
     assert page.input_value('[name="point_no_0"]') == "00000950"
-    page.fill('[name="carry_0"]', "80")
+    assert page.input_value('[name="carry_0"]') == "80"
     for carry in page.locator('input[name^="deactivated_carry_"]').all():
         carry.fill("0")
     acknowledgement = page.locator('[name="ack_warnings"]')
@@ -142,6 +140,91 @@ def test_numberless_request_links_existing_account_and_resumes(page):
     page.goto(f"{BASE_URL}/people")
     assert page.locator('a:has-text("E2E엑셀")').count() == 1
     page.click('a:has-text("E2E엑셀")')
+    assert "120원" in page.text_content("body")
+
+
+def test_thirty_three_numberless_rows_link_without_manual_selection(page):
+    login(page)
+    # 외부에서 발급된 것으로 가정한 합성 번호로 기존 인원 33명을 등록한다.
+    page.goto(f"{BASE_URL}/monthly")
+    page.fill('input[name="month"]', "2100-03")
+    names = [f"자동연결합성{i:02d}" for i in range(33)]
+    personal_numbers = [str(8100 + i) for i in range(33)]
+    point_numbers = [f"{8100 + i:08d}" for i in range(33)]
+    page.fill(
+        'textarea[name="pasted"]',
+        "팀\t이름\t계급\t충전액\t개인번호\t포인트번호\n"
+        + "\n".join(
+            f"합성팀\t{name}\t소방사\t100\t{personal}\t{point}"
+            for name, personal, point in zip(names, personal_numbers, point_numbers)
+        ),
+    )
+    page.click('#monthly-upload button[type="submit"]')
+    page.wait_for_selector("text=요청서 검수")
+    for carry in page.locator('input[name^="carry_"], input[name^="deactivated_carry_"]').all():
+        carry.fill("0")
+    acknowledgement = page.locator('[name="ack_warnings"]')
+    if acknowledgement.count():
+        acknowledgement.check()
+    page.click("button.confirm-monthly")
+    page.wait_for_selector("text=처리가 완료되었습니다")
+
+    # 번호가 없는 다섯 열만 올려도 모든 행이 기존 계정으로 연결된다.
+    page.goto(f"{BASE_URL}/monthly")
+    page.fill('input[name="month"]', "2100-04")
+    page.fill(
+        'textarea[name="pasted"]',
+        "팀\t이름\t계급\t충전액\t개인번호\n"
+        + "\n".join(
+            f"합성팀\t{name}\t소방교\t40\t{personal}"
+            for name, personal in zip(names, personal_numbers)
+        ),
+    )
+    page.click('#monthly-upload button[type="submit"]')
+    page.wait_for_selector("text=요청서 검수")
+    rows = page.locator("#rows tbody > tr")
+    assert rows.count() == 33
+    assert (
+        page.locator('input[data-field="point_no"]').evaluate_all(
+            "inputs => inputs.map(input => input.value)"
+        )
+        == point_numbers
+    )
+    assert page.locator('input[data-field="link_state"]').evaluate_all(
+        "inputs => inputs.every(input => input.value.startsWith('auto:'))"
+    )
+    assert page.locator("details.person-link-editor[open]").count() == 0
+    assert (
+        rows.evaluate_all(
+            "rows => Math.max(...rows.map(row => row.getBoundingClientRect().height))"
+        )
+        < 110
+    )
+    for carry in page.locator('input[name^="carry_"]').all():
+        carry.fill("80")
+    page.click("#draft-save")
+    page.wait_for_function(
+        "document.getElementById('draft-status').textContent.indexOf('저장 완료') >= 0"
+    )
+    page.reload()
+    assert page.locator("#rows tbody > tr").count() == 33
+    assert page.locator('input[data-field="carry"]').evaluate_all(
+        "inputs => inputs.every(input => input.value === '80')"
+    )
+    assert (
+        page.locator('input[data-field="point_no"]').evaluate_all(
+            "inputs => inputs.map(input => input.value)"
+        )
+        == point_numbers
+    )
+    # 선택기나 연결 버튼을 한 번도 사용하지 않고 검수된 33명을 확정한다.
+    acknowledgement = page.locator('[name="ack_warnings"]')
+    if acknowledgement.count():
+        acknowledgement.check()
+    page.click("button.confirm-monthly")
+    page.wait_for_selector("text=처리가 완료되었습니다")
+    page.goto(f"{BASE_URL}/people")
+    page.click(f'a:has-text("{names[0]}")')
     assert "120원" in page.text_content("body")
 
 
