@@ -50,7 +50,7 @@ ALLOWED_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".heic", ".xlsx"}
 
 
 async def monthly_form(request: Request) -> FormData:
-    return await request.form(max_files=1, max_fields=MAX_REQUEST_ROWS * 14 + 20)
+    return await request.form(max_files=1, max_fields=MAX_REQUEST_ROWS * 16 + 50)
 
 
 def _parse_row_fields(form: FormData) -> list[RequestRow]:
@@ -134,6 +134,12 @@ def review_response(
             "draft_keep_days": get_settings().draft_keep_days,
             "rows": review.raw_rows,
             "candidates": review.candidates,
+            "pending_links": review.pending_links,
+            "other_errors": {
+                key: value
+                for key, value in review.errors.items()
+                if key not in review.pending_links
+            },
             "analysis": review.analysis,
             "row_changes": {
                 change.point_no: {
@@ -241,6 +247,7 @@ async def link_person(request: Request, db: Session = Depends(get_db)) -> Respon
         if person is None or person.version != version:
             raise ValueError("선택한 인원 정보가 변경되었습니다. 다시 검수하여 후보를 확인하세요.")
         row.point_no = person.point_no
+        row.link_state = f"manual:{person.point_no}"
         row.account_type = person.account_type
         row.name = person.name
         row.personal_no = person.personal_no or ""
@@ -308,7 +315,7 @@ def store_review_response(
             owner_id=int(request.session["admin_id"]),
             payload=draft_payload(
                 month,
-                rows,
+                result.raw_rows,
                 deactivated=deactivated,
                 expected_count=expected_count,
                 expected_amount=expected_amount,

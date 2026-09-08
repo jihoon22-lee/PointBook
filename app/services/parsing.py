@@ -26,6 +26,7 @@ class RawRequestRow:
     row_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     source_line: str = ""
     source_issue: str = ""
+    link_state: str = ""
 
     def __post_init__(self) -> None:
         # Excel LF와 브라우저 폼 CRLF를 같은 비고로 검수한다. 빈 줄도 보존한다.

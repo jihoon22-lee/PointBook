@@ -122,6 +122,14 @@ def save_draft(
         raise DraftError("초안 저장 한도를 넘었습니다.", 413)
     try:
         start_write(db)
+        rows = [RawRequestRow(**row) for row in payload["rows"]]
+        review = review_rows(
+            db, payload["month"], rows, payload["expected_count"], payload["expected_amount"]
+        )
+        payload = {**payload, "rows": [asdict(row) for row in review.raw_rows]}
+        encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        if len(encoded.encode()) > MAX_DRAFT_BYTES:
+            raise DraftError("초안 저장 한도를 넘었습니다.", 413)
         _prune_expired(db)
         if draft_id:
             draft = get_draft(db, draft_id, owner_id)
@@ -167,10 +175,6 @@ def save_draft(
                 result_url="",
             )
             db.add(draft)
-        rows = [RawRequestRow(**row) for row in payload["rows"]]
-        review = review_rows(
-            db, payload["month"], rows, payload["expected_count"], payload["expected_amount"]
-        )
         _carries, errors = (
             carry_values(review, payload["deactivated"]) if not review.errors else ({}, {})
         )

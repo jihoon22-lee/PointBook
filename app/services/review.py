@@ -3,7 +3,7 @@
 import hashlib
 import json
 import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 from sqlalchemy import func, select
@@ -14,6 +14,7 @@ from app.config import get_settings
 from app.models import BalanceRecord, LedgerState, MonthlySnapshot, Person, Team
 from app.services.balance import previous_totals
 from app.services.dates import current_month, validate_month
+from app.services.identifiers import normalize_point_no
 from app.services.parsing import MAX_REQUEST_ROWS, ROW_FIELDS, RawRequestRow
 from app.services.sync import ACTION_DEACTIVATED, RequestRow, SyncAnalysis, analyze
 from app.services.validation import parse_balance, parse_expected_count, parse_expected_total
@@ -33,6 +34,7 @@ class Review:
     previous_count: int | None = None
     previous_amount: int | None = None
     candidates: dict[str, list[dict[str, str]]] = field(default_factory=dict)
+    pending_links: dict[str, str] = field(default_factory=dict)
 
 
 def raw_rows_from_form(form: FormData, *, clear_source_issues: bool = False) -> list[RawRequestRow]:
@@ -57,6 +59,7 @@ def raw_rows_from_form(form: FormData, *, clear_source_issues: bool = False) -> 
         row = RawRequestRow(
             **values,
             carry=str(form.get(f"carry_{i}", "")),
+            link_state=str(form.get(f"link_state_{i}", "")),
             source_line=str(form.get(f"source_line_{i}", "")),
             source_issue="" if clear_source_issues else str(form.get(f"source_issue_{i}", "")),
         )
@@ -151,29 +154,69 @@ def review_rows(
     expected_count: str = "",
     expected_amount: str = "",
 ) -> Review:
+    # 제출 원문은 재전송 대조에도 쓰므로 보완은 복사본에만 적용한다.
+    raw_rows = [replace(raw) for raw in raw_rows]
     result = Review(raw_rows=raw_rows)
-    # 이름·개인번호는 후보 검색에만 쓴다. 관리자가 연결하기 전에는 식별하지 않는다.
-    unresolved = [raw for raw in raw_rows if not raw.point_no.strip()]
-    if unresolved:
-        people = list(
-            db.scalars(select(Person).options(joinedload(Person.team)).order_by(Person.id))
-        )
-        by_name: dict[str, list[Person]] = {}
-        by_personal: dict[str, list[Person]] = {}
-        for person in people:
-            by_name.setdefault(person.name, []).append(person)
-            if person.personal_no:
-                by_personal.setdefault(person.personal_no, []).append(person)
-        for raw in unresolved:
-            matches = {p.id: p for p in by_name.get(raw.name.strip(), [])}
-            matches.update({p.id: p for p in by_personal.get(raw.personal_no.strip(), [])})
-            result.candidates[raw.row_id] = [
-                {
-                    "value": f"{p.id}:{p.version}",
-                    "label": f"{p.name} · {p.team.name if p.team else '팀 없음'} · 개인번호 {p.personal_no or '-'} · {p.point_no} · {'재직' if p.status == 'active' else '비재직'} · {'공용' if p.account_type == 'shared' else '일반'}",
-                }
-                for p in matches.values()
-            ]
+    people = (
+        list(db.scalars(select(Person).options(joinedload(Person.team)).order_by(Person.id)))
+        if raw_rows
+        else []
+    )
+    by_name: dict[str, list[Person]] = {}
+    by_personal: dict[str, list[Person]] = {}
+    by_identity: dict[tuple[str, str, str], list[Person]] = {}
+    for person in people:
+        by_name.setdefault(person.name.strip(), []).append(person)
+        if person.personal_no:
+            by_personal.setdefault(person.personal_no.strip(), []).append(person)
+            by_identity.setdefault(
+                (person.name.strip(), person.personal_no.strip(), person.account_type), []
+            ).append(person)
+    for raw in raw_rows:
+        identity = (raw.name.strip(), raw.personal_no.strip(), raw.account_type)
+        exact = by_identity.get(identity, []) if all(identity) else []
+        signature = hashlib.sha256(json.dumps(identity, ensure_ascii=False).encode()).hexdigest()
+        automatic = re.fullmatch(r"auto:([0-9]{8}):([a-f0-9]{64})", raw.link_state)
+        manual = re.fullmatch(r"manual:([0-9]{8})", raw.link_state)
+        try:
+            normalized_point = normalize_point_no(raw.point_no)
+        except ValueError:
+            normalized_point = ""
+        if raw.link_state not in {"", "manual"} and not automatic and not manual:
+            result.errors[raw.row_id] = "인원 연결 상태를 확인하세요."
+        if manual and normalized_point != manual[1]:
+            raw.link_state, raw.carry = "manual", ""
+        if automatic:
+            if raw.point_no != automatic[1]:
+                # 직접 번호를 바꾸거나 비우면 그 선택을 유지한다.
+                raw.link_state, raw.carry = "manual", ""
+            elif signature != automatic[2] or len(exact) != 1 or exact[0].point_no != raw.point_no:
+                raw.point_no, raw.link_state, raw.carry = "", "", ""
+        if (
+            not raw.point_no.strip()
+            and not raw.link_state.startswith("manual")
+            and not raw.source_issue
+            and len(exact) == 1
+        ):
+            raw.point_no = exact[0].point_no
+            raw.link_state = f"auto:{raw.point_no}:{signature}"
+        if raw.point_no.strip() and normalized_point and raw.link_state in {"", "manual"}:
+            raw.link_state = f"manual:{normalized_point}"
+        matches = {p.id: p for p in by_name.get(raw.name.strip(), [])}
+        matches.update({p.id: p for p in by_personal.get(raw.personal_no.strip(), [])})
+        result.candidates[raw.row_id] = [
+            {
+                "value": f"{p.id}:{p.version}",
+                "label": f"{p.name} · {p.team.name if p.team else '팀 없음'} · {p.personal_no or '-'} · {p.point_no} · {'재직' if p.status == 'active' else '비재직'} · {'공용' if p.account_type == 'shared' else '일반'}",
+            }
+            for p in matches.values()
+        ]
+        if not raw.point_no.strip() and not raw.source_issue:
+            result.pending_links[raw.row_id] = (
+                "동일 이름·개인번호: 인원 선택"
+                if len(exact) > 1
+                else "일치 없음: 인원 또는 발급 번호 확인"
+            )
     month_error = new_month_error(db, month)
     if month_error:
         result.errors["month"] = month_error
@@ -187,9 +230,7 @@ def review_rows(
         ids.add(raw.row_id)
         try:
             if not raw.point_no.strip() and not raw.source_issue:
-                raise ValueError(
-                    "기존 인원을 연결하거나, 신규 인원은 외부 포인트 시스템에서 발급받은 번호를 입력하세요. 발급 전에는 초안으로 보관할 수 있습니다."
-                )
+                raise ValueError(result.pending_links[raw.row_id])
             row = raw.validated()
             if row.point_no in points:
                 raise ValueError("중복된 포인트번호입니다.")
