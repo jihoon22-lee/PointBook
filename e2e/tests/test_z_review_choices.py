@@ -68,12 +68,17 @@ def assert_desktop_review_layout(page, team_row):
         dimensions = page.locator("#rows").evaluate(
             """table => {
               const wrap = table.closest('.table-wrap');
+              const container = table.closest('main').getBoundingClientRect();
+              const note = table.querySelector('th:nth-child(8)').getBoundingClientRect();
               return {width: wrap.getBoundingClientRect().width,
+                container: container.width, left: container.left, right: container.right, note: note.width,
                 client: wrap.clientWidth, scroll: wrap.scrollWidth,
                 document: document.documentElement.scrollWidth, viewport: innerWidth};
             }"""
         )
-        assert dimensions["width"] >= width * 0.9, dimensions
+        assert 1080 < dimensions["container"] <= 1200, dimensions
+        assert abs(dimensions["left"] - (width - dimensions["right"])) < 2, dimensions
+        assert 170 <= dimensions["note"] <= 195, dimensions
         assert dimensions["scroll"] <= dimensions["client"] + 1, dimensions
         assert dimensions["document"] <= width, dimensions
         point = page.locator('[name="point_no_0"]')
