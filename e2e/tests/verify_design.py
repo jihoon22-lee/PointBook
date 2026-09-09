@@ -115,7 +115,12 @@ def main() -> None:
         placeholder = page.get_attribute('input[name="carry_0"]', "placeholder")
         verify(
             "검수 화면",
-            [("직전 잔액 안내 표시", lambda: "직전 잔액" in (placeholder or ""))],
+            [
+                (
+                    "직전 잔액 안내 표시",
+                    lambda: bool(placeholder) and all(c.isdigit() or c == "," for c in placeholder),
+                )
+            ],
         )
 
         overflow = page.evaluate(

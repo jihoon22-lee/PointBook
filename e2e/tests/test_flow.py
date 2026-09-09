@@ -80,7 +80,7 @@ def test_team_views_show_status_counts_active_first_and_total_balance(page):
     assert "총잔액" in page.locator("thead").inner_text()
     assert page.locator("tbody tr td:first-child").first.inner_text().strip() == "하재직"
     active_row = page.locator('tbody tr:has-text("하재직")')
-    assert active_row.locator("td:nth-child(6)").inner_text().strip() == "20,000원"
+    assert active_row.locator("td:nth-child(7)").inner_text().strip() == "20,000원"
 
 
 def test_review_change_preserves_carry_and_requires_new_analysis(page):
@@ -114,6 +114,9 @@ def test_review_change_preserves_carry_and_requires_new_analysis(page):
     with page.expect_navigation():
         page.click('button:has-text("수정 내용 재검수")')
     assert page.locator('input[name="deactivated_carry_00000782"]').input_value() == "777"
+    for carry in page.locator('input[name^="deactivated_carry_"]').all():
+        if not carry.input_value():
+            carry.fill("0")
     assert page.locator('input[name="ack_warnings"]').count(), page.inner_text("body")
     page.check('input[name="ack_warnings"]')
     page.click(".confirm-monthly")

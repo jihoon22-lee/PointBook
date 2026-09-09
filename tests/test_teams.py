@@ -179,8 +179,9 @@ def test_team_list_shows_color_editor_for_existing_team(auth_client, db):
     assert f'action="/teams/{team.id}/color"' in resp.text
     assert 'type="color"' in resp.text
     assert 'value="#c0392b"' in resp.text
-    assert "색상 저장" in resp.text
-    assert 'aria-label="1팀 색상 저장"' in resp.text
+    assert "색상은 선택하면 자동으로 저장됩니다" in resp.text
+    assert 'aria-label="1팀 색상 저장"' not in resp.text
+    assert "/static/js/teams.js" in resp.text
 
 
 def test_existing_team_color_can_be_changed_without_releasing_members(auth_client, db):
@@ -265,3 +266,64 @@ def test_team_detail_all_information_headers_are_sortable(auth_client, db):
     for sort_key in ("name", "point_no", "personal_no", "grade", "status", "total"):
         assert f"sort={sort_key}" in resp.text
     assert "정렬 중: 오름차순" in resp.text
+
+
+def test_team_current_balance_totals_include_inactive_and_exclude_shared(auth_client, db):
+    from app.routers.teams import _team_summaries
+
+    team = make_team(db, "합성팀")
+    empty = make_team(db, "빈팀")
+    active = make_person(db, "1001", team=team)
+    inactive = make_person(db, "1002", team=team, status="inactive")
+    shared = make_person(db, "1003", team=team, account_type="shared")
+    unassigned = make_person(db, "1004")
+    active.current_carry_balance, active.current_amount = 12_345, 6_789
+    inactive.current_carry_balance, inactive.current_amount = 30_000, 0
+    shared.current_carry_balance = 999_999
+    unassigned.current_carry_balance = 888_888
+    db.commit()
+    summaries = {row.team.id: row for row in _team_summaries(db)}
+    summary = summaries[team.id]
+    assert (summary.active_count, summary.inactive_count, summary.total_count) == (1, 1, 2)
+    assert (summary.active_balance, summary.inactive_balance, summary.total_balance) == (
+        19_134,
+        30_000,
+        49_134,
+    )
+    assert summaries[empty.id].total_count == summaries[empty.id].total_balance == 0
+    listing = auth_client.get("/teams").text
+    detail = auth_client.get(f"/teams/{team.id}").text
+    assert all(label in listing for label in ("재직 총 잔액", "전체 총 잔액", "등록 팀 합계"))
+    assert "49,134원" in listing and "49,134원" in detail and "30,000원" in detail
+    assert "999,999원" not in listing and "888,888원" not in listing
+
+
+def test_team_color_json_response_and_failure_preserve_saved_color(auth_client, db):
+    team = make_team(db, "합성팀")
+    url = f"/teams/{team.id}/color"
+    headers = {"Accept": "application/json"}
+    saved = auth_client.post(url, data={"color": "#ABCDEF"}, headers=headers)
+    assert saved.status_code == 200 and saved.json() == {"color": "#abcdef"}
+    invalid = auth_client.post(url, data={"color": "invalid"}, headers=headers)
+    assert invalid.status_code == 400 and "error" in invalid.json()
+    db.refresh(team)
+    assert team.color == "#abcdef"
+
+
+def test_team_sum_preserves_large_imported_integer_balances_without_sql_overflow(auth_client, db):
+    from app.routers.teams import _team_summaries
+
+    team = make_team(db, "합성 큰 잔액")
+    for number in (1, 2):
+        person = make_person(db, str(number), team=team)
+        person.current_carry_balance = 2**62 + number
+    inactive = make_person(db, "3", team=team, status="inactive")
+    inactive.current_carry_balance = 7
+    db.commit()
+    summary = _team_summaries(db)[0]
+    assert summary.active_balance == 2**63 + 3
+    assert summary.total_balance == 2**63 + 10
+    for url in ("/teams", f"/teams/{team.id}"):
+        response = auth_client.get(url)
+        assert response.status_code == 200
+        assert f"{2**63 + 10:,}원" in response.text

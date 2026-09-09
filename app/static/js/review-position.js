@@ -62,6 +62,7 @@
     });
   }
   function restore() {
+    window.pointbookReviewView.restoring = true;
     if (row && state.field) {
       var inputs = row.querySelectorAll('[data-field]');
       for (var i = 0; i < inputs.length; i++) {
@@ -81,6 +82,7 @@
     wrap.scrollLeft = state.left;
     var y = row ? window.scrollY + row.getBoundingClientRect().top - state.offset : state.y;
     window.scrollTo(state.x, y);
+    window.pointbookReviewView.restoring = false;
   }
   window.requestAnimationFrame(restore);
 })();

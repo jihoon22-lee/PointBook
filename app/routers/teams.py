@@ -3,14 +3,15 @@ from dataclasses import dataclass
 from typing import Any
 
 from fastapi import APIRouter, Depends, Form, Query, Request
-from fastapi.responses import RedirectResponse, Response
-from sqlalchemy import and_, case, func, select
+from fastapi.responses import JSONResponse, RedirectResponse, Response
+from sqlalchemy import and_, case, select
 from sqlalchemy.orm import Session
 
 from app.auth import require_login
 from app.db import get_db
 from app.models import Person, Team
 from app.services.teams import TEAM_COLORS
+from app.services.tenure import tenure_labels
 from app.template_utils import render
 
 router = APIRouter(prefix="/teams", dependencies=[Depends(require_login)], tags=["teams"])
@@ -18,38 +19,42 @@ COLOR_PATTERN = re.compile(r"^#[0-9a-fA-F]{6}$")
 TEAM_MEMBER_SORT_KEYS = frozenset({"name", "point_no", "personal_no", "grade", "status", "total"})
 
 
-@dataclass(frozen=True)
+@dataclass
 class TeamSummary:
     team: Team
     total_count: int
     active_count: int
     inactive_count: int
+    active_balance: int
+    inactive_balance: int
+
+    @property
+    def total_balance(self) -> int:
+        return self.active_balance + self.inactive_balance
 
 
 def _team_summaries(db: Session) -> list[TeamSummary]:
+    summaries: dict[int, TeamSummary] = {}
+    # 이관된 큰 잔액도 SQLite SUM의 64비트 상한이나 REAL 변환 없이 보존한다.
     rows = db.execute(
-        select(
-            Team,
-            func.count(Person.id),
-            func.sum(case((Person.status == "active", 1), else_=0)),
-            func.sum(case((Person.status == "inactive", 1), else_=0)),
-        )
-        .outerjoin(
-            Person,
-            and_(Person.team_id == Team.id, Person.account_type == "person"),
-        )
-        .group_by(Team.id)
+        select(Team, Person.status, Person.current_carry_balance, Person.current_amount)
+        .outerjoin(Person, and_(Person.team_id == Team.id, Person.account_type == "person"))
         .order_by(Team.name)
-    ).all()
-    return [
-        TeamSummary(
-            team=team,
-            total_count=total_count,
-            active_count=active_count,
-            inactive_count=inactive_count,
-        )
-        for team, total_count, active_count, inactive_count in rows
-    ]
+    )
+    for team, status, carry, amount in rows:
+        if team.id not in summaries:
+            summaries[team.id] = TeamSummary(team, 0, 0, 0, 0, 0)
+        summary = summaries[team.id]
+        if status is None:
+            continue
+        summary.total_count += 1
+        if status == "active":
+            summary.active_count += 1
+            summary.active_balance += carry + amount
+        else:
+            summary.inactive_count += 1
+            summary.inactive_balance += carry + amount
+    return list(summaries.values())
 
 
 def _team_page_context(
@@ -57,8 +62,13 @@ def _team_page_context(
     error: str | None = None,
     selected_color: str = TEAM_COLORS[0],
 ) -> dict[str, object]:
+    summaries = _team_summaries(db)
     return {
-        "team_summaries": _team_summaries(db),
+        "team_summaries": summaries,
+        "totals": {
+            field: sum(getattr(summary, field) for summary in summaries)
+            for field in ("total_count", "active_count", "active_balance", "total_balance")
+        },
         "selected_color": selected_color,
         "error": error,
     }
@@ -111,7 +121,16 @@ def team_detail(
     return render(
         request,
         "team_detail.html",
-        {"team": team, "members": members, "sort": sort, "direction": direction},
+        {
+            "team": team,
+            "members": members,
+            "sort": sort,
+            "direction": direction,
+            "tenures": tenure_labels(db, members),
+            "summary": next(
+                summary for summary in _team_summaries(db) if summary.team.id == team_id
+            ),
+        },
     )
 
 
@@ -166,6 +185,8 @@ def update_team_color(
         return RedirectResponse("/teams", status_code=303)
     color = color.strip().lower()
     if COLOR_PATTERN.fullmatch(color) is None:
+        if request.headers.get("accept") == "application/json":
+            return JSONResponse({"error": "올바른 색상을 선택해 주세요."}, status_code=400)
         return render(
             request,
             "teams.html",
@@ -174,6 +195,8 @@ def update_team_color(
         )
     team.color = color
     db.commit()
+    if request.headers.get("accept") == "application/json":
+        return JSONResponse({"color": team.color})
     return RedirectResponse("/teams", status_code=303)
 
 

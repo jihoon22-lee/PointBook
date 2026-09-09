@@ -408,6 +408,18 @@ body:has(.login-wrap) .login-wrap .muted { color: #cbd5e1; }
 .review-input-table input[data-field="carry"] { font-variant-numeric: tabular-nums; }
 .review-input-table input[data-field="amount"],
 .review-input-table input[data-field="carry"] { text-align: right; }
+.review-input-table input[data-field="carry"]::placeholder { color: #536477; opacity: 1; }
+.review-input-table th.money-carry, .review-input-table tr > td.money-carry { background: #e1efff; }
+.review-input-table th.money-amount, .review-input-table tr > td.money-amount { background: #fff0d6; }
+.review-input-table .money-carry input { border: 2px solid #3978b8; background: #f6faff; }
+.review-input-table .money-amount input { border: 2px solid #a96612; background: #fffaf0; }
+#review-floating-header { position: fixed; z-index: 9; overflow: hidden; pointer-events: none; box-shadow: 0 2px 5px #0003; }
+#review-floating-header table { margin: 0; }
+#review-floating-header th { background: #edf3f9; vertical-align: top; }
+#review-floating-header th.money-carry { background: #e1efff; }
+#review-floating-header th.money-amount { background: #fff0d6; }
+#confirm-feedback p { margin: 0 0 8px; }
+#confirm-feedback .review-error-link { color: inherit; text-align: left; text-decoration: underline; }
 .review-input-table .row-del { width: 100%; padding-left: 4px; padding-right: 4px; }
 .review-input-table.focus-input { min-width: 620px; }
 .review-input-table.focus-input th:nth-child(2), .review-input-table.focus-input td:nth-child(2),

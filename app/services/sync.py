@@ -38,6 +38,8 @@ ACTION_KEPT = "kept"
 ACTION_RETURNED = "returned"
 ACTION_NEW = "new"
 ACTION_DEACTIVATED = "deactivated"
+ACTION_INACTIVE_KEPT = "inactive_kept"
+ABSENT_ACTIONS = {ACTION_DEACTIVATED, ACTION_INACTIVE_KEPT}
 
 
 @dataclass
@@ -63,7 +65,7 @@ class SyncAnalysis:
 
     @property
     def request_count(self) -> int:
-        return sum(1 for c in self.changes if c.action != ACTION_DEACTIVATED)
+        return sum(1 for c in self.changes if c.action not in ABSENT_ACTIONS)
 
 
 def analyze(db: Session, rows: list[RequestRow]) -> SyncAnalysis:
@@ -114,14 +116,12 @@ def analyze(db: Session, rows: list[RequestRow]) -> SyncAnalysis:
             )
         )
     for person in people:
-        if (
-            person.status == "active"
-            and person.account_type == "person"
-            and person.point_no not in seen
-        ):
+        if person.account_type == "person" and person.point_no not in seen:
             changes.append(
                 PersonChange(
-                    action=ACTION_DEACTIVATED,
+                    action=ACTION_DEACTIVATED
+                    if person.status == "active"
+                    else ACTION_INACTIVE_KEPT,
                     point_no=person.point_no,
                     personal_no=person.personal_no or "",
                     name=person.name,
@@ -153,7 +153,7 @@ def apply_analysis(db: Session, analysis: SyncAnalysis) -> None:
             db.add(person)
         if person is None:
             raise ValueError("기준 인원이 변경되었습니다. 다시 검수해 주세요.")
-        if change.action == ACTION_DEACTIVATED:
+        if change.action in ABSENT_ACTIONS:
             person.status = "inactive"
             continue
         person.status = "active"

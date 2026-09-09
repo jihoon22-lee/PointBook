@@ -24,6 +24,7 @@ from app.services.profiles import (
     prepare_profile,
     profile_payload,
 )
+from app.services.tenure import tenure_labels
 from app.template_utils import render
 
 router = APIRouter(prefix="/people", dependencies=[Depends(require_login)], tags=["people"])
@@ -228,6 +229,7 @@ def list_people(
         "people.html",
         {
             "persons": persons,
+            "tenures": tenure_labels(db, persons),
             "teams": _load_teams(db),
             "status": status,
             "team_id": team_id_int,
@@ -287,6 +289,7 @@ def person_detail(person_id: int, request: Request, db: Session = Depends(get_db
         "person_detail.html",
         {
             "person": person,
+            "tenure": tenure_labels(db, [person])[person.id],
             "history": [
                 {"record": record, "profile": profile_for_record(record)} for record in records
             ],

@@ -47,6 +47,7 @@
         {{ sortable_header('team', '팀') }}
         {{ sortable_header('grade', '계급') }}
         {{ sortable_header('status', '상태') }}
+        <th>재직 기간</th>
         {{ sortable_header('total', '총잔액') }}
         <th></th>
       </tr>
@@ -61,15 +62,18 @@
         <td>{% if p.team %}<span class="badge" style="background: {{ p.team.color }}; color: {{ p.team.color|contrast_color }}">{{ p.team.name }}</span>{% else %}<span class="muted">-</span>{% endif %}</td>
         <td>{{ p.grade or '-' }}</td>
         <td>{% if p.status == 'active' %}<span class="badge badge-active">재직</span>{% else %}<span class="badge badge-inactive">비재직</span>{% endif %}</td>
+        <td>{{ tenures[p.id] }}</td>
         <td><strong>{{ (p.current_carry_balance + p.current_amount)|number_format }}원</strong></td>
         <td><a class="btn btn-sm" href="/people/{{ p.id }}/edit">수정</a></td>
       </tr>
     {% else %}
-      <tr><td colspan="9" class="muted">조건에 맞는 인원이 없습니다.</td></tr>
+      <tr><td colspan="10" class="muted">조건에 맞는 인원이 없습니다.</td></tr>
     {% endfor %}
     </tbody>
   </table>
 </div>
+
+<p class="muted">재직 기간은 소방서 장부 기준이며, 비재직 근거가 없는 공백은 이어 계산합니다. 첫 기록 이전 기간은 포함하지 않습니다.</p>
 
 {% if pages > 1 %}
 <div class="pagination">

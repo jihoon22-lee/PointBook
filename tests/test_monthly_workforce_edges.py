@@ -100,7 +100,9 @@ def test_individual_registration_or_return_then_monthly_departure(
         },
     )
     values = review_fields(reviewed)
-    values.update(deactivated_carry_00000101="0", ack_warnings="yes")
+    values.update(
+        deactivated_carry_00000101="0", deactivated_carry_00000103="70", ack_warnings="yes"
+    )
     confirmed = auth_client.post("/monthly/confirm", data=values, follow_redirects=False)
     assert confirmed.status_code == 303, confirmed.text
     db.expire_all()
