@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +9,7 @@ from fastapi.templating import Jinja2Templates
 from app._version import __version__
 from app.auth import csrf_token
 from app.config import get_settings
+from app.services.dates import KST
 from app.services.identifiers import format_point_no
 
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
@@ -21,6 +23,14 @@ def number_format(value: int | None) -> str:
     if value is None:
         return "-"
     return f"{value:,}"
+
+
+def kst_datetime(value: datetime | None) -> str:
+    """UTC 저장값은 그대로 두고 업무 화면의 시각만 한국 시간으로 표시한다."""
+    if value is None:
+        return "미확인"
+    instant = value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+    return instant.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _relative_luminance(hex_color: str) -> float:
@@ -47,6 +57,7 @@ def contrast_color(background: str) -> str:
 
 
 templates.env.filters["number_format"] = number_format
+templates.env.filters["kst_datetime"] = kst_datetime
 templates.env.filters["point_no"] = format_point_no
 templates.env.filters["contrast_color"] = contrast_color
 

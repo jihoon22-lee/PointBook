@@ -177,14 +177,15 @@ def _row(
     )
 
 
-def _teams(rows: list[PersonStat]) -> list[TeamStat]:
+def _teams(rows: list[PersonStat], *, active_only: bool = False) -> list[TeamStat]:
+    """충전·순사용과 잔액은 각각 해당 기록의 유형·재직 상태로 집계한다."""
     result: dict[str, TeamStat] = {}
     members: dict[str, set[int]] = {}
     active: dict[str, set[int]] = {}
     observed: dict[str, set[int]] = {}
     for row in rows:
         for kind, profile in (("activity", row.activity_profile), ("balance", row.balance_profile)):
-            if profile is None:
+            if profile is None or (active_only and profile.get("status") != "active"):
                 continue
             name = _text(profile, "team_name", "당시 팀 미확인") or "팀 없음"
             if name not in result:
@@ -202,7 +203,7 @@ def _teams(rows: list[PersonStat]) -> list[TeamStat]:
             else:
                 result[name].total_balance += row.total or 0
                 observed[name].add(row.person_id)
-        if row.balance_kind == "unobserved":
+        if row.balance_kind == "unobserved" and not active_only:
             name = row.team_name or "팀 없음"
             if name not in result:
                 result[name] = TeamStat(name, row.team_color, 0, 0, 0, 0)
@@ -262,7 +263,11 @@ def _assemble(
             if observation is None:
                 return False
             profile = observation.profile
-            return account_type != "all" and profile.get("account_type") not in {"person", "shared"}
+            return (
+                account_type != "all"
+                and profile.get("account_type") not in {"person", "shared"}
+                and _matches(profile, "all", team_name)
+            )
 
         unknown_balance = balance if classification_unknown(balance) else None
         unknown_activity = activity if classification_unknown(activity) else None
@@ -341,9 +346,7 @@ def report(
             person_id,
             team_name,
         )
-    result.active_teams = _teams(
-        [row for row in result.rows if row.status == "active" and row.provenance != "unobserved"]
-    )
+    result.active_teams = _teams(result.rows, active_only=True)
     result.holding_teams = holdings.teams
     result.holding_unclassified_rows = holdings.unclassified_rows
     result.team_status_unknown_count = sum(

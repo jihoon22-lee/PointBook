@@ -1,6 +1,5 @@
 import json
 import uuid
-from datetime import UTC
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -13,7 +12,7 @@ from starlette.datastructures import FormData
 from app.auth import require_login
 from app.db import get_db
 from app.models import AdminUser, LedgerOperation, Person
-from app.services.dates import KST, current_month
+from app.services.dates import current_month
 from app.services.integrity import apply_repair, inspect_ledger, repair_plan
 from app.services.ledger import (
     LedgerConflict,
@@ -26,7 +25,7 @@ from app.services.ledger import (
     start_write,
 )
 from app.services.observations import latest_observations
-from app.template_utils import render
+from app.template_utils import kst_datetime, render
 
 router = APIRouter(prefix="/ledger", dependencies=[Depends(require_login)], tags=["ledger"])
 
@@ -143,9 +142,7 @@ def operation_detail(key: str, request: Request, db: Session = Depends(get_db)) 
             "operation": operation,
             "details": details,
             "actor": actor.username if actor else "작성자 미확인",
-            "created_at": operation.created_at.replace(tzinfo=UTC)
-            .astimezone(KST)
-            .strftime("%Y-%m-%d %H:%M:%S"),
+            "created_at": kst_datetime(operation.created_at),
         },
     )
 

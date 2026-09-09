@@ -9,6 +9,14 @@ MAX_TOTAL = MAX_MONEY * 2
 _MONEY = re.compile(r"(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)")
 
 
+class FieldError(ValueError):
+    """원문 오류 메시지와 입력 칸을 별도로 전달한다."""
+
+    def __init__(self, message: str, field: str) -> None:
+        super().__init__(message)
+        self.field = field
+
+
 def parse_money(value: object, *, label: str = "금액") -> int:
     """0 이상 정수 원화 입력을 전체 검증한다.
 

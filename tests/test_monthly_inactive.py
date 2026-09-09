@@ -119,7 +119,7 @@ def test_existing_draft_without_inactive_input_requires_it_after_reopen(auth_cli
     make_person(db, "999", "합성비재직", status="inactive")
     original = review_fields(auth_client.post("/monthly/review", data=_request()))
     draft = db.get(MonthlyDraft, original["draft_id"])
-    assert json.loads(draft.payload_json)["deactivated"] == {}
+    assert json.loads(draft.payload_json)["deactivated"] == {"00000999": ""}
     reopened = auth_client.get("/drafts/" + draft.id)
     values = review_fields(reopened)
     assert values["deactivated_carry_00000999"] == ""

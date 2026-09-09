@@ -18,7 +18,10 @@ class ReviewFields(HTMLParser):
         if not self.active:
             return
         if tag == "input" and attrs.get("name") and attrs.get("type") != "checkbox":
-            self.fields[attrs["name"]] = attrs.get("value", "")
+            if attrs["name"] == "preserved_absent_carry":
+                self.fields.setdefault(attrs["name"], []).append(attrs.get("value", ""))
+            else:
+                self.fields[attrs["name"]] = attrs.get("value", "")
         if tag == "select":
             self.select_name = attrs.get("name")
         if tag == "textarea":
@@ -95,5 +98,8 @@ def reviewed_confirm(client, data, **kwargs):
     response = client.post("/monthly/review", data=data)
     response = resolve_profile_choices(client, response)
     reviewed = review_fields(response)
+    for key, value in data.items():
+        if key.startswith("deactivated_carry_") and key in reviewed:
+            reviewed[key] = value
     reviewed["ack_warnings"] = "yes"
     return client.post("/monthly/confirm", data=reviewed, **kwargs)

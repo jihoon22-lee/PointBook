@@ -6,9 +6,10 @@ from dataclasses import dataclass, field
 
 from app.services.identifiers import normalize_point_no
 from app.services.sync import RequestRow
-from app.services.validation import parse_money
+from app.services.validation import FieldError, parse_money
 
 MAX_REQUEST_ROWS = 2000
+MAX_REVIEW_FORM_FIELDS = MAX_REQUEST_ROWS * 32 + 100
 ROW_FIELDS = ("point_no", "personal_no", "name", "team", "grade", "amount", "note", "account_type")
 
 
@@ -36,22 +37,26 @@ class RawRequestRow:
     def validated(self) -> RequestRow:
         if self.source_issue:
             raise ValueError(self.source_issue)
-        for label, value, limit in (
-            ("이름", self.name, 50),
-            ("개인번호", self.personal_no, 50),
-            ("팀", self.team, 50),
-            ("계급", self.grade, 50),
-            ("비고", self.note, 1000),
+        for field_name, label, value, limit in (
+            ("name", "이름", self.name, 50),
+            ("personal_no", "개인번호", self.personal_no, 50),
+            ("team", "팀", self.team, 50),
+            ("grade", "계급", self.grade, 50),
+            ("note", "비고", self.note, 1000),
         ):
             if len(value) > limit:
-                raise ValueError(f"{label}은 {limit}자 이하여야 합니다.")
+                raise FieldError(f"{label}은 {limit}자 이하여야 합니다.", field_name)
+        try:
+            amount = parse_money(self.amount)
+        except ValueError as exc:
+            raise FieldError(str(exc), "amount") from exc
         return RequestRow(
             point_no=self.point_no,
             personal_no=self.personal_no.strip(),
             name=self.name.strip(),
             team=self.team.strip(),
             grade=self.grade.strip(),
-            amount=parse_money(self.amount),
+            amount=amount,
             note=self.note,
             account_type=self.account_type,
         )

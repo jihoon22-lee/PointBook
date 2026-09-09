@@ -129,12 +129,18 @@
       {% for c in groups[balance_action] %}<label class="balance-item">
         <span><span class="badge badge-inactive">비재직</span> {{ c.name }} ({{ c.point_no|point_no }})</span>
         <input type="text" inputmode="numeric" name="deactivated_carry_{{ c.point_no }}" value="{{ deactivated_carries.get(c.point_no, '') }}" placeholder="{% if c.point_no in prev_totals %}{{ prev_totals[c.point_no]|number_format }}{% else %}미확인{% endif %}" required>
+        <input type="hidden" name="absent_binding_{{ c.point_no }}" value="{{ absent_bindings.get(c.point_no, '') }}">
       </label>{% endfor %}
     </div>
   </div>{% endif %}
   {% endfor %}
   {% if obsolete_carries %}<details class="card"><summary>새 분석에서 제외된 이월 입력 (적용되지 않음)</summary>
-    {% for point, value in obsolete_carries.items() %}<p>{{ point }}: {{ value }} <input type="hidden" name="deactivated_carry_{{ point }}" value="{{ value }}"></p>{% endfor %}
+    {% for point, value in obsolete_carries.items() %}<p>{{ point }}: {{ value }} <input type="hidden" name="deactivated_carry_{{ point }}" value="{{ value }}"><input type="hidden" name="absent_binding_{{ point }}" value="{{ absent_bindings.get(point, '') }}"></p>{% endfor %}
+  </details>{% endif %}
+  {% if preserved_absent_carries %}<details class="card" id="preserved-absent-carries" open>
+    <summary>다시 확인할 이전 이월 입력 (자동 적용되지 않음)</summary>
+    <p class="muted">인원 연결이나 처리 월이 달라진 이전 입력입니다. 현재 대상을 확인하고 위 잔액 칸에 다시 입력하세요.</p>
+    {% for entry in preserved_absent_carries %}<p>{{ entry.month }} · {{ entry.name or '인원 미확인' }} ({{ entry.point_no|point_no }}) · 이전 입력: {{ entry.value }} · {{ entry.reason }}<input type="hidden" name="preserved_absent_carry" value="{{ entry.token }}"></p>{% endfor %}
   </details>{% endif %}
   {% if warnings %}<div class="alert alert-warning">
     <ul>{% for warning in warnings %}<li>{{ warning }}</li>{% endfor %}</ul>
@@ -142,7 +148,7 @@
   </div>{% endif %}
   <div id="confirm-feedback" class="alert alert-error" role="alert" {% if not error and not errors %}hidden{% endif %}>
     <p id="confirm-message">{{ error or ('입력 내용을 확인해 주세요.' if errors else '') }}</p>
-    <ul id="confirm-errors">{% for key, message in errors.items() %}<li><button type="button" class="btn-link review-error-link" data-error-key="{{ key }}">{{ message }}</button></li>{% endfor %}</ul>
+    <ul id="confirm-errors">{% for key, message in errors.items() %}<li><button type="button" class="btn-link review-error-link" data-error-key="{{ key }}" data-error-field="{{ error_fields.get(key, '') }}">{{ message }}</button></li>{% endfor %}</ul>
     <button type="button" class="btn btn-sm" id="confirm-error-jump" hidden>확인이 필요한 입력으로 이동</button>
   </div>
   <p id="confirm-reason" role="status">{% if not review_token %}연결·정보 선택과 입력 오류를 확인한 뒤 수정 내용 재검수를 눌러 주세요.{% endif %}</p>

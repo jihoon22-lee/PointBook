@@ -16,6 +16,12 @@ from app.db import get_db
 from app.logging import get_logger
 from app.models import MonthlySnapshot, Person
 from app.services import stats
+from app.services.absent_carries import (
+    bindings_from_form,
+    preserved_entries,
+    preserved_from_form,
+    reconcile,
+)
 from app.services.backup import backup_database
 from app.services.balance import build_balance_records, create_monthly_snapshot
 from app.services.dates import current_month, validate_month
@@ -30,7 +36,7 @@ from app.services.drafts import (
 )
 from app.services.history import profile_for_person
 from app.services.ledger import LedgerConflict, add_operation, find_replay
-from app.services.parsing import MAX_REQUEST_ROWS, RawRequestRow, parse_pasted_raw
+from app.services.parsing import MAX_REVIEW_FORM_FIELDS, RawRequestRow, parse_pasted_raw
 from app.services.request_profiles import choose, reset_target
 from app.services.review import (
     Review,
@@ -52,7 +58,7 @@ ALLOWED_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".heic", ".xlsx"}
 
 
 async def monthly_form(request: Request) -> FormData:
-    return await request.form(max_files=1, max_fields=MAX_REQUEST_ROWS * 16 + 50)
+    return await request.form(max_files=1, max_fields=MAX_REVIEW_FORM_FIELDS)
 
 
 def _parse_row_fields(form: FormData) -> list[RequestRow]:
@@ -119,12 +125,21 @@ def review_response(
     draft_info: dict[str, Any] | None = None,
     input_source: str = "manual",
     deactivated: dict[str, str] | None = None,
+    absent_bindings: dict[str, str] | None = None,
+    preserved_absent_carries: list[str] | None = None,
     expected_count: str = "",
     expected_amount: str = "",
     message: str = "",
     status: int = 200,
 ) -> Response:
-    deactivated = deactivated or {}
+    absent = reconcile(
+        month,
+        review.analysis.changes or None,
+        deactivated or {},
+        absent_bindings or {},
+        preserved_absent_carries or [],
+    )
+    deactivated = absent.values
     needed = {c.point_no for c in review.analysis.changes if c.action in ABSENT_ACTIONS}
     obsolete = {point: value for point, value in deactivated.items() if point not in needed}
     return render(
@@ -156,6 +171,7 @@ def review_response(
             },
             "month": month,
             "errors": review.errors,
+            "error_fields": review.error_fields,
             "warnings": review.warnings,
             "review_token": review.token,
             "request_key": request_key or uuid.uuid4().hex,
@@ -166,6 +182,8 @@ def review_response(
             "expected_count": expected_count,
             "expected_amount": expected_amount,
             "deactivated_carries": deactivated,
+            "absent_bindings": absent.bindings,
+            "preserved_absent_carries": preserved_entries(absent.preserved),
             "obsolete_carries": obsolete,
             "error": message,
         },
@@ -260,6 +278,12 @@ async def link_person(request: Request, db: Session = Depends(get_db)) -> Respon
     except ValueError as exc:
         result = review_rows(db, month, rows)
         result.errors["link"] = str(exc)
+        if len(targets) == 1:
+            result.error_fields["link"] = (
+                f"link_person_{targets[0][0]}"
+                if result.candidates.get(row_id)
+                else f"point_no_{targets[0][0]}"
+            )
         result.token = ""
         return review_response(
             request,
@@ -272,6 +296,8 @@ async def link_person(request: Request, db: Session = Depends(get_db)) -> Respon
             },
             input_source=str(form.get("input_source", "manual")),
             deactivated=deactivated_from_form(form),
+            absent_bindings=bindings_from_form(form),
+            preserved_absent_carries=preserved_from_form(form),
             expected_count=str(form.get("expected_count", "")),
             expected_amount=str(form.get("expected_amount", "")),
             status=400,
@@ -328,6 +354,8 @@ async def choose_profile(request: Request, db: Session = Depends(get_db)) -> Res
             },
             input_source=str(form.get("input_source", "manual")),
             deactivated=deactivated_from_form(form),
+            absent_bindings=bindings_from_form(form),
+            preserved_absent_carries=preserved_from_form(form),
             expected_count=str(form.get("expected_count", "")),
             expected_amount=str(form.get("expected_amount", "")),
             message=str(exc),
@@ -376,6 +404,8 @@ def store_review_response(
                 month,
                 result.raw_rows,
                 deactivated=deactivated,
+                absent_bindings=bindings_from_form(form),
+                preserved_absent_carries=preserved_from_form(form),
                 expected_count=expected_count,
                 expected_amount=expected_amount,
                 source=source,
@@ -404,6 +434,8 @@ def store_review_response(
         draft_info=info,
         input_source=source,
         deactivated=deactivated,
+        absent_bindings=bindings_from_form(form),
+        preserved_absent_carries=preserved_from_form(form),
         expected_count=expected_count,
         expected_amount=expected_amount,
         message=message,
@@ -463,6 +495,8 @@ async def confirm(request: Request, db: Session = Depends(get_db)) -> Response:
             },
             input_source=str(form.get("input_source", "manual")),
             deactivated=deactivated,
+            absent_bindings=bindings_from_form(form),
+            preserved_absent_carries=preserved_from_form(form),
             expected_count=expected_count,
             expected_amount=expected_amount,
             message=message,
@@ -493,7 +527,7 @@ async def confirm(request: Request, db: Session = Depends(get_db)) -> Response:
             "목록·월·기준 정보가 변경되었거나 검수가 만료되었습니다. 새 변경 예상을 확인하고 다시 확정하세요.",
             409,
         )
-    carries, errors = carry_values(result, deactivated)
+    carries, errors = carry_values(result, deactivated, bindings_from_form(form))
     if errors:
         result.errors.update(errors)
         return response("모든 처리 대상의 이월 잔액을 확인해 주세요.")
@@ -513,7 +547,7 @@ async def confirm(request: Request, db: Session = Depends(get_db)) -> Response:
             db.rollback()
             return response("다른 작업으로 기준이 변경되었습니다. 다시 검수해 주세요.", 409)
         result = locked
-        carries, locked_errors = carry_values(result, deactivated)
+        carries, locked_errors = carry_values(result, deactivated, bindings_from_form(form))
         if locked_errors:
             result.errors.update(locked_errors)
             db.rollback()
