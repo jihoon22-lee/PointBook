@@ -218,6 +218,8 @@ def test_thirty_three_numberless_rows_link_without_manual_selection(page):
         )
         == point_numbers
     )
+    for carry in page.locator('input[name^="deactivated_carry_"]').all():
+        carry.fill("0")
     # 선택기나 연결 버튼을 한 번도 사용하지 않고 검수된 33명을 확정한다.
     acknowledgement = page.locator('[name="ack_warnings"]')
     if acknowledgement.count():

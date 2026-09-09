@@ -175,7 +175,9 @@ def test_dashboard_and_xlsx_restore_workforce_counts_and_use_only_current_assign
         assert summary["월간 처리 인원"] == 2
         assert summary["잔액 범위"] == "총 잔액"
         team_rows = list(workbook["팀별"].iter_rows(min_row=2, values_only=True))
-        assert team_rows[0][2] == 2
+        assert team_rows[0][2] == 1  # 재직 표에는 신규 비재직 전환 인원을 포함하지 않는다.
+        all_team_rows = list(workbook["팀별 전체"].iter_rows(min_row=2, values_only=True))
+        assert all_team_rows[0][2] == 2  # 전체 표의 월간 처리 인원은 기존 계약을 유지한다.
         headers = [cell.value for cell in workbook["인원"][1]]
         exported = [
             dict(zip(headers, row, strict=True))

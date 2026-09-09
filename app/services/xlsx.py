@@ -395,6 +395,13 @@ def _report_workbook(
             "인원 집계 기준",
             "일반 인원의 해당 월 재직자와 해당 월 실제 비재직 전환한 인원입니다. 기존 비재직·공용계정은 제외합니다.",
         ),
+        ("팀별 시트", "재직 통계 · 선택한 잔액 범위 · 조회 월까지 마지막 확인 상태 기준"),
+        (
+            "팀별 전체 시트",
+            "재직·비재직 전체 · 기준 월까지 마지막 확인 잔액 · 충전·순사용은 조회 월 실제 기록",
+        ),
+        ("전체 팀 재직 상태 미확인", report.team_status_unknown_count),
+        ("전체 팀 계정 유형 미확인", len(report.holding_unclassified_rows)),
         ("큰 정수", "16자리 이상 정수는 Excel 자릿수 손실을 막기 위해 문자열로 보존합니다."),
         ("용도", "조회 보고서입니다. 월간 요청서 입력 양식으로 사용하지 않습니다."),
     ]
@@ -449,36 +456,40 @@ def _report_workbook(
             for column, cell_value in enumerate(values, 1):
                 _value(sheet, index, column, cell_value)
         _header(sheet, 1, headers)
-    teams = workbook.create_sheet("팀별")
-    for index, team in enumerate(report.teams, 2):
-        for column, value in enumerate(
-            (
-                team.name,
-                team.count,
-                team.workforce_count,
-                team.observed_count,
-                team.total_amount if team.processed_count else None,
-                team.total_usage if team.processed_count else None,
-                team.total_balance if team.observed_count else None,
-                team.unknown_count,
-            ),
+    for title, team_rows, balance_label in [
+        ("팀별", report.active_teams, "선택 범위 잔액"),
+        ("팀별 전체", report.holding_teams, "기준 월까지 보유 잔액"),
+    ]:
+        teams = workbook.create_sheet(title)
+        for index, team in enumerate(team_rows, 2):
+            for column, value in enumerate(
+                (
+                    team.name,
+                    team.count,
+                    team.workforce_count,
+                    team.observed_count,
+                    team.total_amount if team.processed_count else None,
+                    team.total_usage if team.processed_count else None,
+                    team.total_balance if team.observed_count else None,
+                    team.unknown_count,
+                ),
+                1,
+            ):
+                _value(teams, index, column, value)
+        _header(
+            teams,
             1,
-        ):
-            _value(teams, index, column, value)
-    _header(
-        teams,
-        1,
-        (
-            "현재 팀",
-            "조회 인원",
-            "월간 처리 인원",
-            "잔액 관측 인원",
-            "월간 충전",
-            "월간 순사용",
-            "선택 범위 잔액",
-            "미확인 인원",
-        ),
-    )
+            (
+                "현재 팀",
+                "조회 인원",
+                "월간 처리 인원",
+                "잔액 관측 인원",
+                "월간 충전",
+                "월간 순사용",
+                balance_label,
+                "미확인 인원",
+            ),
+        )
     return _bytes(workbook)
 
 

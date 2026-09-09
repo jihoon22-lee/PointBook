@@ -130,8 +130,8 @@ def test_link_states_profile_choices_and_lower_row_position(page):
         "포인트번호",
         "팀",
         "계급",
+        "이월 잔액",
         "충전액",
-        "이월잔액",
         "비고",
         "유형",
     ]

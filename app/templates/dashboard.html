@@ -55,10 +55,19 @@
   <script id="trend-data" type="application/json">{{ chart|tojson }}</script>
 </div>
 
-<div class="card"><h2>팀별 통계 ({{ selected }})</h2>
-  <div class="table-wrap"><table>
-    <thead><tr><th>현재 팀</th><th>조회 대상</th><th>월간 기록</th><th>충전</th><th>순사용</th><th>확인된 잔액</th></tr></thead>
-    <tbody>{% for t in teams %}<tr>
+{% endif %}
+{% if report %}
+{% for title, team_rows, balance_label, table_id in [
+  ('팀별 재직 통계', teams, '총 잔액' if scope == 'observed' else '기준 월까지 보유 잔액', 'active-team-stats'),
+  ('팀별 재직·비재직 전체 통계', holding_teams, '기준 월까지 보유 잔액', 'all-team-stats')
+] %}
+<div class="card"><h2>{{ title }} ({{ selected }})</h2>
+  <p class="muted">{{ balance_label }} · {{ '조회 월까지 마지막 확인 상태가 재직인 계정입니다.' if loop.first else '조회 월까지 마지막 확인 잔액을 포함합니다. 충전·순사용은 조회 월 실제 기록만 합산합니다. 잔액 미확인 인원이 있으면 확인된 잔액의 부분 합계입니다.' }}</p>
+  {% if loop.last and report.team_status_unknown_count %}<p class="alert alert-warning">기준시점 재직 상태 미확인 {{ report.team_status_unknown_count }}명: 현재 상태로 과거 재직을 판단하지 않고 전체 통계에 포함합니다.</p>{% endif %}
+  {% if loop.last and report.holding_unclassified_rows %}<p class="alert alert-warning">전체 팀 통계의 계정 유형 미확인 {{ report.holding_unclassified_rows|length }}명: 선택 유형 합계에서 제외되어 있습니다. 일반·공용 전체 조회에서 포함됩니다.</p>{% endif %}
+  <div class="table-wrap"><table id="{{ table_id }}">
+    <thead><tr><th>현재 팀</th><th>조회 대상</th><th>월간 기록</th><th>충전</th><th>순사용</th><th>{{ balance_label }}</th></tr></thead>
+    <tbody>{% for t in team_rows %}<tr>
       <td><span class="badge" style="background: {{ t.color }}; color: {{ t.color|contrast_color }}">{{ t.name }}</span></td>
       <td>{{ t.count }}명{% if t.unknown_count %} (미확인 {{ t.unknown_count }}명){% endif %}</td>
       <td>{{ t.processed_count }}명</td><td>{{ t.total_amount|number_format if t.processed_count else '기록 없음' }}</td><td>{{ t.total_usage|number_format if t.processed_count else '기록 없음' }}</td><td><strong>{{ t.total_balance|number_format if t.observed_count else '미확인' }}</strong></td>
@@ -66,6 +75,9 @@
   </table></div>
 </div>
 
+{% endfor %}
+{% endif %}
+{% if has_data %}
 <div class="card"><h2>계정별 통계 ({{ selected }}) <span class="muted">(컬럼 클릭 정렬)</span></h2>
   <div class="table-wrap"><table id="person-stats">
     <thead><tr><th data-sort="name">이름</th><th>포인트번호</th><th>개인번호</th><th data-sort="team">팀</th><th>계급</th><th data-sort="carry">월간 이월 잔액</th><th data-sort="amount">월간 충전</th><th data-sort="usage">월간 순사용</th><th data-sort="total">확인된 잔액</th><th>잔액 기준 월</th><th>비고</th></tr></thead>

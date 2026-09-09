@@ -14,6 +14,7 @@
   function message(text, failed) {
     status.textContent = text;
     status.className = failed ? 'alert alert-error' : 'muted';
+    if (failed && window.pointbookReviewFeedback) window.pointbookReviewFeedback.show(text, document.getElementById('draft-save'));
   }
   function save(fork) {
     if (pending) return pending.then(function () { return save(fork); });
@@ -38,6 +39,7 @@
           canonicalURL();
           login.hidden = true;
           message('서버 초안 저장 완료 · ' + new Date(value.draft_saved_at).toLocaleTimeString() + (dirty ? ' · 추가 입력 저장 대기' : ''), false);
+          if (window.pointbookReviewFeedback) window.pointbookReviewFeedback.clearFor(document.getElementById('draft-save'));
           return value;
         });
       }).catch(function (error) {

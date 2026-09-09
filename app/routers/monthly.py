@@ -1,6 +1,5 @@
 import re
 import uuid
-from dataclasses import asdict
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
@@ -35,13 +34,15 @@ from app.services.parsing import MAX_REQUEST_ROWS, RawRequestRow, parse_pasted_r
 from app.services.request_profiles import choose, reset_target
 from app.services.review import (
     Review,
+    canonical_money,
+    canonical_row,
     carry_values,
     deactivated_from_form,
     matches_token,
     raw_rows_from_form,
     review_rows,
 )
-from app.services.sync import ACTION_DEACTIVATED, RequestRow, apply_analysis
+from app.services.sync import ABSENT_ACTIONS, RequestRow, apply_analysis
 from app.services.vision import extract_image
 from app.services.xlsx import FORM_VERSION, extract_request, request_template
 from app.template_utils import render
@@ -124,7 +125,7 @@ def review_response(
     status: int = 200,
 ) -> Response:
     deactivated = deactivated or {}
-    needed = {c.point_no for c in review.analysis.changes if c.action == ACTION_DEACTIVATED}
+    needed = {c.point_no for c in review.analysis.changes if c.action in ABSENT_ACTIONS}
     obsolete = {point: value for point, value in deactivated.items() if point not in needed}
     return render(
         request,
@@ -434,10 +435,12 @@ async def confirm(request: Request, db: Session = Depends(get_db)) -> Response:
     request_key = str(form.get("request_key", ""))
     payload = {
         "month": month,
-        "rows": [{k: v for k, v in asdict(row).items() if k != "source_line"} for row in rows],
-        "deactivated": deactivated,
+        "rows": [canonical_row(row, include_carry=True) for row in rows],
+        "deactivated": {
+            point: canonical_money(value, balance=True) for point, value in deactivated.items()
+        },
         "expected_count": expected_count,
-        "expected_amount": expected_amount,
+        "expected_amount": canonical_money(expected_amount, expected=True),
     }
     replay_error = ""
     try:

@@ -8,7 +8,7 @@
   <h2>팀 목록</h2>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>팀</th><th>색상</th><th>인원</th><th></th></tr></thead>
+      <thead><tr><th>팀</th><th>색상</th><th>재직 인원</th><th>재직 총 잔액</th><th>전체 인원</th><th>전체 총 잔액</th><th></th></tr></thead>
       <tbody>
       {% for summary in team_summaries %}
         {% set team = summary.team %}
@@ -19,14 +19,13 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <input class="color-picker color-picker-compact" type="color" name="color" value="{{ team.color }}" required aria-label="{{ team.name }} 색상">
               <code class="muted">{{ team.color }}</code>
-              <button type="submit" class="btn btn-sm" aria-label="{{ team.name }} 색상 저장">색상 저장</button>
+              <span class="team-color-status muted" role="status" aria-live="polite"></span>
             </form>
           </td>
-          <td>
-            <span>전체 {{ summary.total_count }}명</span>
-            <span class="badge badge-active">재직 {{ summary.active_count }}명</span>
-            <span class="badge badge-inactive">비재직 {{ summary.inactive_count }}명</span>
-          </td>
+          <td><span class="badge badge-active">재직 {{ summary.active_count }}명</span></td>
+          <td>{{ summary.active_balance|number_format }}원</td>
+          <td><span>전체 {{ summary.total_count }}명</span><br><span class="muted">비재직 {{ summary.inactive_count }}명</span></td>
+          <td><strong>{{ summary.total_balance|number_format }}원</strong></td>
           <td>
             <form method="post" action="/teams/{{ team.id }}/delete" onsubmit="return confirm('팀 \'{{ team.name }}\' 을(를) 삭제할까요? (소속 인원은 팀 없음으로 변경됩니다)')">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -35,11 +34,13 @@
           </td>
         </tr>
       {% else %}
-        <tr><td colspan="4" class="muted">등록된 팀이 없습니다.</td></tr>
+        <tr><td colspan="7" class="muted">등록된 팀이 없습니다.</td></tr>
       {% endfor %}
       </tbody>
+      <tfoot><tr><th colspan="2">등록 팀 합계</th><td>{{ totals.active_count }}명</td><td>{{ totals.active_balance|number_format }}원</td><td>{{ totals.total_count }}명</td><td><strong>{{ totals.total_balance|number_format }}원</strong></td><td></td></tr></tfoot>
     </table>
   </div>
+  <p class="muted">일반 인원의 현재 총 잔액 기준입니다. 공용계정과 팀 없는 인원은 등록 팀 합계에 포함하지 않습니다. 색상은 선택하면 자동으로 저장됩니다.</p>
 </div>
 
 <div class="card">
@@ -57,4 +58,5 @@
     <button type="submit" class="btn btn-primary">추가</button>
   </form>
 </div>
+<script src="/static/js/teams.js" defer></script>
 {% endblock %}

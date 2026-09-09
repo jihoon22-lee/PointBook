@@ -4,6 +4,7 @@ from sqlalchemy import select
 from app.models import Person
 from app.services.sync import (
     ACTION_DEACTIVATED,
+    ACTION_INACTIVE_KEPT,
     ACTION_KEPT,
     ACTION_NEW,
     ACTION_RETURNED,
@@ -65,11 +66,19 @@ def test_analyze_returned_person(client, db):
 
 
 def test_analyze_stays_inactive_when_absent(client, db):
-    make_person(db, "1001", "홍길동", status="inactive")
+    person = make_person(db, "1001", "홍길동", status="inactive")
     analysis = analyze(db, [_row("2002", "김철수")])
     actions = [c.action for c in analysis.changes]
     assert ACTION_DEACTIVATED not in actions
     assert ACTION_NEW in actions
+    assert ACTION_INACTIVE_KEPT in actions
+    assert analysis.request_count == 1
+    absent = next(c for c in analysis.changes if c.action == ACTION_INACTIVE_KEPT)
+    assert absent.person_id == person.id and absent.amount == 0
+    apply_analysis(db, analysis)
+    db.commit()
+    db.refresh(person)
+    assert person.status == "inactive"
 
 
 def test_analyze_team_change_detected(client, db):

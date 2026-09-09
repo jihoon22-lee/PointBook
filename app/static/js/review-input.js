@@ -43,6 +43,21 @@
   filter.addEventListener('change', applyView);
   sort.addEventListener('change', applyView);
   form.addEventListener('input', summary);
+  function keepFieldVisible(input) {
+    if (!input || !input.closest('#rows') || input.closest('td').cellIndex === 0) return;
+    var wrap = table.closest('.table-wrap');
+    var bounds = wrap.getBoundingClientRect();
+    var fixedWidth = table.tHead.rows[0].cells[0].getBoundingClientRect().width;
+    var box = input.getBoundingClientRect();
+    var left = bounds.left + fixedWidth + 4, right = bounds.left + wrap.clientWidth - 4;
+    if (box.width > right - left) return;
+    if (box.left < left) wrap.scrollLeft -= left - box.left;
+    else if (box.right > right) wrap.scrollLeft += box.right - right;
+  }
+  form.addEventListener('focusin', function (event) {
+    if (window.pointbookReviewView && window.pointbookReviewView.restoring) return;
+    window.requestAnimationFrame(function () { keepFieldVisible(event.target); });
+  });
   form.addEventListener('invalid', function (event) {
     var row = event.target.closest('tr');
     if (row && row.hidden) { filter.value = 'all'; applyView(); }
@@ -63,6 +78,6 @@
   });
   document.getElementById('add-row').addEventListener('click', applyView);
   table.addEventListener('click', function (event) { if (event.target.classList.contains('row-del')) summary(); });
-  window.pointbookReviewInputs = {applyView: applyView};
+  window.pointbookReviewInputs = {applyView: applyView, keepFieldVisible: keepFieldVisible};
   summary();
 })();

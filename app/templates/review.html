@@ -54,7 +54,7 @@
         <p class="muted">필터로 숨긴 행도 전체 저장·검증·확정 대상입니다. 이월 칸에서 Enter를 누르면 다음 잔액으로 이동합니다.</p>
       </div>
       <table id="rows" class="review-input-table">
-        <thead><tr><th>이름</th><th>개인번호</th><th>포인트번호</th><th>팀</th><th>계급</th><th>충전액</th><th>이월잔액</th><th>비고</th><th>유형</th><th>행 관리</th></tr></thead>
+        <thead><tr><th>이름</th><th>개인번호</th><th>포인트번호</th><th>팀</th><th>계급</th><th class="money-carry">이월 잔액</th><th class="money-amount">충전액</th><th>비고</th><th>유형</th><th>행 관리</th></tr></thead>
         <tbody>
         {% for row in rows %}
           {% set row_index = loop.index0 %}
@@ -79,8 +79,8 @@
               </details>
               {% if other_errors.get(row.row_id) %}<span class="alert-error row-error">{{ other_errors[row.row_id] }}</span>{% endif %}
             </td>
-            {% for field, label in [('personal_no','개인번호'),('point_no','포인트번호'),('team','팀'),('grade','계급'),('amount','충전액'),('carry','이월 잔액'),('note','비고'),('account_type','유형')] %}
-            <td>
+            {% for field, label in [('personal_no','개인번호'),('point_no','포인트번호'),('team','팀'),('grade','계급'),('carry','이월 잔액'),('amount','충전액'),('note','비고'),('account_type','유형')] %}
+            <td{% if field in ['carry','amount'] %} class="money-{{ field }}"{% endif %}>
               {% if field == 'account_type' %}
               <select data-field="account_type" name="account_type_{{ row_index }}" aria-label="{{ row_index + 1 }}행 계정 유형">
                 {% if row.account_type not in ['person', 'shared'] %}<option value="{{ row.account_type }}" selected>{{ row.account_type or '유형 선택' }}</option>{% endif %}
@@ -91,7 +91,7 @@
 {{ row.note }}</textarea>
               {% else %}
               {% set normalized = row.point_no|replace(' ', '')|replace('-', '') %}
-              <input type="text" data-field="{{ field }}" name="{{ field }}_{{ row_index }}" value="{{ row[field] }}" class="row-input" aria-label="{{ row_index + 1 }}행 {{ label }}" {% if field in ['amount','carry'] %}inputmode="numeric"{% endif %} {% if field == 'carry' %}placeholder="{% if normalized in prev_totals %}직전 잔액: {{ prev_totals[normalized]|number_format }}원{% else %}이월 잔액{% endif %}" required{% elif field == 'point_no' %}placeholder="포인트번호"{% endif %}>
+              <input type="text" data-field="{{ field }}" name="{{ field }}_{{ row_index }}" value="{{ row[field] }}" class="row-input" aria-label="{{ row_index + 1 }}행 {{ label }}" {% if field in ['amount','carry'] %}inputmode="numeric"{% endif %} {% if field == 'carry' %}placeholder="{% if normalized in prev_totals %}{{ prev_totals[normalized]|number_format }}{% else %}미확인{% endif %}" required{% elif field == 'point_no' %}placeholder="포인트번호"{% endif %}>
               {% endif %}
               {{ profile_choices(row, field) }}
             </td>
@@ -113,7 +113,7 @@
       <label>원본 기대 총액 (선택)<input type="text" inputmode="numeric" name="expected_amount" value="{{ expected_amount }}" placeholder="모르면 비워 두세요"></label>
     </div>
     {% if not expected_count or not expected_amount %}<p class="muted">외부 기대 인원/총액 대사: 미확인 항목이 있습니다. 원본 요청서의 완전성을 확인하세요.</p>{% endif %}
-    {% set groups = {'new': [], 'returned': [], 'kept': [], 'deactivated': []} %}
+    {% set groups = {'new': [], 'returned': [], 'kept': [], 'deactivated': [], 'inactive_kept': []} %}
     {% for c in analysis.changes %}{% set _ = groups[c.action].append(c) %}{% endfor %}
     {% for action, label in [('new','신규'),('returned','복귀'),('kept','재직 유지'),('deactivated','비재직 전환 후보')] %}
       {% if groups[action] %}<h3>{{ label }} ({{ groups[action]|length }})</h3>
@@ -121,16 +121,18 @@
     {% endfor %}
   </div>
 
-  {% if groups['deactivated'] %}<div class="card">
-    <h2>비재직 전환 대상 이월 잔액</h2>
-    <p class="muted">요청서 누락이 실제 전출인지 확인하세요. 삭제한 요청서 행의 잔액은 여기에 자동으로 옮기지 않습니다.</p>
+  {% for balance_action, balance_title in [('deactivated','비재직 전환 대상 이월 잔액'), ('inactive_kept','기존 비재직 인원 이월 잔액')] %}
+  {% if groups[balance_action] %}<div class="card" id="balances-{{ balance_action }}">
+    <h2>{{ balance_title }} ({{ groups[balance_action]|length }}명)</h2>
+    {% if balance_action == 'deactivated' %}<p class="muted">요청서 누락이 실제 전출인지 확인하세요. 삭제한 요청서 행의 잔액은 여기에 자동으로 옮기지 않습니다.</p>{% else %}<p class="muted">이미 비재직인 인원의 현재 잔액도 모두 확인해 주세요. 충전액은 0원이며 비재직 상태를 유지합니다.</p>{% endif %}
     <div class="balance-grid">
-      {% for c in groups['deactivated'] %}<label class="balance-item">
+      {% for c in groups[balance_action] %}<label class="balance-item">
         <span><span class="badge badge-inactive">비재직</span> {{ c.name }} ({{ c.point_no|point_no }})</span>
-        <input type="text" inputmode="numeric" name="deactivated_carry_{{ c.point_no }}" value="{{ deactivated_carries.get(c.point_no, '') }}" placeholder="{% if c.point_no in prev_totals %}직전 잔액: {{ prev_totals[c.point_no]|number_format }}원{% else %}이월 잔액{% endif %}" required>
+        <input type="text" inputmode="numeric" name="deactivated_carry_{{ c.point_no }}" value="{{ deactivated_carries.get(c.point_no, '') }}" placeholder="{% if c.point_no in prev_totals %}{{ prev_totals[c.point_no]|number_format }}{% else %}미확인{% endif %}" required>
       </label>{% endfor %}
     </div>
   </div>{% endif %}
+  {% endfor %}
   {% if obsolete_carries %}<details class="card"><summary>새 분석에서 제외된 이월 입력 (적용되지 않음)</summary>
     {% for point, value in obsolete_carries.items() %}<p>{{ point }}: {{ value }} <input type="hidden" name="deactivated_carry_{{ point }}" value="{{ value }}"></p>{% endfor %}
   </details>{% endif %}
@@ -138,11 +140,19 @@
     <ul>{% for warning in warnings %}<li>{{ warning }}</li>{% endfor %}</ul>
     <label><input type="checkbox" name="ack_warnings" value="yes"> 처리 월·누락 후보·합계 경고를 원본과 대조했습니다.</label>
   </div>{% endif %}
-  <button type="submit" class="btn btn-primary confirm-monthly" {% if not review_token %}disabled{% endif %}>확정 · 동기화</button>
+  <div id="confirm-feedback" class="alert alert-error" role="alert" {% if not error and not errors %}hidden{% endif %}>
+    <p id="confirm-message">{{ error or ('입력 내용을 확인해 주세요.' if errors else '') }}</p>
+    <ul id="confirm-errors">{% for key, message in errors.items() %}<li><button type="button" class="btn-link review-error-link" data-error-key="{{ key }}">{{ message }}</button></li>{% endfor %}</ul>
+    <button type="button" class="btn btn-sm" id="confirm-error-jump" hidden>확인이 필요한 입력으로 이동</button>
+  </div>
+  <p id="confirm-reason" role="status">{% if not review_token %}연결·정보 선택과 입력 오류를 확인한 뒤 수정 내용 재검수를 눌러 주세요.{% endif %}</p>
+  <button type="button" class="btn" id="review-again">수정 내용 재검수</button>
+  <button type="submit" aria-describedby="confirm-reason confirm-message" class="btn btn-primary confirm-monthly" {% if not review_token %}disabled{% endif %}>확정 · 동기화</button>
   <a class="btn" href="/monthly">취소</a>
 </form>
 <script src="/static/js/review.js" defer></script>
 <script src="/static/js/drafts.js" defer></script>
 <script src="/static/js/review-input.js" defer></script>
 <script src="/static/js/review-position.js" defer></script>
+<script src="/static/js/review-header.js" defer></script>
 {% endblock %}

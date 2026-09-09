@@ -100,6 +100,10 @@ class Report:
     teams: list[TeamStat]
     unclassified_rows: list[PersonStat] = field(default_factory=list)
     generated_at: datetime = field(default_factory=utcnow)
+    active_teams: list[TeamStat] = field(default_factory=list)
+    holding_teams: list[TeamStat] = field(default_factory=list)
+    holding_unclassified_rows: list[PersonStat] = field(default_factory=list)
+    team_status_unknown_count: int = 0
 
 
 def _label(provenance: str) -> str:
@@ -320,9 +324,33 @@ def report(
         if scope == "observed"
         else latest_observations(db, through_month=month, operation_id=operation_id)
     )
-    return _assemble(
+    result = _assemble(
         month, scope, account_type, operation_id, people, events, balances, person_id, team_name
     )
+    # 재직 표는 선택 범위, 전체 표는 미관측 달에도 마지막 실제 보유 잔액을 포함한다.
+    holdings = result
+    if scope != "as_of":
+        holdings = _assemble(
+            month,
+            "as_of",
+            account_type,
+            operation_id,
+            people,
+            events,
+            latest_observations(db, through_month=month, operation_id=operation_id),
+            person_id,
+            team_name,
+        )
+    result.active_teams = _teams(
+        [row for row in result.rows if row.status == "active" and row.provenance != "unobserved"]
+    )
+    result.holding_teams = holdings.teams
+    result.holding_unclassified_rows = holdings.unclassified_rows
+    result.team_status_unknown_count = sum(
+        row.provenance == "unobserved" or row.status not in {"active", "inactive"}
+        for row in holdings.rows
+    )
+    return result
 
 
 def month_summary(db: Session, month: str, *, operation_id: int | None = None) -> MonthSummary:

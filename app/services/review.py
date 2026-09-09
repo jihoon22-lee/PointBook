@@ -17,8 +17,13 @@ from app.services.dates import current_month, validate_month
 from app.services.identifiers import normalize_point_no
 from app.services.parsing import MAX_REQUEST_ROWS, ROW_FIELDS, RawRequestRow
 from app.services.request_profiles import prepare, reset_target
-from app.services.sync import ACTION_DEACTIVATED, RequestRow, SyncAnalysis, analyze
-from app.services.validation import parse_balance, parse_expected_count, parse_expected_total
+from app.services.sync import ABSENT_ACTIONS, ACTION_DEACTIVATED, RequestRow, SyncAnalysis, analyze
+from app.services.validation import (
+    parse_balance,
+    parse_expected_count,
+    parse_expected_total,
+    parse_money,
+)
 
 
 @dataclass
@@ -76,11 +81,34 @@ def raw_rows_from_form(form: FormData, *, clear_source_issues: bool = False) -> 
 
 
 def deactivated_from_form(form: FormData) -> dict[str, str]:
+    """두 비재직 구역 모두 기존 폼·초안 키를 사용해 이전 초안을 보존한다."""
     return {
         key.removeprefix("deactivated_carry_"): str(value)
         for key, value in form.multi_items()
         if key.startswith("deactivated_carry_")
     }
+
+
+def canonical_money(value: str, *, balance: bool = False, expected: bool = False) -> str:
+    """승인·재전송 비교에서만 유효 금액의 표시 차이를 제거한다. 원문은 보존한다."""
+    try:
+        if balance:
+            return str(parse_balance(value))
+        if expected:
+            return str(parse_expected_total(value, max_rows=MAX_REQUEST_ROWS))
+        return str(parse_money(value))
+    except ValueError:
+        return value
+
+
+def canonical_row(row: RawRequestRow, *, include_carry: bool = False) -> dict[str, str]:
+    value = {k: v for k, v in asdict(row).items() if k != "source_line"}
+    value["amount"] = canonical_money(row.amount)
+    if include_carry:
+        value["carry"] = canonical_money(row.carry, balance=True)
+    else:
+        value.pop("carry")
+    return value
 
 
 def database_fingerprint(db: Session) -> str:
@@ -333,12 +361,9 @@ def review_rows(
                 result.errors[key] = str(exc)
     payload = {
         "month": month,
-        "rows": [
-            {k: v for k, v in asdict(r).items() if k not in {"carry", "source_line"}}
-            for r in raw_rows
-        ],
+        "rows": [canonical_row(r) for r in raw_rows],
         "expected_count": expected_count,
-        "expected_amount": expected_amount,
+        "expected_amount": canonical_money(expected_amount, expected=True),
         "database": database_fingerprint(db),
     }
     result.digest = hashlib.sha256(
@@ -360,7 +385,7 @@ def carry_values(
         except ValueError as exc:
             errors[raw.row_id] = f"{row.name}: {exc}"
     for change in review.analysis.changes:
-        if change.action == ACTION_DEACTIVATED:
+        if change.action in ABSENT_ACTIONS:
             try:
                 values[change.point_no] = parse_balance(
                     deactivated.get(change.point_no, ""), label="이월 잔액"
