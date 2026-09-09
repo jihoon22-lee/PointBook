@@ -12,6 +12,7 @@ from starlette.datastructures import FormData
 
 from app.config import get_settings
 from app.models import BalanceRecord, LedgerState, MonthlySnapshot, Person, Team
+from app.services.absent_carries import matches_binding
 from app.services.balance import previous_totals
 from app.services.dates import current_month, validate_month
 from app.services.identifiers import normalize_point_no
@@ -29,9 +30,11 @@ from app.services.validation import (
 @dataclass
 class Review:
     raw_rows: list[RawRequestRow]
+    month: str = ""
     rows: list[RequestRow] = field(default_factory=list)
     analysis: SyncAnalysis = field(default_factory=lambda: SyncAnalysis(changes=[]))
     errors: dict[str, str] = field(default_factory=dict)
+    error_fields: dict[str, str] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
     prev_totals: dict[str, int] = field(default_factory=dict)
     token: str = ""
@@ -189,7 +192,7 @@ def review_rows(
 ) -> Review:
     # 제출 원문은 재전송 대조에도 쓰므로 보완은 복사본에만 적용한다.
     raw_rows = [replace(raw) for raw in raw_rows]
-    result = Review(raw_rows=raw_rows)
+    result = Review(raw_rows=raw_rows, month=month)
     people = (
         list(db.scalars(select(Person).options(joinedload(Person.team)).order_by(Person.id)))
         if raw_rows
@@ -206,7 +209,7 @@ def review_rows(
                 (person.name.strip(), person.personal_no.strip(), person.account_type), []
             ).append(person)
     by_point = {person.point_no: person for person in people}
-    for raw in raw_rows:
+    for raw_index, raw in enumerate(raw_rows):
         identity = (raw.name.strip(), raw.personal_no.strip(), raw.account_type)
         exact = by_identity.get(identity, []) if all(identity) else []
         signature = hashlib.sha256(json.dumps(identity, ensure_ascii=False).encode()).hexdigest()
@@ -218,6 +221,7 @@ def review_rows(
             normalized_point = ""
         if raw.link_state not in {"", "manual", "new"} and not automatic and not manual:
             result.errors[raw.row_id] = "인원 연결 상태를 확인하세요."
+            result.error_fields[raw.row_id] = f"point_no_{raw_index}"
         if manual and normalized_point != manual[1]:
             raw.link_state, raw.carry = "manual", ""
         if automatic:
@@ -244,6 +248,7 @@ def review_rows(
         linked_person = by_point.get(point)
         if raw.link_state == "new" and linked_person:
             result.errors[raw.row_id] = "이미 등록된 포인트번호입니다. 기존 인원을 연결하세요."
+            result.error_fields[raw.row_id] = f"point_no_{raw_index}"
         if linked_person and raw.link_state != "new":
             differences = prepare(raw, linked_person)
             result.profile_differences[raw.row_id] = differences
@@ -277,6 +282,7 @@ def review_rows(
     month_error = new_month_error(db, month)
     if month_error:
         result.errors["month"] = month_error
+        result.error_fields["month"] = "month"
     if not raw_rows:
         result.errors["rows"] = "인원 행이 없습니다."
     ids: set[str] = set()
@@ -287,6 +293,7 @@ def review_rows(
         ids.add(raw.row_id)
         try:
             if not raw.point_no.strip() and not raw.source_issue:
+                result.error_fields[raw.row_id] = f"point_no_{index - 1}"
                 raise ValueError(result.pending_links[raw.row_id])
             row = raw.validated()
             # prepare가 검증한 비교 결과에서만 빈 값의 명시 선택을 파생한다.
@@ -299,17 +306,26 @@ def review_rows(
                     difference.get("choice") == "incoming" and difference.get("incoming") == "",
                 )
             if row.point_no in points:
+                result.error_fields[raw.row_id] = f"point_no_{index - 1}"
                 raise ValueError("중복된 포인트번호입니다.")
             points[row.point_no] = raw.row_id
             result.rows.append(row)
         except ValueError as exc:
             result.errors[raw.row_id] = f"{index}행: {exc}"
+            error_field = getattr(exc, "field", None)
+            if error_field:
+                result.error_fields[raw.row_id] = f"{error_field}_{index - 1}"
     if result.errors:
         return result
     try:
         result.analysis = analyze(db, result.rows)
     except ValueError as exc:
         result.errors["analysis"] = str(exc)
+        for index, row in enumerate(result.rows):
+            type_target = by_point.get(row.point_no)
+            if type_target and type_target.account_type != row.account_type:
+                result.error_fields["analysis"] = f"account_type_{index}"
+                break
         return result
     result.request_amount = sum(row.amount for row in result.rows)
     totals = previous_totals(db, month)
@@ -359,6 +375,7 @@ def review_rows(
                     )
             except ValueError as exc:
                 result.errors[key] = str(exc)
+                result.error_fields[key] = key
     payload = {
         "month": month,
         "rows": [canonical_row(r) for r in raw_rows],
@@ -375,21 +392,29 @@ def review_rows(
 
 
 def carry_values(
-    review: Review, deactivated: dict[str, str]
+    review: Review, deactivated: dict[str, str], bindings: dict[str, str] | None = None
 ) -> tuple[dict[str, int], dict[str, str]]:
     values: dict[str, int] = {}
     errors: dict[str, str] = {}
-    for raw, row in zip(review.raw_rows, review.rows, strict=True):
+    for index, (raw, row) in enumerate(zip(review.raw_rows, review.rows, strict=True)):
         try:
             values[row.point_no] = parse_balance(raw.carry, label="이월 잔액")
         except ValueError as exc:
             errors[raw.row_id] = f"{row.name}: {exc}"
+            review.error_fields[raw.row_id] = f"carry_{index}"
     for change in review.analysis.changes:
         if change.action in ABSENT_ACTIONS:
             try:
+                if not matches_binding(
+                    (bindings or {}).get(change.point_no, ""), review.month, change
+                ):
+                    raise ValueError(
+                        "이월 잔액의 인원·월 연결이 변경되었습니다. 다시 입력해 주세요."
+                    )
                 values[change.point_no] = parse_balance(
                     deactivated.get(change.point_no, ""), label="이월 잔액"
                 )
             except ValueError as exc:
                 errors[change.point_no] = f"{change.name}: {exc}"
+                review.error_fields[change.point_no] = f"deactivated_carry_{change.point_no}"
     return values, errors

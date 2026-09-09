@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.models import Person, Team
 from app.services.identifiers import normalize_point_no
 from app.services.teams import TEAM_COLORS
-from app.services.validation import parse_money
+from app.services.validation import FieldError, parse_money
 
 
 @dataclass
@@ -24,14 +24,22 @@ class RequestRow:
     clear_grade: bool = False
 
     def __post_init__(self) -> None:
-        self.point_no = normalize_point_no(self.point_no)
-        self.amount = parse_money(self.amount)
+        try:
+            self.point_no = normalize_point_no(self.point_no)
+        except ValueError as exc:
+            raise FieldError(str(exc), "point_no") from exc
+        try:
+            self.amount = parse_money(self.amount)
+        except ValueError as exc:
+            raise FieldError(str(exc), "amount") from exc
         if self.account_type not in {"person", "shared"}:
-            raise ValueError("계정 유형은 person 또는 shared여야 합니다.")
+            raise FieldError("계정 유형은 person 또는 shared여야 합니다.", "account_type")
         if not self.name.strip():
-            raise ValueError("이름을 입력해 주세요.")
+            raise FieldError("이름을 입력해 주세요.", "name")
         if self.account_type == "person" and not self.personal_no.strip():
-            raise ValueError("일반 인원은 개인번호를 입력해 주세요. 공용계정은 유형을 선택하세요.")
+            raise FieldError(
+                "일반 인원은 개인번호를 입력해 주세요. 공용계정은 유형을 선택하세요.", "personal_no"
+            )
 
 
 ACTION_KEPT = "kept"

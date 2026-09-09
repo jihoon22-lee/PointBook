@@ -8,7 +8,9 @@
   var submitting = false;
   function field(name) { return form.elements.namedItem(name); }
   function canonicalURL() {
-    if (field('draft_id').value && window.history.replaceState) window.history.replaceState(null, '', '/drafts/' + encodeURIComponent(field('draft_id').value));
+    if (!field('draft_id').value || !window.history.replaceState) return;
+    var url = '/drafts/' + encodeURIComponent(field('draft_id').value);
+    if (window.location.pathname + window.location.search !== url) window.history.replaceState(null, '', url);
   }
   canonicalURL();
   function message(text, failed) {

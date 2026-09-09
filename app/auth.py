@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app import db as db_module
 from app.db import get_db
 from app.models import AdminUser
+from app.services.parsing import MAX_REVIEW_FORM_FIELDS
 
 SESSION_KEY = "admin_username"
 
@@ -27,7 +28,9 @@ async def verify_csrf(request: Request) -> AsyncIterator[None]:
             supplied: object = request.headers.get("x-csrf-token")
             if supplied is None:
                 form = await request.form(
-                    max_files=1, max_fields=35000, max_part_size=2 * 1024 * 1024
+                    max_files=1,
+                    max_fields=MAX_REVIEW_FORM_FIELDS,
+                    max_part_size=2 * 1024 * 1024,
                 )
                 supplied = form.get("csrf_token")
             if (

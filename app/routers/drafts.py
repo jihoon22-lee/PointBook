@@ -18,7 +18,7 @@ from app.services.drafts import (
     payload_from_form,
     save_draft,
 )
-from app.services.parsing import MAX_REQUEST_ROWS, RawRequestRow
+from app.services.parsing import MAX_REVIEW_FORM_FIELDS, RawRequestRow
 from app.services.review import review_rows
 from app.template_utils import render
 
@@ -56,7 +56,7 @@ def draft_session(request: Request) -> Response:
 
 @router.post("/save")
 async def draft_save(request: Request, db: Session = Depends(get_db)) -> Response:
-    form = await request.form(max_files=0, max_fields=MAX_REQUEST_ROWS * 16 + 50)
+    form = await request.form(max_files=0, max_fields=MAX_REVIEW_FORM_FIELDS)
     try:
         payload = payload_from_form(form)
         fork = form.get("fork") == "yes"
@@ -102,6 +102,8 @@ def draft_open(draft_id: str, request: Request, db: Session = Depends(get_db)) -
             draft_info=draft_state(draft),
             input_source=payload["source"],
             deactivated=payload["deactivated"],
+            absent_bindings=payload.get("absent_bindings", {}),
+            preserved_absent_carries=payload.get("preserved_absent_carries", []),
             expected_count=payload["expected_count"],
             expected_amount=payload["expected_amount"],
             message="저장된 입력을 복구했습니다. 현재 기준의 변경 예상을 확인한 뒤 확정하세요.",

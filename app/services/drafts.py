@@ -13,6 +13,12 @@ from starlette.datastructures import FormData
 
 from app.config import get_settings
 from app.models import MonthlyDraft, utcnow
+from app.services.absent_carries import (
+    bindings_from_form,
+    preserved_entries,
+    preserved_from_form,
+    reconcile,
+)
 from app.services.ledger import ledger_version, start_write, validate_request_key
 from app.services.parsing import MAX_REQUEST_ROWS, RawRequestRow
 from app.services.review import (
@@ -38,6 +44,8 @@ def draft_payload(
     rows: list[RawRequestRow],
     *,
     deactivated: dict[str, str] | None = None,
+    absent_bindings: dict[str, str] | None = None,
+    preserved_absent_carries: list[str] | None = None,
     expected_count: str = "",
     expected_amount: str = "",
     source: str = "manual",
@@ -53,6 +61,8 @@ def draft_payload(
         "month": month,
         "rows": [asdict(row) for row in rows],
         "deactivated": deactivated or {},
+        "absent_bindings": absent_bindings or {},
+        "preserved_absent_carries": preserved_absent_carries or [],
         "expected_count": expected_count,
         "expected_amount": expected_amount,
         "source": source,
@@ -70,6 +80,8 @@ def payload_from_form(form: FormData) -> dict[str, Any]:
         str(form.get("month", "")),
         raw_rows_from_form(form),
         deactivated=deactivated_from_form(form),
+        absent_bindings=bindings_from_form(form),
+        preserved_absent_carries=preserved_from_form(form),
         expected_count=str(form.get("expected_count", "")),
         expected_amount=str(form.get("expected_amount", "")),
         source=str(form.get("input_source", "manual")),
@@ -126,7 +138,20 @@ def save_draft(
         review = review_rows(
             db, payload["month"], rows, payload["expected_count"], payload["expected_amount"]
         )
-        payload = {**payload, "rows": [asdict(row) for row in review.raw_rows]}
+        absent = reconcile(
+            payload["month"],
+            review.analysis.changes or None,
+            payload["deactivated"],
+            payload.get("absent_bindings", {}),
+            payload.get("preserved_absent_carries", []),
+        )
+        payload = {
+            **payload,
+            "rows": [asdict(row) for row in review.raw_rows],
+            "deactivated": absent.values,
+            "absent_bindings": absent.bindings,
+            "preserved_absent_carries": absent.preserved,
+        }
         encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True)
         if len(encoded.encode()) > MAX_DRAFT_BYTES:
             raise DraftError("초안 저장 한도를 넘었습니다.", 413)
@@ -140,6 +165,17 @@ def save_draft(
                     "서버 초안이 변경되었습니다. 다른 탭·기기 또는 이전 저장 결과와 대조하거나 이 입력을 새 초안으로 저장하세요.",
                     409,
                 )
+            prior_payload = json.loads(draft.payload_json)
+            payload["preserved_absent_carries"] = [
+                entry["token"]
+                for entry in preserved_entries(
+                    prior_payload.get("preserved_absent_carries", [])
+                    + payload["preserved_absent_carries"]
+                )
+            ]
+            encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+            if len(encoded.encode()) > MAX_DRAFT_BYTES:
+                raise DraftError("초안 저장 한도를 넘었습니다.", 413)
             draft.version += 1
         else:
             existing = db.scalar(
@@ -176,7 +212,9 @@ def save_draft(
             )
             db.add(draft)
         _carries, errors = (
-            carry_values(review, payload["deactivated"]) if not review.errors else ({}, {})
+            carry_values(review, payload["deactivated"], payload["absent_bindings"])
+            if not review.errors
+            else ({}, {})
         )
         draft.review_state = (
             "incomplete"
@@ -215,7 +253,18 @@ def verify_draft_for_confirm(
 
 
 def confirm_draft(draft: MonthlyDraft, payload: dict[str, Any], result_url: str) -> None:
-    draft.payload_json = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    previous = json.loads(draft.payload_json)
+    payload["preserved_absent_carries"] = [
+        entry["token"]
+        for entry in preserved_entries(
+            previous.get("preserved_absent_carries", [])
+            + payload.get("preserved_absent_carries", [])
+        )
+    ]
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    if len(encoded.encode()) > MAX_DRAFT_BYTES:
+        raise DraftError("초안 저장 한도를 넘었습니다.", 413)
+    draft.payload_json = encoded
     draft.status = "confirmed"
     draft.version += 1
     draft.review_state = "confirmed"

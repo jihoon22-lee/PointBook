@@ -62,7 +62,7 @@
   ('팀별 재직·비재직 전체 통계', holding_teams, '기준 월까지 보유 잔액', 'all-team-stats')
 ] %}
 <div class="card"><h2>{{ title }} ({{ selected }})</h2>
-  <p class="muted">{{ balance_label }} · {{ '조회 월까지 마지막 확인 상태가 재직인 계정입니다.' if loop.first else '조회 월까지 마지막 확인 잔액을 포함합니다. 충전·순사용은 조회 월 실제 기록만 합산합니다. 잔액 미확인 인원이 있으면 확인된 잔액의 부분 합계입니다.' }}</p>
+  <p class="muted">{{ balance_label }} · {{ '충전·순사용은 월간 기록의 재직 상태, 잔액은 잔액 관측의 재직 상태를 따릅니다.' if loop.first else '조회 월까지 마지막 확인 잔액을 포함합니다. 충전·순사용은 조회 월 실제 기록만 합산합니다. 잔액 미확인 인원이 있으면 확인된 잔액의 부분 합계입니다.' }}</p>
   {% if loop.last and report.team_status_unknown_count %}<p class="alert alert-warning">기준시점 재직 상태 미확인 {{ report.team_status_unknown_count }}명: 현재 상태로 과거 재직을 판단하지 않고 전체 통계에 포함합니다.</p>{% endif %}
   {% if loop.last and report.holding_unclassified_rows %}<p class="alert alert-warning">전체 팀 통계의 계정 유형 미확인 {{ report.holding_unclassified_rows|length }}명: 선택 유형 합계에서 제외되어 있습니다. 일반·공용 전체 조회에서 포함됩니다.</p>{% endif %}
   <div class="table-wrap"><table id="{{ table_id }}">

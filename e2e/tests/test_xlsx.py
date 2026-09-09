@@ -82,7 +82,7 @@ def test_standard_excel_and_report_download(page):
     )
     page.reload()
     assert page.input_value('[name="note_0"]') == edited_note
-    with page.expect_navigation(wait_until="domcontentloaded"):
+    with page.expect_navigation(url=page.url, wait_until="load"):
         page.click('button[formaction="/monthly/review"]')
     assert page.input_value('[name="note_0"]') == edited_note
     for carry in page.locator('input[name^="deactivated_carry_"]').all():

@@ -10,6 +10,11 @@
   function reveal(input) {
     if (!input) return;
     var row = input.closest('tr');
+    var cell = input.closest('td');
+    if (cell && window.getComputedStyle(cell).display === 'none') {
+      document.getElementById('focus-input').checked = false;
+      table.classList.remove('focus-input');
+    }
     if (row && row.hidden) {
       document.getElementById('row-filter').value = 'all';
       if (window.pointbookReviewInputs) window.pointbookReviewInputs.applyView();
@@ -53,9 +58,10 @@
   form.querySelectorAll('.review-error-link').forEach(function (button) {
     button.addEventListener('click', function () {
       var key = button.getAttribute('data-error-key');
+      var target = button.getAttribute('data-error-field');
       var row = Array.prototype.find.call(table.tBodies[0].rows, function (item) { return item.getAttribute('data-row-id') === key; });
-      reveal(form.elements.namedItem(key) || form.elements.namedItem('deactivated_carry_' + key) ||
-        (row && (row.querySelector('[data-field="carry"]:invalid') || row.querySelector('[data-field="name"]'))));
+      reveal((target && form.elements.namedItem(target)) || form.elements.namedItem(key) ||
+        (row && row.querySelector('[data-field="name"]')));
     });
   });
   function changed() {
