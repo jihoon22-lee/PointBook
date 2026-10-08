@@ -20,6 +20,8 @@ def test_paired_images_keep_document_notice_after_first_row_deleted(page):
     page.click('button:has-text("인식 · 검수하기")')
     page.wait_for_selector("#review-form")
     assert page.locator("#rows tbody tr").count() == 3
+    assert page.locator("#rows .name-review-warning").count() == 3
+    assert page.locator("#rows .name-review-warning").first.is_visible()
     # 기본 Mock의 세 자리 번호는 네 자리 명단에서 자동 보완하지 않는다.
     notice = page.locator('input[name="import_notice"]').input_value()
     assert "자동 연결에 사용하지 않은 3명" in notice
@@ -33,4 +35,6 @@ def test_paired_images_keep_document_notice_after_first_row_deleted(page):
     assert page.locator("#rows tbody tr").count() == 2
     assert page.locator('input[name="import_notice"]').input_value() == notice
     page.set_viewport_size({"width": 390, "height": 844})
+    assert page.locator("#rows .name-review-warning").count() == 2
+    assert page.locator("#rows .name-review-warning").first.is_visible()
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")

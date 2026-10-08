@@ -202,7 +202,7 @@ def review_rows(
     result = Review(raw_rows=raw_rows, month=month, import_notice=import_notice)
     result.warnings.extend(row.source_warning for row in raw_rows if row.source_warning)
     if import_notice:
-        result.warnings.append("개인번호 명단의 미사용 인원을 지급표와 대조하세요.")
+        result.warnings.append("사진 대조 안내와 원문을 확인하세요.")
     people = (
         list(db.scalars(select(Person).options(joinedload(Person.team)).order_by(Person.id)))
         if raw_rows

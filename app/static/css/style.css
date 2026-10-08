@@ -437,6 +437,7 @@ body:has(.login-wrap) .login-wrap .muted { color: #cbd5e1; }
 .person-link-editor > select { width: 100%; margin: 6px 0; }
 .person-link-editor .btn { margin-bottom: 4px; }
 .row-error { display: block; font-size: .85rem; overflow-wrap: anywhere; }
+.name-review-warning { display: block; margin-top: 6px; color: #704e00; white-space: normal; overflow-wrap: anywhere; }
 .review-input-table .review-row-auto > td { background: #f0faf3; }
 .review-input-table .review-row-manual > td, .review-input-table .review-row-pending > td { background: #fff9e9; }
 .review-input-table .review-row-new > td { background: #eff6ff; }

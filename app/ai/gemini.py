@@ -34,8 +34,18 @@ ROSTER_PROMPT = """이미지 속 팀별 개인번호 명단의 모든 인원 행
 point_no와 amount는 빈 문자열, account_type은 person, 모르는 셀은 빈 문자열로 둔다.
 설명이나 코드펜스를 붙이지 마라."""
 
+NAME_RECHECK_PROMPT = """이 요청은 이름을 집중적으로 다시 판독하는 독립 검사다.
+이름을 흔한 이름으로 추정하거나 사전 지식으로 교정하지 말고 사진에 인쇄된 글자만 읽어라.
+모든 이름을 한 글자씩 확인하고, 특히 종성(받침)의 유무와 ㄴ/ㅁ/ㅇ 등 비슷한 획을 대조해라.
+확실하게 읽을 수 없는 이름은 빈 문자열로 남겨 사람이 확인하게 해라.
+이름과 행을 대조할 수 있도록 같은 행의 팀·계급·개인번호·포인트번호·금액도 읽어라.
+제목과 합계는 제외하고 모든 인원 행을 보존하며, 옆 행의 번호나 이름을 가져오지 마라.
+"""
+
 
 class GeminiProvider(VisionProvider):
+    supports_name_recheck = True
+
     def __init__(
         self,
         api_key: str,
@@ -57,7 +67,14 @@ class GeminiProvider(VisionProvider):
     def extract_roster(self, image_bytes: bytes, filename: str) -> list[RawRequestRow]:
         return self._extract(image_bytes, filename, roster=True)
 
-    def _extract(self, image_bytes: bytes, filename: str, *, roster: bool) -> list[RawRequestRow]:
+    def extract_names(
+        self, image_bytes: bytes, filename: str, *, roster: bool = False
+    ) -> list[RawRequestRow]:
+        return self._extract(image_bytes, filename, roster=roster, names_only=True)
+
+    def _extract(
+        self, image_bytes: bytes, filename: str, *, roster: bool, names_only: bool = False
+    ) -> list[RawRequestRow]:
         if not self._api_key.strip():
             raise VisionError("GEMINI_API_KEY가 설정되지 않았습니다.", code="missing_key")
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}", self._model):
@@ -70,7 +87,10 @@ class GeminiProvider(VisionProvider):
             "contents": [
                 {
                     "parts": [
-                        {"text": ROSTER_PROMPT if roster else PROMPT},
+                        {
+                            "text": (NAME_RECHECK_PROMPT if names_only else "")
+                            + (ROSTER_PROMPT if roster else PROMPT)
+                        },
                         {
                             "inline_data": {
                                 "mime_type": mime,
@@ -132,7 +152,7 @@ class GeminiProvider(VisionProvider):
                 raise VisionError(
                     "AI 응답 문자 형식이 올바르지 않습니다.", code="response_encoding"
                 ) from None
-            return parse_rows(self._response_text(load_json(document)), roster=roster)
+            return parse_rows(self._response_text(load_json(document)), roster=roster or names_only)
         except httpx.HTTPError:
             raise VisionError("Gemini API 호출에 실패했습니다.", code="network") from None
 
