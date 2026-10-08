@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, joinedload
 from starlette.datastructures import FormData
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
+from app.ai.images import image_mime
 from app.auth import require_login
 from app.config import get_settings
 from app.db import get_db
@@ -36,6 +37,7 @@ from app.services.drafts import (
 )
 from app.services.history import profile_for_person
 from app.services.ledger import LedgerConflict, add_operation, find_replay
+from app.services.paired_images import merge_roster
 from app.services.parsing import MAX_REVIEW_FORM_FIELDS, RawRequestRow, parse_pasted_raw
 from app.services.request_profiles import choose, reset_target
 from app.services.review import (
@@ -58,7 +60,10 @@ ALLOWED_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".heic", ".xlsx"}
 
 
 async def monthly_form(request: Request) -> FormData:
-    return await request.form(max_files=1, max_fields=MAX_REVIEW_FORM_FIELDS)
+    return await request.form(
+        max_files=2 if request.url.path == "/monthly/upload" else 1,
+        max_fields=MAX_REVIEW_FORM_FIELDS,
+    )
 
 
 def _parse_row_fields(form: FormData) -> list[RequestRow]:
@@ -173,10 +178,12 @@ def review_response(
             "errors": review.errors,
             "error_fields": review.error_fields,
             "warnings": review.warnings,
+            "import_notice": review.import_notice,
             "review_token": review.token,
             "request_key": request_key or uuid.uuid4().hex,
             "prev_totals": review.prev_totals,
             "request_amount": review.request_amount,
+            "input_amount": review.input_amount,
             "previous_count": review.previous_count,
             "previous_amount": review.previous_amount,
             "expected_count": expected_count,
@@ -199,11 +206,22 @@ async def upload(request: Request, db: Session = Depends(get_db)) -> Response:
     rows: list[RawRequestRow] = []
     source = "paste" if pasted.strip() else "image"
     file = form.get("file")
-    if pasted.strip() and isinstance(file, StarletteUploadFile) and file.filename:
-        return _error_response(
-            request, db, month, "파일과 붙여넣기 중 하나만 선택해 주세요.", pasted
-        )
+    roster_file = form.get("roster_file")
+    has_file = isinstance(file, StarletteUploadFile) and bool(file.filename)
+    has_roster = isinstance(roster_file, StarletteUploadFile) and bool(roster_file.filename)
     try:
+        uploaded_keys = [
+            key for key, value in form.multi_items() if isinstance(value, StarletteUploadFile)
+        ]
+        if len(uploaded_keys) != len(set(uploaded_keys)) or set(uploaded_keys) - {
+            "file",
+            "roster_file",
+        }:
+            raise ValueError("요청서 사진과 개인번호 명단을 각각 한 장씩 선택해 주세요.")
+        if pasted.strip() and (has_file or has_roster):
+            raise ValueError("파일과 붙여넣기 중 하나만 선택해 주세요.")
+        if has_roster and not has_file:
+            raise ValueError("개인번호 명단과 함께 금액이 있는 요청서 사진을 선택해 주세요.")
         if pasted.strip():
             rows = parse_pasted_raw(pasted)
         if isinstance(file, StarletteUploadFile) and file.filename:
@@ -217,6 +235,8 @@ async def upload(request: Request, db: Session = Depends(get_db)) -> Response:
             if len(data) > settings.max_upload_mb * 1024 * 1024:
                 raise ValueError(f"파일이 너무 큽니다. (최대 {settings.max_upload_mb}MB)")
             if ext == ".xlsx":
+                if has_roster:
+                    raise ValueError("개인번호 명단은 요청서 사진과 함께 사용해 주세요.")
                 parsed = await extract_request(data, file.filename)
                 if parsed.month != month:
                     raise ValueError(
@@ -224,7 +244,24 @@ async def upload(request: Request, db: Session = Depends(get_db)) -> Response:
                     )
                 rows, source = parsed.rows, "xlsx"
             else:
+                roster_data = None
+                if isinstance(roster_file, StarletteUploadFile) and roster_file.filename:
+                    roster_data = await roster_file.read(settings.max_upload_mb * 1024 * 1024 + 1)
+                    if len(roster_data) > settings.max_upload_mb * 1024 * 1024:
+                        raise ValueError(
+                            f"명단 파일이 너무 큽니다. (최대 {settings.max_upload_mb}MB)"
+                        )
+                    # 외부 전송 전에 두 파일을 모두 검사한다.
+                    image_mime(data, file.filename)
+                    image_mime(roster_data, roster_file.filename)
                 rows = await extract_image(data, file.filename)
+                if roster_data is not None and isinstance(roster_file, StarletteUploadFile):
+                    roster_rows = await extract_image(
+                        roster_data, roster_file.filename or "", roster=True
+                    )
+                    paired = merge_roster(rows, roster_rows)
+                    rows = paired.rows
+                    form = FormData([*form.multi_items(), ("import_notice", paired.import_notice)])
         if not rows:
             raise ValueError(
                 "인식된 인원이 없습니다. 사진을 다시 업로드하거나 표를 붙여넣기해 주세요."
@@ -232,8 +269,9 @@ async def upload(request: Request, db: Session = Depends(get_db)) -> Response:
     except ValueError as exc:
         return _error_response(request, db, month, str(exc), pasted)
     finally:
-        if isinstance(file, StarletteUploadFile):
-            await file.close()
+        for _, uploaded in form.multi_items():
+            if isinstance(uploaded, StarletteUploadFile):
+                await uploaded.close()
     # 표준 XLSX의 명시적 유형은 보존한다. 유형 열 없는 입력만 DB 공용 정보를 보완한다.
     if source != "xlsx":
         shared_points = set(
@@ -242,7 +280,7 @@ async def upload(request: Request, db: Session = Depends(get_db)) -> Response:
         for row in rows:
             if row.point_no.replace(" ", "").replace("-", "") in shared_points:
                 row.account_type = "shared"
-    return store_review_response(request, db, month, rows, source=source)
+    return store_review_response(request, db, month, rows, source=source, form=form)
 
 
 @router.post("/link")
@@ -276,7 +314,7 @@ async def link_person(request: Request, db: Session = Depends(get_db)) -> Respon
         # 연결 이전에 입력한 잔액이 다른 사람에게 적용되지 않도록 다시 확인받는다.
         row.carry = ""
     except ValueError as exc:
-        result = review_rows(db, month, rows)
+        result = review_rows(db, month, rows, import_notice=str(form.get("import_notice", "")))
         result.errors["link"] = str(exc)
         if len(targets) == 1:
             result.error_fields["link"] = (
@@ -341,7 +379,7 @@ async def choose_profile(request: Request, db: Session = Depends(get_db)) -> Res
                 raise ValueError("연결된 인원이 변경되었습니다. 다시 연결하세요.")
             choose(row, person, field, side)
     except ValueError as exc:
-        result = review_rows(db, month, rows)
+        result = review_rows(db, month, rows, import_notice=str(form.get("import_notice", "")))
         result.token = ""
         return review_response(
             request,
@@ -390,7 +428,14 @@ def store_review_response(
     expected_amount = str(form.get("expected_amount", ""))
     deactivated = deactivated_from_form(form)
     key = str(form.get("request_key", "")) or uuid.uuid4().hex
-    result = review_rows(db, month, rows, expected_count, expected_amount)
+    result = review_rows(
+        db,
+        month,
+        rows,
+        expected_count,
+        expected_amount,
+        import_notice=str(form.get("import_notice", "")),
+    )
     info: dict[str, Any] = {
         "draft_id": str(form.get("draft_id", "")),
         "draft_version": str(form.get("draft_version", "")),
@@ -410,6 +455,7 @@ def store_review_response(
                 expected_amount=expected_amount,
                 source=source,
                 review_token=result.token,
+                import_notice=result.import_notice,
             ),
             request_key=key,
             draft_id=info["draft_id"],
@@ -474,6 +520,8 @@ async def confirm(request: Request, db: Session = Depends(get_db)) -> Response:
         "expected_count": expected_count,
         "expected_amount": canonical_money(expected_amount, expected=True),
     }
+    if form.get("import_notice"):
+        payload["import_notice"] = str(form["import_notice"])
     replay_error = ""
     try:
         replay = find_replay(db, request_key, "monthly", payload)
@@ -481,7 +529,14 @@ async def confirm(request: Request, db: Session = Depends(get_db)) -> Response:
             return RedirectResponse(replay.result_url, status_code=303)
     except ValueError as exc:
         replay_error = str(exc)
-    result = review_rows(db, month, rows, expected_count, expected_amount)
+    result = review_rows(
+        db,
+        month,
+        rows,
+        expected_count,
+        expected_amount,
+        import_notice=str(form.get("import_notice", "")),
+    )
 
     def response(message: str = "", status: int = 400) -> Response:
         return review_response(
@@ -541,7 +596,14 @@ async def confirm(request: Request, db: Session = Depends(get_db)) -> Response:
         if replay:
             db.rollback()
             return RedirectResponse(replay.result_url, status_code=303)
-        locked = review_rows(db, month, rows, expected_count, expected_amount)
+        locked = review_rows(
+            db,
+            month,
+            rows,
+            expected_count,
+            expected_amount,
+            import_notice=str(form.get("import_notice", "")),
+        )
         if locked.errors or locked.pending_profiles or not matches_token(token, locked.digest):
             result = locked
             db.rollback()

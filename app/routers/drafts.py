@@ -92,7 +92,12 @@ def draft_open(draft_id: str, request: Request, db: Session = Depends(get_db)) -
         payload = json.loads(draft.payload_json)
         rows = [RawRequestRow(**row) for row in payload["rows"]]
         review = review_rows(
-            db, payload["month"], rows, payload["expected_count"], payload["expected_amount"]
+            db,
+            payload["month"],
+            rows,
+            payload["expected_count"],
+            payload["expected_amount"],
+            import_notice=payload.get("import_notice", ""),
         )
         return review_response(
             request,

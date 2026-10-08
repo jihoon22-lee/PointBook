@@ -14,10 +14,21 @@ from app.services.parsing import ROW_FIELDS, RawRequestRow
 
 PROMPT = """이미지 속 요청서 표를 읽어라. 표 컬럼은 순번, 팀, 이름, 계급, 금액, 개인번호, 포인트번호, 비고이다.
 헤더를 제외한 모든 데이터 행을 순서대로 JSON 배열로 출력해라. 불완전한 행도 누락하지 마라.
+제목·산정기관·근무일자·인원 합계·금액 합계는 인원 행이 아니다. 팀 병합 셀은 해당 인원에 적용해라.
+개인별 금액은 지급액/출동간식비 소계(원) 열을 읽고, 출동·상황·당직 건수를 금액으로 바꾸지 마라.
 각 객체 키는 point_no, personal_no, name, team, grade, amount, note, account_type 이다.
 모든 값은 문자열이다. 읽은 그대로 보존하고 숫자 일부 추출, 부호 삭제, 빈 금액을 0으로 바꾸지 마라.
 포인트번호와 개인번호의 선행 0을 유지해라. 포인트번호는 외부 시스템 발급 번호라 요청서에 없을 수 있다. 없는 번호를 이름·개인번호·순번에서 생성하거나 추정하지 마라. 모르는 셀은 빈 문자열로 남겨라.
 account_type은 일반 인원 person, 명시된 공용 계정 shared, 알 수 없으면 빈 문자열이다.
+설명이나 코드펜스를 붙이지 마라."""
+
+ROSTER_PROMPT = """이미지 속 팀별 개인번호 명단의 모든 인원 행을 순서대로 읽어라.
+각 객체 키는 point_no, personal_no, name, team, grade, amount, note, account_type인 JSON 배열이다.
+모든 값은 문자열. 팀 병합 셀은 해당 인원에 적용한다. '경.김합성'처럼 계급.이름을 분리하고
+경=소방경, 위=소방위, 장=소방장, 교=소방교, 사=소방사로 계급을 적는다.
+인원 옆 4자리 개인번호를 선행 0을 보존해 personal_no에 적는다. 전화/내선/인원수/제목은 인원이 아니다.
+명단의 순서나 다른 인원을 근거로 번호를 추정하지 마라. 불완전 인원 행도 버리지 마라.
+point_no와 amount는 빈 문자열, account_type은 person, 모르는 셀은 빈 문자열로 둔다.
 설명이나 코드펜스를 붙이지 마라."""
 
 
@@ -38,6 +49,12 @@ class GeminiProvider(VisionProvider):
         self._transport = transport
 
     def extract_table(self, image_bytes: bytes, filename: str) -> list[RawRequestRow]:
+        return self._extract(image_bytes, filename, roster=False)
+
+    def extract_roster(self, image_bytes: bytes, filename: str) -> list[RawRequestRow]:
+        return self._extract(image_bytes, filename, roster=True)
+
+    def _extract(self, image_bytes: bytes, filename: str, *, roster: bool) -> list[RawRequestRow]:
         if not self._api_key.strip():
             raise VisionError("GEMINI_API_KEY가 설정되지 않았습니다.", code="missing_key")
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}", self._model):
@@ -50,7 +67,7 @@ class GeminiProvider(VisionProvider):
             "contents": [
                 {
                     "parts": [
-                        {"text": PROMPT},
+                        {"text": ROSTER_PROMPT if roster else PROMPT},
                         {
                             "inline_data": {
                                 "mime_type": mime,
@@ -112,7 +129,7 @@ class GeminiProvider(VisionProvider):
                 raise VisionError(
                     "AI 응답 문자 형식이 올바르지 않습니다.", code="response_encoding"
                 ) from None
-            return parse_rows(self._response_text(load_json(document)))
+            return parse_rows(self._response_text(load_json(document)), roster=roster)
         except httpx.HTTPError:
             raise VisionError("Gemini API 호출에 실패했습니다.", code="network") from None
 

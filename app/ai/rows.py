@@ -26,7 +26,7 @@ def load_json(text: str) -> object:
         raise VisionError("AI 응답 JSON을 파싱할 수 없습니다.", code="invalid_json") from None
 
 
-def parse_rows(text: str) -> list[RawRequestRow]:
+def parse_rows(text: str, *, roster: bool = False) -> list[RawRequestRow]:
     data = load_json(text)
     if not isinstance(data, list) or not data:
         raise VisionError("AI가 요청서 행 배열을 반환하지 않았습니다.", code="empty_rows")
@@ -59,11 +59,14 @@ def parse_rows(text: str) -> list[RawRequestRow]:
         if set(item) - set(ROW_FIELDS):
             issues.append("알 수 없는 필드가 있습니다. 원문을 확인하세요.")
         row = RawRequestRow(**values, source_line=source)
-        try:
-            row.validated()
-        except ValueError as exc:
-            # The validator only generates fixed field messages, never external errors.
-            issues.append(str(exc))
+        if not roster:
+            try:
+                row.validated()
+            except ValueError as exc:
+                # 포인트번호 없는 요청서는 기존 인원 연결 단계에서 보완한다.
+                # 금액/셀 길이/자료형 오류는 여전히 원문 오류로 보존한다.
+                if not (getattr(exc, "field", "") == "point_no" and not row.point_no.strip()):
+                    issues.append(str(exc))
         row.source_issue = f"AI {index}행: " + " ".join(issues) if issues else ""
         rows.append(row)
     return rows
