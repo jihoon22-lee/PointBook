@@ -2,6 +2,14 @@
 {% block title %}요청서 검수 - PointBook{% endblock %}
 {% block container_class %} review-container{% endblock %}
 {% block content %}
+{% macro carry_help(key, state, previous, person_name) %}
+  <div class="carry-help" id="carry-help-{{ key }}">
+    <small class="carry-reference">{% if previous is not none %}직전 총 잔액: {{ previous|number_format }}원{% else %}이전 기록 없음{% endif %}</small>
+    <button type="button" class="btn btn-sm use-previous-carry" aria-label="{{ person_name }} 직전 잔액 사용" {% if previous is none %}disabled{% endif %}>직전 잔액 사용</button>
+    <small class="carry-state" data-state="{{ state.status }}">{{ {'missing':'미입력','complete':'입력 완료','error':'금액 확인 필요'}[state.status] }}</small>
+    <small class="carry-error" {% if not state.message %}hidden{% endif %}>{{ state.message }}</small>
+  </div>
+{% endmacro %}
 {% macro profile_choices(row, field) %}
   {% set difference = profile_differences.get(row.row_id, {}).get(field) %}
   {% if difference %}
@@ -21,7 +29,7 @@
 {% if pending_profiles %}<p class="alert alert-warning" role="status">인원 정보 확인 {{ pending_profiles|length }}명: 현재 등록값과 이번 입력값 중 사용할 값을 선택하세요. 확인을 마치면 변경 예상을 다시 계산합니다.</p>{% endif %}
 <p class="muted">목록을 수정하면 <strong>수정 내용 재검수</strong>를 눌러 변경 예상을 확인하세요. 자동 연결은 입력한 이월을 유지하며, 연결 대상을 바꾸면 이월 잔액을 다시 입력합니다.</p>
 
-<form method="post" action="/monthly/confirm" id="review-form">
+<form method="post" action="/monthly/confirm" id="review-form" data-carry-max="{{ max_carry }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token|default('') }}">
   <input type="hidden" name="draft_id" value="{{ draft_id|default('') }}">
   <input type="hidden" name="draft_version" value="{{ draft_version|default('') }}">
@@ -49,10 +57,12 @@
     <div class="table-wrap">
       <div class="input-tools toolbar">
         <label><input type="checkbox" id="focus-input"> 잔액·금액 집중 보기</label>
-        <label>표시<select id="row-filter"><option value="all">전체 행</option><option value="missing">이월 미입력</option><option value="errors">검수 오류</option><option value="new">신규 (최근 검수)</option><option value="returned">복귀 (최근 검수)</option><option value="kept">재직 유지 (최근 검수)</option><option value="team_changed">팀 변경 (최근 검수)</option><option value="profile_changed">기본 정보 변경 (최근 검수)</option></select></label>
+        <label>표시<select id="row-filter"><option value="all">전체 행</option><option value="missing">이월 미입력</option><option value="carry-error">이월 금액 확인 필요</option><option value="errors">검수 오류</option><option value="new">신규 (최근 검수)</option><option value="returned">복귀 (최근 검수)</option><option value="kept">재직 유지 (최근 검수)</option><option value="team_changed">팀 변경 (최근 검수)</option><option value="profile_changed">기본 정보 변경 (최근 검수)</option></select></label>
         <label>정렬<select id="row-sort"><option value="original">원래 순서</option><option value="name">이름</option><option value="point_no">포인트번호</option><option value="team">팀</option><option value="amount">충전액</option></select></label>
         <button type="button" id="next-missing" class="btn">다음 미입력 잔액</button>
-        <p id="input-summary" role="status" aria-live="polite"></p>
+        <button type="button" id="next-carry-error" class="btn">다음 잔액 오류</button>
+        <p id="input-summary" role="status" aria-live="polite">입력 완료 {{ carry_counts.complete }}명 · 미입력 {{ carry_counts.missing }}명 · 금액 확인 필요 {{ carry_counts.error }}명{% if not review_token %} · 전체 처리 대상은 연결·검수 후 확인{% endif %}</p>
+        <p id="carry-confirm-reason" class="alert-error" role="status" {% if not carry_counts.error %}hidden{% endif %}>이월 잔액 오류 {{ carry_counts.error }}건을 수정해야 확정할 수 있습니다.</p>
         <p class="muted">필터로 숨긴 행도 전체 저장·검증·확정 대상입니다. 이월 칸에서 Enter를 누르면 다음 잔액으로 이동합니다.</p>
       </div>
       <table id="rows" class="review-input-table">
@@ -93,9 +103,17 @@
               </select>
               {% elif field == 'note' %}<textarea data-field="note" name="note_{{ row_index }}" rows="1" class="row-input" aria-label="{{ row_index + 1 }}행 {{ label }}">
 {{ row.note }}</textarea>
+              {% elif field == 'carry' %}
+              {% set normalized = row.point_no|replace(' ', '')|replace('-', '') %}
+              {% set previous = prev_totals.get(normalized) if row_state in ['auto','manual'] else none %}
+              {% set state = row_carry_states[row.row_id] %}
+              <div class="carry-control">
+                <input type="text" data-field="carry" name="carry_{{ row_index }}" value="{{ row.carry }}" class="row-input" aria-label="{{ row_index + 1 }}행 이월 잔액" aria-describedby="carry-help-row-{{ row.row_id }}" aria-invalid="{{ 'true' if state.status == 'error' else 'false' }}" inputmode="numeric" placeholder="이월 잔액 입력" data-previous-total="{{ previous if previous is not none else '' }}" required>
+                {{ carry_help('row-' ~ row.row_id, state, previous, row.name) }}
+              </div>
               {% else %}
               {% set normalized = row.point_no|replace(' ', '')|replace('-', '') %}
-              <input type="text" data-field="{{ field }}" name="{{ field }}_{{ row_index }}" value="{{ row[field] }}" class="row-input" aria-label="{{ row_index + 1 }}행 {{ label }}" {% if field in ['amount','carry'] %}inputmode="numeric"{% endif %} {% if field == 'carry' %}placeholder="{% if normalized in prev_totals %}{{ prev_totals[normalized]|number_format }}{% else %}미확인{% endif %}" required{% elif field == 'point_no' %}placeholder="포인트번호"{% endif %}>
+              <input type="text" data-field="{{ field }}" name="{{ field }}_{{ row_index }}" value="{{ row[field] }}" class="row-input" aria-label="{{ row_index + 1 }}행 {{ label }}" {% if field == 'amount' %}inputmode="numeric"{% endif %} {% if field == 'point_no' %}placeholder="포인트번호"{% endif %}>
               {% endif %}
               {{ profile_choices(row, field) }}
             </td>
@@ -130,11 +148,14 @@
     <h2>{{ balance_title }} ({{ groups[balance_action]|length }}명)</h2>
     {% if balance_action == 'deactivated' %}<p class="muted">요청서 누락이 실제 전출인지 확인하세요. 삭제한 요청서 행의 잔액은 여기에 자동으로 옮기지 않습니다.</p>{% else %}<p class="muted">이미 비재직인 인원의 현재 잔액도 모두 확인해 주세요. 충전액은 0원이며 비재직 상태를 유지합니다.</p>{% endif %}
     <div class="balance-grid">
-      {% for c in groups[balance_action] %}<label class="balance-item">
-        <span><span class="badge badge-inactive">비재직</span> {{ c.name }} ({{ c.point_no|point_no }})</span>
-        <input type="text" inputmode="numeric" name="deactivated_carry_{{ c.point_no }}" value="{{ deactivated_carries.get(c.point_no, '') }}" placeholder="{% if c.point_no in prev_totals %}{{ prev_totals[c.point_no]|number_format }}{% else %}미확인{% endif %}" required>
+      {% for c in groups[balance_action] %}<div class="balance-item carry-control">
+        {% set previous = prev_totals.get(c.point_no) %}
+        {% set state = absent_carry_states[c.point_no] %}
+        <label for="absent-carry-{{ c.point_no }}"><span class="badge badge-inactive">비재직</span> {{ c.name }} ({{ c.point_no|point_no }})</label>
+        <input type="text" id="absent-carry-{{ c.point_no }}" inputmode="numeric" name="deactivated_carry_{{ c.point_no }}" value="{{ deactivated_carries.get(c.point_no, '') }}" placeholder="이월 잔액 입력" data-previous-total="{{ previous if previous is not none else '' }}" data-limit-previous="yes" aria-describedby="carry-help-absent-{{ c.point_no }}" aria-invalid="{{ 'true' if state.status == 'error' else 'false' }}" required>
+        {{ carry_help('absent-' ~ c.point_no, state, previous, c.name) }}
         <input type="hidden" name="absent_binding_{{ c.point_no }}" value="{{ absent_bindings.get(c.point_no, '') }}">
-      </label>{% endfor %}
+      </div>{% endfor %}
     </div>
   </div>{% endif %}
   {% endfor %}
@@ -157,7 +178,7 @@
   </div>
   <p id="confirm-reason" role="status">{% if not review_token %}연결·정보 선택과 입력 오류를 확인한 뒤 수정 내용 재검수를 눌러 주세요.{% endif %}</p>
   <button type="button" class="btn" id="review-again">수정 내용 재검수</button>
-  <button type="submit" aria-describedby="confirm-reason confirm-message" class="btn btn-primary confirm-monthly" {% if not review_token %}disabled{% endif %}>확정 · 동기화</button>
+  <button type="submit" aria-describedby="confirm-reason confirm-message carry-confirm-reason" class="btn btn-primary confirm-monthly" {% if not review_token or carry_counts.error %}disabled{% endif %}>확정 · 동기화</button>
   <a class="btn" href="/monthly">취소</a>
 </form>
 <script src="/static/js/review.js" defer></script>

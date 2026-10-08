@@ -31,10 +31,9 @@ def test_autosave_does_not_navigate_and_errors_focus_actual_fields(page):
     page.fill("[name=carry_0]", "12.5")
     if page.locator("[name=ack_warnings]").count():
         page.check("[name=ack_warnings]")
-    with page.expect_response(lambda r: r.url.endswith("/monthly/confirm")) as failed:
-        page.click(".confirm-monthly")
-    assert failed.value.status == 400
-    page.locator('#confirm-errors [data-error-field="carry_0"]').click()
+    assert page.locator(".confirm-monthly").is_disabled()
+    assert "금액 확인 필요" in page.locator("#input-summary").inner_text()
+    page.click("#next-carry-error")
     assert page.evaluate("document.activeElement.name") == "carry_0"
     assert page.input_value("[name=carry_0]") == "12.5"
     page.fill("[name=carry_0]", "0")

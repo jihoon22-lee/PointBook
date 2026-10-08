@@ -25,6 +25,7 @@ from app.services.absent_carries import (
 )
 from app.services.backup import backup_database
 from app.services.balance import build_balance_records, create_monthly_snapshot
+from app.services.carry_inputs import carry_input_state
 from app.services.dates import current_month, validate_month
 from app.services.drafts import (
     DraftError,
@@ -52,6 +53,7 @@ from app.services.review import (
     review_rows,
 )
 from app.services.sync import ABSENT_ACTIONS, RequestRow, apply_analysis
+from app.services.validation import MAX_TOTAL
 from app.services.vision import read_images
 from app.services.xlsx import FORM_VERSION, extract_request, request_template
 from app.template_utils import render
@@ -148,6 +150,14 @@ def review_response(
     deactivated = absent.values
     needed = {c.point_no for c in review.analysis.changes if c.action in ABSENT_ACTIONS}
     obsolete = {point: value for point, value in deactivated.items() if point not in needed}
+    row_carry_states = {row.row_id: carry_input_state(row.carry) for row in review.raw_rows}
+    absent_carry_states = {
+        point: carry_input_state(
+            deactivated.get(point, ""), previous_total=review.prev_totals.get(point)
+        )
+        for point in needed
+    }
+    states = [*row_carry_states.values(), *absent_carry_states.values()]
     return render(
         request,
         "review.html",
@@ -185,6 +195,13 @@ def review_response(
             "review_token": review.token,
             "request_key": request_key or uuid.uuid4().hex,
             "prev_totals": review.prev_totals,
+            "row_carry_states": row_carry_states,
+            "absent_carry_states": absent_carry_states,
+            "carry_counts": {
+                state: sum(item.status == state for item in states)
+                for state in ("missing", "complete", "error")
+            },
+            "max_carry": MAX_TOTAL,
             "request_amount": review.request_amount,
             "input_amount": review.input_amount,
             "previous_count": review.previous_count,

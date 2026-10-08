@@ -313,7 +313,9 @@ def test_review_shows_previous_balance_hint(auth_client, db):
         },
     )
     assert resp.status_code == 200
-    assert 'placeholder="50,000"' in resp.text
+    assert 'placeholder="이월 잔액 입력"' in resp.text
+    assert 'data-previous-total="50000"' in resp.text
+    assert "직전 총 잔액: 50,000원" in resp.text
     from tests.monthly_helpers import review_fields
 
     assert review_fields(resp)["carry_0"] == ""
@@ -328,7 +330,8 @@ def test_review_new_person_no_hint(auth_client):
         },
     )
     assert resp.status_code == 200
-    assert "직전 잔액" not in resp.text
+    assert "이전 기록 없음" in resp.text
+    assert 'aria-label="신규인원 직전 잔액 사용" disabled' in resp.text
 
 
 def test_upload_provider_error_shows_message(auth_client, monkeypatch):

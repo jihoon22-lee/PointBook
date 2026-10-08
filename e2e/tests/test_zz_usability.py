@@ -1,10 +1,10 @@
-"""합성 장부로 고정 제목·최대 placeholder·입력 편의와 확정 안내를 검증한다."""
+"""합성 장부로 고정 제목·참고 잔액·입력 편의와 확정 안내를 검증한다."""
 
 from conftest import login
 from test_z_review_choices import confirm_seed, upload
 
 
-def test_money_headers_placeholders_and_confirmation_feedback(page):
+def test_money_headers_references_and_confirmation_feedback(page):
     login(page)
     lines = [
         f"표시합성팀\t표시합성{i:02d}\t소방사\t{[0, 1000000, 10000000][i] if i < 3 else 100}\t{9100 + i}\t{9100 + i:08d}"
@@ -15,7 +15,10 @@ def test_money_headers_placeholders_and_confirmation_feedback(page):
     upload(page, "2102-02", "\n".join(lines))
     assert page.locator("#rows thead th").all_text_contents()[5:7] == ["이월 잔액", "충전액"]
     for i, value in enumerate(("0", "1,000,000", "10,000,000")):
-        assert page.locator(f'[name="carry_{i}"]').get_attribute("placeholder") == value
+        field = page.locator(f'[name="carry_{i}"]')
+        assert field.get_attribute("placeholder") == "이월 잔액 입력"
+        assert field.input_value() == ""
+        assert f"직전 총 잔액: {value}원" in field.locator("..").inner_text()
     for width in (390, 800, 1280, 1920):
         page.set_viewport_size({"width": width, "height": 844})
         for focus in (False, True):
