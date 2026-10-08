@@ -200,10 +200,6 @@ def review_rows(
     # 제출 원문은 재전송 대조에도 쓰므로 보완은 복사본에만 적용한다.
     raw_rows = [replace(raw) for raw in raw_rows]
     result = Review(raw_rows=raw_rows, month=month, import_notice=import_notice)
-    try:
-        result.input_amount = sum(parse_money(row.amount) for row in raw_rows)
-    except ValueError:
-        pass  # 오류 금액은 0원으로 합산하지 않는다.
     result.warnings.extend(row.source_warning for row in raw_rows if row.source_warning)
     if import_notice:
         result.warnings.append("개인번호 명단의 미사용 인원을 지급표와 대조하세요.")
@@ -329,6 +325,13 @@ def review_rows(
             error_field = getattr(exc, "field", None)
             if error_field:
                 result.error_fields[raw.row_id] = f"{error_field}_{index - 1}"
+    if len(result.rows) == len(raw_rows):
+        result.input_amount = sum(row.amount for row in result.rows)
+    else:
+        try:
+            result.input_amount = sum(parse_money(row.amount) for row in raw_rows)
+        except ValueError:
+            pass  # 오류 금액은 0원으로 합산하지 않는다.
     if result.errors:
         return result
     try:

@@ -64,7 +64,8 @@
           {% set row_state = row_states.get(row.row_id, 'pending') %}
           <tr class="review-row-{{ row_state }}" data-link-status="{{ row_state }}" data-action="{{ row_change.get('action','') }}" data-team-changed="{{ 'yes' if row_change.get('team_changed') or profile_differences.get(row.row_id, {}).get('team') else 'no' }}" data-profile-changed="{{ 'yes' if row_change.get('profile_changed') or profile_differences.get(row.row_id) else 'no' }}" data-row-id="{{ row.row_id }}" data-original-order="{{ loop.index0 }}" data-has-error="{{ 'yes' if errors.get(row.row_id) else 'no' }}">
             <td class="person-link-cell">
-              {% for field in ['row_id','source_issue','source_line','source_warning','link_state','profile_review'] %}<input type="hidden" data-field="{{ field }}" name="{{ field }}_{{ row_index }}" value="{{ row[field] }}">{% endfor %}
+              {% for field in ['row_id','source_issue','source_line','link_state','profile_review'] %}<input type="hidden" data-field="{{ field }}" name="{{ field }}_{{ row_index }}" value="{{ row[field] }}">{% endfor %}
+              {% if row.source_warning %}<input type="hidden" data-field="source_warning" name="source_warning_{{ row_index }}" value="{{ row.source_warning }}">{% endif %}
               <div class="person-name"><input type="text" data-field="name" name="name_{{ row_index }}" value="{{ row.name }}" class="row-input" aria-label="{{ loop.index }}행 이름"><span class="badge link-state-{{ row_state }}">{{ {'auto':'자동 연결','manual':'직접 연결','pending':'연결 확인','new':'신규'}[row_state] }}</span></div>
               {{ profile_choices(row, 'name') }}
               <details class="person-link-editor" {% if row_state == 'pending' %}open{% endif %}>
