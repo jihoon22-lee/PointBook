@@ -42,9 +42,7 @@ def test_existing_inactive_carry_required_without_partial_confirmation(auth_clie
     assert absent.status == "inactive"
 
 
-def test_inactive_observation_preserves_negative_usage_and_excludes_transition_count(
-    auth_client, db
-):
+def test_inactive_increase_rejected_then_equal_balance_excludes_transition_count(auth_client, db):
     initial = _request("2026-06")
     assert reviewed_confirm(auth_client, initial, follow_redirects=False).status_code == 303
     absent = make_person(db, "999", "합성비재직", status="inactive")
@@ -64,13 +62,18 @@ def test_inactive_observation_preserves_negative_usage_and_excludes_transition_c
     values = review_fields(auth_client.post("/monthly/review", data=_request()))
     values.update(deactivated_carry_00000999="200", ack_warnings="yes")
     response = auth_client.post("/monthly/confirm", data=values, follow_redirects=False)
+    assert response.status_code == 400
+    assert "직전 총 잔액보다 100원 많습니다" in response.text
+    assert db.scalar(select(MonthlySnapshot).where(MonthlySnapshot.month == "2026-08")) is None
+    values["deactivated_carry_00000999"] = "100"
+    response = auth_client.post("/monthly/confirm", data=values, follow_redirects=False)
     assert response.status_code == 303
     db.expire_all()
     august = db.scalar(select(MonthlySnapshot).where(MonthlySnapshot.month == "2026-08"))
     record = next(r for r in august.records if r.person_id == absent_id)
-    assert (record.amount, record.carry_balance, record.total, record.usage) == (0, 200, 200, -100)
+    assert (record.amount, record.carry_balance, record.total, record.usage) == (0, 100, 100, 0)
     assert db.scalar(select(MonthlySnapshot).where(MonthlySnapshot.month == "2026-07")) is None
-    assert absent.status == "inactive" and absent.current_carry_balance == 200
+    assert absent.status == "inactive" and absent.current_carry_balance == 100
     summary = month_summary(db, "2026-08")
     assert summary.workforce_count == 1 and summary.deactivated_count == 0
     operation = db.scalar(select(LedgerOperation).order_by(LedgerOperation.id.desc()))

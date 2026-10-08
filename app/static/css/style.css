@@ -391,11 +391,10 @@ body:has(.login-wrap) .login-wrap .muted { color: #cbd5e1; }
 /* Compare choices stay within their field; one differing row must not widen the column. */
 .review-input-table { table-layout: fixed; min-width: 1080px; }
 .review-input-table th, .review-input-table td { padding: 8px 6px; vertical-align: top; }
-.review-input-table th:nth-child(1) { width: 140px; }
+.review-input-table th:nth-child(1) { width: 136px; }
 .review-input-table th:nth-child(2) { width: 90px; }
 .review-input-table th:nth-child(3) { width: 112px; }
-.review-input-table th:nth-child(4) { width: 92px; }
-.review-input-table th:nth-child(5) { width: 96px; }
+.review-input-table th:nth-child(4), .review-input-table th:nth-child(5) { width: 84px; }
 .review-input-table th:nth-child(6), .review-input-table th:nth-child(7) { width: 132px; }
 .review-input-table th:nth-child(6) { width: 160px; }
 .review-input-table th:nth-child(8) { width: 180px; }

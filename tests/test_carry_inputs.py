@@ -191,3 +191,38 @@ def test_stale_reference_cannot_confirm_after_previous_balance_changes(auth_clie
     assert "직전 총 잔액: 50원" in response.text
     assert "직전 총 잔액보다 50원 많습니다" in response.text
     assert db.scalar(select(MonthlySnapshot.id).where(MonthlySnapshot.month == "2026-07")) is None
+
+
+def test_previous_balance_change_between_validation_and_writer_lock_is_rejected(
+    auth_client, db, monkeypatch
+):
+    from sqlalchemy.orm import Session
+
+    from app import db as db_module
+    from app.routers import monthly
+
+    _, absent, values, _ = prepare(auth_client, db)
+    values[f"deactivated_carry_{absent.point_no}"] = "100"
+    original = monthly.carry_values
+    changed = False
+
+    def change_previous_after_validation(*args, **kwargs):
+        nonlocal changed
+        result = original(*args, **kwargs)
+        if not changed:
+            changed = True
+            with Session(db_module.engine) as other:
+                record = other.scalar(
+                    select(BalanceRecord).where(BalanceRecord.person_id == absent.id)
+                )
+                record.carry_balance = record.total = 50
+                record.version += 1
+                other.commit()
+        return result
+
+    monkeypatch.setattr(monthly, "carry_values", change_previous_after_validation)
+    response = auth_client.post("/monthly/confirm", data=values)
+    assert response.status_code == 409 and "다른 작업" in response.text
+    assert "직전 총 잔액: 50원" in response.text
+    assert review_fields(response)[f"deactivated_carry_{absent.point_no}"] == "100"
+    assert db.scalar(select(MonthlySnapshot.id).where(MonthlySnapshot.month == "2026-07")) is None
