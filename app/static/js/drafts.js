@@ -113,6 +113,7 @@
         submitting = false;
         var confirmButton = form.querySelector('.confirm-monthly');
         confirmButton.disabled = !field('review_token').value;
+        if (window.pointbookReviewInputs) window.pointbookReviewInputs.summary();
         confirmButton.textContent = '확정 · 동기화';
       });
     }

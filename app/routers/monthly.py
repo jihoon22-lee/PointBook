@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session, joinedload
 from starlette.datastructures import FormData
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
-from app.ai.images import image_mime
 from app.auth import require_login
 from app.config import get_settings
 from app.db import get_db
@@ -25,6 +24,7 @@ from app.services.absent_carries import (
 )
 from app.services.backup import backup_database
 from app.services.balance import build_balance_records, create_monthly_snapshot
+from app.services.carry_inputs import carry_input_state
 from app.services.dates import current_month, validate_month
 from app.services.drafts import (
     DraftError,
@@ -52,6 +52,7 @@ from app.services.review import (
     review_rows,
 )
 from app.services.sync import ABSENT_ACTIONS, RequestRow, apply_analysis
+from app.services.validation import MAX_TOTAL
 from app.services.vision import read_images
 from app.services.xlsx import FORM_VERSION, extract_request, request_template
 from app.template_utils import render
@@ -148,6 +149,14 @@ def review_response(
     deactivated = absent.values
     needed = {c.point_no for c in review.analysis.changes if c.action in ABSENT_ACTIONS}
     obsolete = {point: value for point, value in deactivated.items() if point not in needed}
+    row_carry_states = {row.row_id: carry_input_state(row.carry) for row in review.raw_rows}
+    absent_carry_states = {
+        point: carry_input_state(
+            deactivated.get(point, ""), previous_total=review.prev_totals.get(point)
+        )
+        for point in needed
+    }
+    states = [*row_carry_states.values(), *absent_carry_states.values()]
     return render(
         request,
         "review.html",
@@ -185,6 +194,13 @@ def review_response(
             "review_token": review.token,
             "request_key": request_key or uuid.uuid4().hex,
             "prev_totals": review.prev_totals,
+            "row_carry_states": row_carry_states,
+            "absent_carry_states": absent_carry_states,
+            "carry_counts": {
+                state: sum(item.status == state for item in states)
+                for state in ("missing", "complete", "error")
+            },
+            "max_carry": MAX_TOTAL,
             "request_amount": review.request_amount,
             "input_amount": review.input_amount,
             "previous_count": review.previous_count,
@@ -232,11 +248,11 @@ async def upload(request: Request, db: Session = Depends(get_db)) -> Response:
             ext = f".{file.filename.lower().rsplit('.', 1)[-1]}" if "." in file.filename else ""
             if ext not in ALLOWED_IMAGE_EXTS:
                 raise ValueError(
-                    "지원하지 않는 파일 형식입니다. (png, jpg, jpeg, webp, heic, 표준 xlsx)"
+                    "요청서 파일: 지원하지 않는 파일 형식입니다. (png, jpg, jpeg, webp, heic, 표준 xlsx)"
                 )
             data = await file.read(settings.max_upload_mb * 1024 * 1024 + 1)
             if len(data) > settings.max_upload_mb * 1024 * 1024:
-                raise ValueError(f"파일이 너무 큽니다. (최대 {settings.max_upload_mb}MB)")
+                raise ValueError(f"요청서 파일이 너무 큽니다. (최대 {settings.max_upload_mb}MB)")
             if ext == ".xlsx":
                 if has_roster:
                     raise ValueError("개인번호 명단은 요청서 사진과 함께 사용해 주세요.")
@@ -252,11 +268,8 @@ async def upload(request: Request, db: Session = Depends(get_db)) -> Response:
                     roster_data = await roster_file.read(settings.max_upload_mb * 1024 * 1024 + 1)
                     if len(roster_data) > settings.max_upload_mb * 1024 * 1024:
                         raise ValueError(
-                            f"명단 파일이 너무 큽니다. (최대 {settings.max_upload_mb}MB)"
+                            f"개인번호 명단 사진이 너무 큽니다. (최대 {settings.max_upload_mb}MB)"
                         )
-                    # 외부 전송 전에 두 파일을 모두 검사한다.
-                    image_mime(data, file.filename)
-                    image_mime(roster_data, roster_file.filename)
                 if roster_data is None:
                     read = (await read_images([(data, file.filename, False)]))[0]
                     rows = read.rows

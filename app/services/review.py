@@ -14,6 +14,7 @@ from app.config import get_settings
 from app.models import BalanceRecord, LedgerState, MonthlySnapshot, Person, Team
 from app.services.absent_carries import matches_binding
 from app.services.balance import previous_totals
+from app.services.carry_inputs import parse_carry_input
 from app.services.dates import current_month, validate_month
 from app.services.identifiers import normalize_point_no
 from app.services.parsing import MAX_REQUEST_ROWS, ROW_FIELDS, RawRequestRow
@@ -295,6 +296,13 @@ def review_rows(
         result.error_fields["month"] = "month"
     if not raw_rows:
         result.errors["rows"] = "인원 행이 없습니다."
+    # 일부 행이 아직 미연결이어도 연결된 인원의 참고 잔액을 표시한다.
+    # 전체 인원 동기화 분석은 모든 행의 검증 이후에만 실행한다.
+    if not month_error and people:
+        totals = previous_totals(db, month)
+        result.prev_totals = {
+            person.point_no: totals[person.id] for person in people if person.id in totals
+        }
     ids: set[str] = set()
     points: dict[str, str] = {}
     for index, raw in enumerate(raw_rows, 1):
@@ -345,12 +353,6 @@ def review_rows(
                 break
         return result
     result.request_amount = sum(row.amount for row in result.rows)
-    totals = previous_totals(db, month)
-    result.prev_totals = {
-        c.point_no: totals[c.person_id]
-        for c in result.analysis.changes
-        if c.person_id is not None and c.person_id in totals
-    }
     latest = db.scalar(select(func.max(MonthlySnapshot.month)))
     if latest:
         prior = db.execute(
@@ -430,8 +432,9 @@ def carry_values(
                     raise ValueError(
                         "이월 잔액의 인원·월 연결이 변경되었습니다. 다시 입력해 주세요."
                     )
-                values[change.point_no] = parse_balance(
-                    deactivated.get(change.point_no, ""), label="이월 잔액"
+                values[change.point_no] = parse_carry_input(
+                    deactivated.get(change.point_no, ""),
+                    previous_total=review.prev_totals.get(change.point_no),
                 )
             except ValueError as exc:
                 errors[change.point_no] = f"{change.name}: {exc}"

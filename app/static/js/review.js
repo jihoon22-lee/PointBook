@@ -10,12 +10,13 @@
   function reveal(input) {
     if (!input) return;
     var row = input.closest('tr');
+    var balance = input.closest('.balance-item');
     var cell = input.closest('td');
     if (cell && window.getComputedStyle(cell).display === 'none') {
       document.getElementById('focus-input').checked = false;
       table.classList.remove('focus-input');
     }
-    if (row && row.hidden) {
+    if ((row && row.hidden) || (balance && balance.hidden)) {
       document.getElementById('row-filter').value = 'all';
       if (window.pointbookReviewInputs) window.pointbookReviewInputs.applyView();
     }
@@ -51,7 +52,8 @@
     var input = event.target;
     var row = input.closest('tr');
     var name = row && row.querySelector('[data-field="name"]');
-    var label = name ? name.value + '의 이월 잔액' : (input.closest('label') || input).textContent.trim();
+    var balanceLabel = input.closest('.balance-item');
+    var label = name ? name.value + '의 이월 잔액' : (balanceLabel ? balanceLabel.querySelector('label') : input.closest('label') || input).textContent.trim();
     showError((label || '필수 입력') + ': ' + input.validationMessage, input);
     reveal(input);
   }, true);

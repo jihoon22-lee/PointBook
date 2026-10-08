@@ -391,12 +391,12 @@ body:has(.login-wrap) .login-wrap .muted { color: #cbd5e1; }
 /* Compare choices stay within their field; one differing row must not widen the column. */
 .review-input-table { table-layout: fixed; min-width: 1080px; }
 .review-input-table th, .review-input-table td { padding: 8px 6px; vertical-align: top; }
-.review-input-table th:nth-child(1) { width: 140px; }
+.review-input-table th:nth-child(1) { width: 136px; }
 .review-input-table th:nth-child(2) { width: 90px; }
 .review-input-table th:nth-child(3) { width: 112px; }
-.review-input-table th:nth-child(4) { width: 92px; }
-.review-input-table th:nth-child(5) { width: 96px; }
+.review-input-table th:nth-child(4), .review-input-table th:nth-child(5) { width: 84px; }
 .review-input-table th:nth-child(6), .review-input-table th:nth-child(7) { width: 132px; }
+.review-input-table th:nth-child(6) { width: 160px; }
 .review-input-table th:nth-child(8) { width: 180px; }
 .review-input-table th:nth-child(9) { width: 82px; }
 .review-input-table th:nth-child(10) { width: 64px; }
@@ -413,6 +413,17 @@ body:has(.login-wrap) .login-wrap .muted { color: #cbd5e1; }
 .review-input-table th.money-amount, .review-input-table tr > td.money-amount { background: #fff0d6; }
 .review-input-table .money-carry input { border: 2px solid #3978b8; background: #f6faff; }
 .review-input-table .money-amount input { border: 2px solid #a96612; background: #fffaf0; }
+.carry-help { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 6px; margin-top: 4px; white-space: normal; }
+.carry-reference, .carry-error { flex-basis: 100%; overflow-wrap: anywhere; }
+.carry-reference { color: var(--muted); font-size: 0.75rem; line-height: 1.3; }
+.carry-help .btn { font-size: 0.75rem; padding: 3px 6px; }
+.carry-state { font-size: 0.75rem; font-weight: 600; }
+.carry-state[data-state="missing"] { color: #70500d; }
+.carry-state[data-state="complete"] { color: #166534; }
+.carry-state[data-state="error"], .carry-error { color: #b42318; }
+.carry-control input[aria-invalid="true"] { border: 2px solid #b42318; background: #fff1f0; }
+.balance-item > label { display: block; margin-bottom: 8px; }
+.balance-item > label .badge { display: inline-block; margin-bottom: 0; }
 #review-floating-header { position: fixed; z-index: 9; overflow: hidden; pointer-events: none; box-shadow: 0 2px 5px #0003; }
 #review-floating-header table { margin: 0; }
 #review-floating-header th { background: #edf3f9; vertical-align: top; }
