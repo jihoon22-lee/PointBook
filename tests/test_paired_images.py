@@ -125,6 +125,33 @@ class PairedProvider(VisionProvider):
         return [roster(), roster(name="명단전용")]
 
 
+def test_missing_personal_number_stays_blank_in_saved_and_reopened_draft(
+    auth_client, db, monkeypatch
+):
+    class MissingNumberProvider(PairedProvider):
+        def extract_roster(self, image_bytes, filename):
+            return [roster(name="다른합성")]
+
+    monkeypatch.setattr(vision, "get_provider", MissingNumberProvider)
+    response = auth_client.post(
+        "/monthly/upload",
+        data={"month": "2026-10"},
+        files={
+            "file": ("payment.png", PNG),
+            "roster_file": ("roster.png", PNG),
+        },
+    )
+    assert response.status_code == 400
+    values = review_fields(response)
+    assert values["personal_no_0"] == values["point_no_0"] == ""
+    assert "찾지 못했습니다" in response.text
+    reopened = auth_client.get("/drafts/" + values["draft_id"])
+    assert review_fields(reopened)["personal_no_0"] == ""
+    assert review_fields(reopened)["amount_0"] == "60,000"
+    assert db.scalar(select(func.count(Person.id))) == 0
+    assert db.scalar(select(func.count(BalanceRecord.id))) == 0
+
+
 def test_browser_multipart_upload_auto_links_and_persists_warning_without_ledger_write(
     auth_client,
     db,
