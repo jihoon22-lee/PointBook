@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session, joinedload
 from starlette.datastructures import FormData
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
-from app.ai.images import image_mime
 from app.auth import require_login
 from app.config import get_settings
 from app.db import get_db
@@ -249,11 +248,11 @@ async def upload(request: Request, db: Session = Depends(get_db)) -> Response:
             ext = f".{file.filename.lower().rsplit('.', 1)[-1]}" if "." in file.filename else ""
             if ext not in ALLOWED_IMAGE_EXTS:
                 raise ValueError(
-                    "지원하지 않는 파일 형식입니다. (png, jpg, jpeg, webp, heic, 표준 xlsx)"
+                    "요청서 파일: 지원하지 않는 파일 형식입니다. (png, jpg, jpeg, webp, heic, 표준 xlsx)"
                 )
             data = await file.read(settings.max_upload_mb * 1024 * 1024 + 1)
             if len(data) > settings.max_upload_mb * 1024 * 1024:
-                raise ValueError(f"파일이 너무 큽니다. (최대 {settings.max_upload_mb}MB)")
+                raise ValueError(f"요청서 파일이 너무 큽니다. (최대 {settings.max_upload_mb}MB)")
             if ext == ".xlsx":
                 if has_roster:
                     raise ValueError("개인번호 명단은 요청서 사진과 함께 사용해 주세요.")
@@ -269,11 +268,8 @@ async def upload(request: Request, db: Session = Depends(get_db)) -> Response:
                     roster_data = await roster_file.read(settings.max_upload_mb * 1024 * 1024 + 1)
                     if len(roster_data) > settings.max_upload_mb * 1024 * 1024:
                         raise ValueError(
-                            f"명단 파일이 너무 큽니다. (최대 {settings.max_upload_mb}MB)"
+                            f"개인번호 명단 사진이 너무 큽니다. (최대 {settings.max_upload_mb}MB)"
                         )
-                    # 외부 전송 전에 두 파일을 모두 검사한다.
-                    image_mime(data, file.filename)
-                    image_mime(roster_data, roster_file.filename)
                 if roster_data is None:
                     read = (await read_images([(data, file.filename, False)]))[0]
                     rows = read.rows

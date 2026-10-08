@@ -13,11 +13,11 @@ from app.ai.mock import MockProvider
 from app.config import Settings
 from app.services import vision
 from app.services.vision import VisionExecutor
+from tests.image_fixtures import JPEG
 
 PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII="
 )
-JPEG = b"\xff\xd8\xff\xe0" + b"synthetic-jpeg" + b"\xff\xd9"
 WEBP = b"RIFF\x10\x00\x00\x00WEBPVP8L\x04\x00\x00\x00data"
 HEIC = b"\x00\x00\x00\x18ftypheic\x00\x00\x00\x00mif1heic"
 

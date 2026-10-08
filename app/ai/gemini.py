@@ -8,8 +8,9 @@ from typing import Any
 import httpx
 
 from app.ai.base import VisionError, VisionProvider
-from app.ai.images import image_mime
+from app.ai.images import normalize_image
 from app.ai.rows import load_json, parse_rows
+from app.config import get_settings
 from app.services.parsing import ROW_FIELDS, RawRequestRow
 
 PROMPT = """이미지 속 요청서 표를 읽어라. 표 컬럼은 순번, 팀, 이름, 계급, 금액, 개인번호, 포인트번호, 비고이다.
@@ -79,7 +80,12 @@ class GeminiProvider(VisionProvider):
             raise VisionError("GEMINI_API_KEY가 설정되지 않았습니다.", code="missing_key")
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}", self._model):
             raise VisionError("GEMINI_MODEL 설정이 올바르지 않습니다.", code="invalid_model")
-        mime = image_mime(image_bytes, filename)
+        image_bytes, mime = normalize_image(
+            image_bytes,
+            filename,
+            max_bytes=get_settings().max_upload_mb * 1024 * 1024,
+            label="개인번호 명단 사진" if roster else "요청서 사진",
+        )
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/{self._model}:generateContent"
         )

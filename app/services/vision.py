@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 from app.ai.base import VisionError, VisionProvider
 from app.ai.factory import get_provider
-from app.ai.images import image_mime
+from app.ai.images import normalize_image
 from app.config import get_settings
 from app.services.import_notes import join_notices
 from app.services.name_checks import compare_name_reads, name_check_unavailable
@@ -115,10 +115,16 @@ async def read_images(
     documents: list[tuple[bytes, str, bool]],
 ) -> list[ImageRead]:
     settings = get_settings()
-    for data, filename, _roster in documents:
-        if len(data) > settings.max_upload_mb * 1024 * 1024:
-            raise VisionError("이미지 크기가 허용 한도를 초과했습니다.", code="image_limit")
-        image_mime(data, filename)
+    normalized = []
+    for data, filename, roster in documents:
+        data, _mime = normalize_image(
+            data,
+            filename,
+            max_bytes=settings.max_upload_mb * 1024 * 1024,
+            label="개인번호 명단 사진" if roster else "요청서 사진",
+        )
+        normalized.append((data, filename, roster))
+    documents = normalized  # 두 원본 모두 검사한 뒤에만 AI를 호출한다.
     provider = get_provider()
     global _executor
     with _executor_lock:
