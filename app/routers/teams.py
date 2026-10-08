@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
-from sqlalchemy import and_, case, select
+from sqlalchemy import case, select
 from sqlalchemy.orm import Session
 
 from app.auth import require_login
@@ -27,25 +27,37 @@ class TeamSummary:
     inactive_count: int
     active_balance: int
     inactive_balance: int
+    shared_count: int
+    shared_balance: int
 
     @property
     def total_balance(self) -> int:
-        return self.active_balance + self.inactive_balance
+        return self.active_balance + self.inactive_balance + self.shared_balance
 
 
 def _team_summaries(db: Session) -> list[TeamSummary]:
     summaries: dict[int, TeamSummary] = {}
     # 이관된 큰 잔액도 SQLite SUM의 64비트 상한이나 REAL 변환 없이 보존한다.
     rows = db.execute(
-        select(Team, Person.status, Person.current_carry_balance, Person.current_amount)
-        .outerjoin(Person, and_(Person.team_id == Team.id, Person.account_type == "person"))
+        select(
+            Team,
+            Person.account_type,
+            Person.status,
+            Person.current_carry_balance,
+            Person.current_amount,
+        )
+        .outerjoin(Person, Person.team_id == Team.id)
         .order_by(Team.name)
     )
-    for team, status, carry, amount in rows:
+    for team, account_type, status, carry, amount in rows:
         if team.id not in summaries:
-            summaries[team.id] = TeamSummary(team, 0, 0, 0, 0, 0)
+            summaries[team.id] = TeamSummary(team, 0, 0, 0, 0, 0, 0, 0)
         summary = summaries[team.id]
         if status is None:
+            continue
+        if account_type == "shared":
+            summary.shared_count += 1
+            summary.shared_balance += carry + amount
             continue
         summary.total_count += 1
         if status == "active":
@@ -67,7 +79,14 @@ def _team_page_context(
         "team_summaries": summaries,
         "totals": {
             field: sum(getattr(summary, field) for summary in summaries)
-            for field in ("total_count", "active_count", "active_balance", "total_balance")
+            for field in (
+                "total_count",
+                "active_count",
+                "active_balance",
+                "shared_count",
+                "shared_balance",
+                "total_balance",
+            )
         },
         "selected_color": selected_color,
         "error": error,
@@ -114,7 +133,7 @@ def team_detail(
     members = list(
         db.scalars(
             select(Person)
-            .where(Person.team_id == team.id, Person.account_type == "person")
+            .where(Person.team_id == team.id)
             .order_by(*_team_member_order(sort, direction))
         ).all()
     )
