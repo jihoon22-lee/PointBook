@@ -110,6 +110,7 @@
     var first = tr.insertCell(); first.className = 'person-link-cell';
     field(first, 'row_id', id, true); field(first, 'link_state', 'new', true);
     field(first, 'profile_review', '', true); field(first, 'source_line', '', true); field(first, 'source_issue', '', true);
+    field(first, 'source_warning', '', true);
     var nameGroup = document.createElement('div'); nameGroup.className = 'person-name';
     field(nameGroup, 'name');
     var badge = document.createElement('span'); badge.className = 'badge link-state-new'; badge.textContent = '신규';

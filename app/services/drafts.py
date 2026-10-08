@@ -50,6 +50,7 @@ def draft_payload(
     expected_amount: str = "",
     source: str = "manual",
     review_token: str = "",
+    import_notice: str = "",
 ) -> dict[str, Any]:
     if source not in SOURCES:
         raise DraftError("입력 출처를 확인해 주세요.")
@@ -67,6 +68,7 @@ def draft_payload(
         "expected_amount": expected_amount,
         "source": source,
         "review_token": review_token,
+        "import_notice": import_notice,
     }
     if len(json.dumps(value, ensure_ascii=False).encode()) > MAX_DRAFT_BYTES:
         raise DraftError(
@@ -86,6 +88,7 @@ def payload_from_form(form: FormData) -> dict[str, Any]:
         expected_amount=str(form.get("expected_amount", "")),
         source=str(form.get("input_source", "manual")),
         review_token=str(form.get("review_token", "")),
+        import_notice=str(form.get("import_notice", "")),
     )
 
 
@@ -136,7 +139,12 @@ def save_draft(
         start_write(db)
         rows = [RawRequestRow(**row) for row in payload["rows"]]
         review = review_rows(
-            db, payload["month"], rows, payload["expected_count"], payload["expected_amount"]
+            db,
+            payload["month"],
+            rows,
+            payload["expected_count"],
+            payload["expected_amount"],
+            import_notice=payload.get("import_notice", ""),
         )
         absent = reconcile(
             payload["month"],

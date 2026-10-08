@@ -28,7 +28,7 @@ async def verify_csrf(request: Request) -> AsyncIterator[None]:
             supplied: object = request.headers.get("x-csrf-token")
             if supplied is None:
                 form = await request.form(
-                    max_files=1,
+                    max_files=2 if request.url.path == "/monthly/upload" else 1,
                     max_fields=MAX_REVIEW_FORM_FIELDS,
                     max_part_size=2 * 1024 * 1024,
                 )

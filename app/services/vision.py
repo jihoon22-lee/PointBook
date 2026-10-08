@@ -20,7 +20,13 @@ class VisionExecutor:
         self._pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="pointbook-ai")
 
     async def extract(
-        self, provider: VisionProvider, data: bytes, filename: str, timeout: float
+        self,
+        provider: VisionProvider,
+        data: bytes,
+        filename: str,
+        timeout: float,
+        *,
+        roster: bool = False,
     ) -> list[RawRequestRow]:
         if not self._slots.acquire(blocking=False):
             raise VisionError(
@@ -29,7 +35,8 @@ class VisionExecutor:
         with self._state_lock:
             self._active += 1
         try:
-            future = self._pool.submit(provider.extract_table, data, filename)
+            extract = provider.extract_roster if roster else provider.extract_table
+            future = self._pool.submit(extract, data, filename)
         except RuntimeError:
             self._release()
             raise VisionError(
@@ -79,7 +86,7 @@ def shutdown_vision() -> None:
                 _executor = None
 
 
-async def extract_image(data: bytes, filename: str) -> list[RawRequestRow]:
+async def extract_image(data: bytes, filename: str, *, roster: bool = False) -> list[RawRequestRow]:
     settings = get_settings()
     if len(data) > settings.max_upload_mb * 1024 * 1024:
         raise VisionError("이미지 크기가 허용 한도를 초과했습니다.", code="image_limit")
@@ -90,4 +97,6 @@ async def extract_image(data: bytes, filename: str) -> list[RawRequestRow]:
         if _executor is None or _executor.closed_and_idle:
             _executor = VisionExecutor(settings.ai_max_concurrency)
         executor = _executor
-    return await executor.extract(provider, data, filename, settings.ai_timeout_seconds)
+    return await executor.extract(
+        provider, data, filename, settings.ai_timeout_seconds, roster=roster
+    )

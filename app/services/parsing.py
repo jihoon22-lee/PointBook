@@ -27,6 +27,7 @@ class RawRequestRow:
     row_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     source_line: str = ""
     source_issue: str = ""
+    source_warning: str = ""
     link_state: str = ""
     profile_review: str = ""
 

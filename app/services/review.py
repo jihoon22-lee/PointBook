@@ -30,6 +30,7 @@ from app.services.validation import (
 @dataclass
 class Review:
     raw_rows: list[RawRequestRow]
+    import_notice: str = ""
     month: str = ""
     rows: list[RequestRow] = field(default_factory=list)
     analysis: SyncAnalysis = field(default_factory=lambda: SyncAnalysis(changes=[]))
@@ -40,6 +41,7 @@ class Review:
     token: str = ""
     digest: str = ""
     request_amount: int = 0
+    input_amount: int | None = None
     previous_count: int | None = None
     previous_amount: int | None = None
     candidates: dict[str, list[dict[str, str]]] = field(default_factory=dict)
@@ -74,6 +76,7 @@ def raw_rows_from_form(form: FormData, *, clear_source_issues: bool = False) -> 
             link_state=str(form.get(f"link_state_{i}", "")),
             profile_review=str(form.get(f"profile_review_{i}", "")),
             source_line=str(form.get(f"source_line_{i}", "")),
+            source_warning=str(form.get(f"source_warning_{i}", "")),
             source_issue="" if clear_source_issues else str(form.get(f"source_issue_{i}", "")),
         )
         supplied_id = str(form.get(f"row_id_{i}", ""))
@@ -106,6 +109,8 @@ def canonical_money(value: str, *, balance: bool = False, expected: bool = False
 
 def canonical_row(row: RawRequestRow, *, include_carry: bool = False) -> dict[str, str]:
     value = {k: v for k, v in asdict(row).items() if k != "source_line"}
+    if not row.source_warning:
+        value.pop("source_warning")
     value["amount"] = canonical_money(row.amount)
     if include_carry:
         value["carry"] = canonical_money(row.carry, balance=True)
@@ -189,10 +194,15 @@ def review_rows(
     raw_rows: list[RawRequestRow],
     expected_count: str = "",
     expected_amount: str = "",
+    *,
+    import_notice: str = "",
 ) -> Review:
     # 제출 원문은 재전송 대조에도 쓰므로 보완은 복사본에만 적용한다.
     raw_rows = [replace(raw) for raw in raw_rows]
-    result = Review(raw_rows=raw_rows, month=month)
+    result = Review(raw_rows=raw_rows, month=month, import_notice=import_notice)
+    result.warnings.extend(row.source_warning for row in raw_rows if row.source_warning)
+    if import_notice:
+        result.warnings.append("개인번호 명단의 미사용 인원을 지급표와 대조하세요.")
     people = (
         list(db.scalars(select(Person).options(joinedload(Person.team)).order_by(Person.id)))
         if raw_rows
@@ -315,6 +325,13 @@ def review_rows(
             error_field = getattr(exc, "field", None)
             if error_field:
                 result.error_fields[raw.row_id] = f"{error_field}_{index - 1}"
+    if len(result.rows) == len(raw_rows):
+        result.input_amount = sum(row.amount for row in result.rows)
+    else:
+        try:
+            result.input_amount = sum(parse_money(row.amount) for row in raw_rows)
+        except ValueError:
+            pass  # 오류 금액은 0원으로 합산하지 않는다.
     if result.errors:
         return result
     try:
@@ -383,6 +400,8 @@ def review_rows(
         "expected_amount": canonical_money(expected_amount, expected=True),
         "database": database_fingerprint(db),
     }
+    if import_notice:
+        payload["import_notice"] = import_notice
     result.digest = hashlib.sha256(
         json.dumps(payload, ensure_ascii=False, sort_keys=True).encode()
     ).hexdigest()

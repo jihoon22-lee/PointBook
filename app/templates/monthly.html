@@ -19,9 +19,14 @@
     <label>처리 월
       <input type="month" name="month" value="{{ month }}">
     </label>
+    <p class="muted">처리 월은 실제 충전하는 월입니다. 예: 9월 지급표로 10월 처리 시 10월을 선택합니다.</p>
     <label>요청서 사진 또는 표준 Excel
       <input type="file" name="file" accept="image/*,.xlsx">
     </label>
+    <label>개인번호 명단 사진 (선택)
+      <input type="file" name="roster_file" accept="image/*">
+    </label>
+    <p class="muted">금액표와 개인번호 명단이 따로 오면 두 사진을 함께 선택하세요. 금액표의 인원·팀·계급·충전액을 유지하고, 팀·계급·이름이 양쪽에서 하나씩 일치하는 인원의 개인번호만 보완합니다. 중복·차이·명단에만 있는 인원은 검수에서 확인합니다.</p>
     <label>또는 표 붙여넣기
       <textarea name="pasted" rows="5" placeholder="팀&#9;이름&#9;계급&#9;충전액&#9;개인번호&#10;1팀&#9;김소방&#9;소방경&#9;50000&#9;0101">{{ pasted|default('') }}</textarea>
     </label>

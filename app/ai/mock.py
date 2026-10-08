@@ -44,3 +44,8 @@ class MockProvider(VisionProvider):
 
     def extract_table(self, image_bytes: bytes, filename: str) -> list[RawRequestRow]:
         return parse_rows(self._mock_json or json.dumps(DEFAULT_ROWS, ensure_ascii=False))
+
+    def extract_roster(self, image_bytes: bytes, filename: str) -> list[RawRequestRow]:
+        return parse_rows(
+            self._mock_json or json.dumps(DEFAULT_ROWS, ensure_ascii=False), roster=True
+        )

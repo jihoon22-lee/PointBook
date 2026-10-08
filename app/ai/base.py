@@ -22,3 +22,7 @@ class VisionProvider(ABC):
     @abstractmethod
     def extract_table(self, image_bytes: bytes, filename: str) -> list[RawRequestRow]:
         """오류·불완전 행도 순서대로 보존하며 장부에 쓰지 않는다."""
+
+    def extract_roster(self, image_bytes: bytes, filename: str) -> list[RawRequestRow]:
+        """개인번호 보완용 명단. 지원하지 않는 제공자는 조용히 대체하지 않는다."""
+        raise VisionError("이 AI 제공자는 별도 개인번호 명단을 지원하지 않습니다.")

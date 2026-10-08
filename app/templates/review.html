@@ -26,6 +26,8 @@
   <input type="hidden" name="draft_id" value="{{ draft_id|default('') }}">
   <input type="hidden" name="draft_version" value="{{ draft_version|default('') }}">
   <input type="hidden" name="input_source" value="{{ input_source }}">
+  <input type="hidden" name="import_notice" value="{{ import_notice|default('') }}">
+  {% if import_notice %}<div class="card"><p>{{ import_notice.partition('\n미사용 명단 원문: ')[0] }}</p><details><summary>개인번호 명단 원문</summary><p style="white-space:pre-wrap;overflow-wrap:anywhere">{{ import_notice.partition('\n미사용 명단 원문: ')[2] }}</p></details></div>{% endif %}
   <div class="draft-toolbar card">
     <p id="draft-status" role="status" aria-live="polite">{% if draft_saved_at %}서버 초안 저장 완료{% else %}초안 저장 상태를 확인하세요.{% endif %}</p>
     <p class="muted">자동 저장은 장부를 확정하지 않습니다. 마지막 저장부터 {{ draft_keep_days }}일 보관하며, 다른 기기에서는 초안 목록에서 이어서 작업합니다.</p>
@@ -63,6 +65,7 @@
           <tr class="review-row-{{ row_state }}" data-link-status="{{ row_state }}" data-action="{{ row_change.get('action','') }}" data-team-changed="{{ 'yes' if row_change.get('team_changed') or profile_differences.get(row.row_id, {}).get('team') else 'no' }}" data-profile-changed="{{ 'yes' if row_change.get('profile_changed') or profile_differences.get(row.row_id) else 'no' }}" data-row-id="{{ row.row_id }}" data-original-order="{{ loop.index0 }}" data-has-error="{{ 'yes' if errors.get(row.row_id) else 'no' }}">
             <td class="person-link-cell">
               {% for field in ['row_id','source_issue','source_line','link_state','profile_review'] %}<input type="hidden" data-field="{{ field }}" name="{{ field }}_{{ row_index }}" value="{{ row[field] }}">{% endfor %}
+              {% if row.source_warning %}<input type="hidden" data-field="source_warning" name="source_warning_{{ row_index }}" value="{{ row.source_warning }}">{% endif %}
               <div class="person-name"><input type="text" data-field="name" name="name_{{ row_index }}" value="{{ row.name }}" class="row-input" aria-label="{{ loop.index }}행 이름"><span class="badge link-state-{{ row_state }}">{{ {'auto':'자동 연결','manual':'직접 연결','pending':'연결 확인','new':'신규'}[row_state] }}</span></div>
               {{ profile_choices(row, 'name') }}
               <details class="person-link-editor" {% if row_state == 'pending' %}open{% endif %}>
@@ -106,7 +109,7 @@
 
   <div class="card">
     <h2>변경 예상 · 요청서 대사</h2>
-    <p>요청서 {{ analysis.request_count }}명 · 총 충전 <strong>{{ request_amount|number_format }}원</strong></p>
+    <p>요청서 {{ rows|length }}명 · 총 충전 <strong>{{ (input_amount|number_format) ~ '원' if input_amount is not none else '금액 확인 필요' }}</strong></p>
     {% if previous_count is not none %}<p class="muted">최근 확정 월 관측 인원 {{ previous_count }}명 · 총 충전 {{ previous_amount|number_format }}원</p>{% endif %}
     <div class="toolbar">
       <label>원본 기대 인원 (선택)<input type="text" inputmode="numeric" name="expected_count" value="{{ expected_count }}" placeholder="모르면 비워 두세요"></label>
