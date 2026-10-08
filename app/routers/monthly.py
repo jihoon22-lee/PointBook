@@ -36,6 +36,7 @@ from app.services.drafts import (
     verify_draft_for_confirm,
 )
 from app.services.history import profile_for_person
+from app.services.import_notes import join_notices, split_notice
 from app.services.ledger import LedgerConflict, add_operation, find_replay
 from app.services.paired_images import merge_roster
 from app.services.parsing import MAX_REVIEW_FORM_FIELDS, RawRequestRow, parse_pasted_raw
@@ -51,7 +52,7 @@ from app.services.review import (
     review_rows,
 )
 from app.services.sync import ABSENT_ACTIONS, RequestRow, apply_analysis
-from app.services.vision import extract_image
+from app.services.vision import read_images
 from app.services.xlsx import FORM_VERSION, extract_request, request_template
 from app.template_utils import render
 
@@ -179,6 +180,8 @@ def review_response(
             "error_fields": review.error_fields,
             "warnings": review.warnings,
             "import_notice": review.import_notice,
+            "import_notice_summary": split_notice(review.import_notice)[0],
+            "import_notice_evidence": split_notice(review.import_notice)[1],
             "review_token": review.token,
             "request_key": request_key or uuid.uuid4().hex,
             "prev_totals": review.prev_totals,
@@ -254,14 +257,30 @@ async def upload(request: Request, db: Session = Depends(get_db)) -> Response:
                     # 외부 전송 전에 두 파일을 모두 검사한다.
                     image_mime(data, file.filename)
                     image_mime(roster_data, roster_file.filename)
-                rows = await extract_image(data, file.filename)
-                if roster_data is not None and isinstance(roster_file, StarletteUploadFile):
-                    roster_rows = await extract_image(
-                        roster_data, roster_file.filename or "", roster=True
+                if roster_data is None:
+                    read = (await read_images([(data, file.filename, False)]))[0]
+                    rows = read.rows
+                    form = FormData([*form.multi_items(), ("import_notice", read.notice)])
+                elif isinstance(roster_file, StarletteUploadFile):
+                    payment, roster_read = await read_images(
+                        [
+                            (data, file.filename, False),
+                            (roster_data, roster_file.filename or "", True),
+                        ]
                     )
-                    paired = merge_roster(rows, roster_rows)
+                    paired = merge_roster(payment.rows, roster_read.rows)
                     rows = paired.rows
-                    form = FormData([*form.multi_items(), ("import_notice", paired.import_notice)])
+                    form = FormData(
+                        [
+                            *form.multi_items(),
+                            (
+                                "import_notice",
+                                join_notices(
+                                    payment.notice, roster_read.notice, paired.import_notice
+                                ),
+                            ),
+                        ]
+                    )
         if not rows:
             raise ValueError(
                 "인식된 인원이 없습니다. 사진을 다시 업로드하거나 표를 붙여넣기해 주세요."

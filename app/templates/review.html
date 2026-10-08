@@ -27,7 +27,7 @@
   <input type="hidden" name="draft_version" value="{{ draft_version|default('') }}">
   <input type="hidden" name="input_source" value="{{ input_source }}">
   <input type="hidden" name="import_notice" value="{{ import_notice|default('') }}">
-  {% if import_notice %}<div class="card"><p>{{ import_notice.partition('\n미사용 명단 원문: ')[0] }}</p><details><summary>개인번호 명단 원문</summary><p style="white-space:pre-wrap;overflow-wrap:anywhere">{{ import_notice.partition('\n미사용 명단 원문: ')[2] }}</p></details></div>{% endif %}
+  {% if import_notice %}<div class="card"><p style="white-space:pre-wrap">{{ import_notice_summary }}</p><details><summary>사진 대조 원문</summary><p style="white-space:pre-wrap;overflow-wrap:anywhere">{{ import_notice_evidence }}</p></details></div>{% endif %}
   <div class="draft-toolbar card">
     <p id="draft-status" role="status" aria-live="polite">{% if draft_saved_at %}서버 초안 저장 완료{% else %}초안 저장 상태를 확인하세요.{% endif %}</p>
     <p class="muted">자동 저장은 장부를 확정하지 않습니다. 마지막 저장부터 {{ draft_keep_days }}일 보관하며, 다른 기기에서는 초안 목록에서 이어서 작업합니다.</p>
@@ -68,6 +68,7 @@
               {% if row.source_warning %}<input type="hidden" data-field="source_warning" name="source_warning_{{ row_index }}" value="{{ row.source_warning }}">{% endif %}
               <div class="person-name"><input type="text" data-field="name" name="name_{{ row_index }}" value="{{ row.name }}" class="row-input" aria-label="{{ loop.index }}행 이름"><span class="badge link-state-{{ row_state }}">{{ {'auto':'자동 연결','manual':'직접 연결','pending':'연결 확인','new':'신규'}[row_state] }}</span></div>
               {{ profile_choices(row, 'name') }}
+              {% if row.source_warning %}<small class="name-review-warning">{{ row.source_warning }}</small>{% endif %}
               <details class="person-link-editor" {% if row_state == 'pending' %}open{% endif %}>
                 <summary>{{ '기존 인원 연결' if row_state in ['pending','new'] else '연결 변경' }}</summary>
                 {% if candidates.get(row.row_id) %}
@@ -147,7 +148,7 @@
   </details>{% endif %}
   {% if warnings %}<div class="alert alert-warning">
     <ul>{% for warning in warnings %}<li>{{ warning }}</li>{% endfor %}</ul>
-    <label><input type="checkbox" name="ack_warnings" value="yes"> 처리 월·누락 후보·합계 경고를 원본과 대조했습니다.</label>
+    <label><input type="checkbox" name="ack_warnings" value="yes"> 이름·처리 월·누락 후보·합계 경고를 원본과 대조했습니다.</label>
   </div>{% endif %}
   <div id="confirm-feedback" class="alert alert-error" role="alert" {% if not error and not errors %}hidden{% endif %}>
     <p id="confirm-message">{{ error or ('입력 내용을 확인해 주세요.' if errors else '') }}</p>

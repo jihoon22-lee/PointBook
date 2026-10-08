@@ -5,9 +5,8 @@ import re
 from collections import Counter
 from dataclasses import asdict, dataclass, replace
 
+from app.services.name_checks import MAX_NAME_CANDIDATES, normalized_grade, similar_final_consonant
 from app.services.parsing import ROW_FIELDS, RawRequestRow
-
-GRADES = {"경": "소방경", "위": "소방위", "장": "소방장", "교": "소방교", "사": "소방사"}
 
 
 @dataclass
@@ -25,8 +24,7 @@ def _source(row: RawRequestRow) -> dict[str, str]:
 
 
 def _key(row: RawRequestRow) -> tuple[str, str, str]:
-    grade = row.grade.strip()
-    return row.team.strip(), GRADES.get(grade, grade), row.name.strip()
+    return row.team.strip(), normalized_grade(row.grade), row.name.strip()
 
 
 def merge_roster(payments: list[RawRequestRow], roster: list[RawRequestRow]) -> PairedRequest:
@@ -39,6 +37,13 @@ def merge_roster(payments: list[RawRequestRow], roster: list[RawRequestRow]) -> 
         key = _key(row)
         candidates = [(i, other) for i, other in enumerate(roster) if _key(other) == key]
         related = [(i, other) for i, other in enumerate(roster) if other.name.strip() == key[2]]
+        near_names = [
+            (i, other)
+            for i, other in enumerate(roster)
+            if all(key)
+            and _key(other)[:2] == key[:2]
+            and similar_final_consonant(row.name, other.name)
+        ]
         warning = ""
         match = candidates[0] if len(candidates) == 1 else None
         if (
@@ -61,14 +66,28 @@ def merge_roster(payments: list[RawRequestRow], roster: list[RawRequestRow]) -> 
                 if related
                 else "개인번호 명단에서 이름을 찾지 못했습니다. 개인번호 또는 기존 인원을 직접 확인하세요."
             )
+            if near_names:
+                names = ", ".join(
+                    f"{other.name} ({other.personal_no or '번호 미확인'})"
+                    for _, other in near_names[:MAX_NAME_CANDIDATES]
+                )
+                warning += f" 받침이 다른 이름 후보: {names}. 같은 사람인지 원본을 확인하세요. 자동 연결하지 않았습니다."
+            roster_warnings = dict.fromkeys(
+                other.source_warning for _, other in [*related, *near_names] if other.source_warning
+            )
+            if roster_warnings:
+                warning += "\n명단의 이름 재확인: " + "\n".join(roster_warnings)
         if warning:
-            row.source_warning = warning
+            row.source_warning = "\n".join(filter(None, [row.source_warning, warning]))
             row.source_issue = " ".join(filter(None, [row.source_issue, warning]))
         # 자동 보완 전 지급표 원문과 같은 이름의 모든 후보를 보존한다.
         row.source_line = json.dumps(
             {
                 "지급표": _source(original),
                 "개인번호 명단 후보": [_source(other) for _, other in related],
+                "받침 차이 이름 후보": [
+                    _source(other) for _, other in near_names[:MAX_NAME_CANDIDATES]
+                ],
             },
             ensure_ascii=False,
         )
