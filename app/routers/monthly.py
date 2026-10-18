@@ -38,6 +38,7 @@ from app.services.drafts import (
 from app.services.history import profile_for_person
 from app.services.import_notes import join_notices, split_notice
 from app.services.ledger import LedgerConflict, add_operation, find_replay
+from app.services.observations import latest_observations
 from app.services.paired_images import merge_roster
 from app.services.parsing import MAX_REVIEW_FORM_FIELDS, RawRequestRow, parse_pasted_raw
 from app.services.request_profiles import choose, reset_target
@@ -176,6 +177,7 @@ def review_response(
                 if key not in review.pending_links
             },
             "analysis": review.analysis,
+            "new_teams": review.new_teams,
             "row_changes": {
                 change.point_no: {
                     "action": change.action,
@@ -653,6 +655,19 @@ async def confirm(request: Request, db: Session = Depends(get_db)) -> Response:
             version=str(form.get("draft_version", "")),
             request_key=request_key,
         )
+        # 검수 이후 생긴 이후 월 관측 뒤로 기록을 쓰지 않는다. 건너뛰지 않고 전체를 되돌린다.
+        later = [
+            observation
+            for observation in latest_observations(
+                db,
+                person_ids=[c.person_id for c in result.analysis.changes if c.person_id],
+            ).values()
+            if observation.month > month
+        ]
+        if later:
+            raise LedgerConflict(
+                "이후 월의 잔액 관측이 있는 인원이 있어 이 월을 확정할 수 없습니다. 다시 검수하세요."
+            )
         backup_database()
         before = {
             p.point_no: profile_for_person(p)

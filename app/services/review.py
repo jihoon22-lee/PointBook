@@ -11,12 +11,19 @@ from sqlalchemy.orm import Session, joinedload
 from starlette.datastructures import FormData
 
 from app.config import get_settings
-from app.models import BalanceRecord, LedgerState, MonthlySnapshot, Person, Team
+from app.models import (
+    BalanceAdjustment,
+    BalanceRecord,
+    LedgerState,
+    MonthlySnapshot,
+    Person,
+    Team,
+)
 from app.services.absent_carries import matches_binding
 from app.services.balance import previous_totals
 from app.services.carry_inputs import parse_carry_input
 from app.services.dates import current_month, validate_month
-from app.services.identifiers import normalize_point_no
+from app.services.identifiers import format_point_no, normalize_point_no
 from app.services.parsing import MAX_REQUEST_ROWS, ROW_FIELDS, RawRequestRow
 from app.services.request_profiles import prepare, reset_target
 from app.services.sync import ABSENT_ACTIONS, ACTION_DEACTIVATED, RequestRow, SyncAnalysis, analyze
@@ -50,6 +57,7 @@ class Review:
     row_states: dict[str, str] = field(default_factory=dict)
     profile_differences: dict[str, dict[str, dict[str, object]]] = field(default_factory=dict)
     pending_profiles: dict[str, str] = field(default_factory=dict)
+    new_teams: list[str] = field(default_factory=list)
 
 
 def raw_rows_from_form(form: FormData, *, clear_source_issues: bool = False) -> list[RawRequestRow]:
@@ -185,6 +193,25 @@ def new_month_error(db: Session, month: str) -> str | None:
             return f"{month} 월은 이미 처리되었습니다. 정정 경로를 이용해 주세요."
         return (
             "최신 확정 월 이전에는 일반 확정을 할 수 없습니다. 과거 삽입은 정정 경로를 이용하세요."
+        )
+    # 이후 월의 현재 보정·신규 등록 관측보다 앞선 일반 확정은 현재 잔액을 과거 값으로 덮고
+    # 관측 없던 달의 기록을 만든다. 같은 월은 직전 잔액 계산이 관측 시각을 따른다.
+    later = db.execute(
+        select(Person.name, Person.point_no, func.max(BalanceAdjustment.month))
+        .join(BalanceAdjustment, BalanceAdjustment.person_id == Person.id)
+        .where(BalanceAdjustment.month > month)
+        .group_by(Person.id)
+        .order_by(func.max(BalanceAdjustment.month).desc(), Person.name, Person.id)
+    ).all()
+    if later:
+        names = ", ".join(
+            f"{name}({format_point_no(point_no)}, {observed})"
+            for name, point_no, observed in later[:5]
+        )
+        more = f" 외 {len(later) - 5}명" if len(later) > 5 else ""
+        return (
+            f"{month}보다 이후 월에 잔액 보정·신규 등록 관측이 있어 일반 확정을 할 수 없습니다: "
+            f"{names}{more}. 이 관측 월 이상으로 처리 월을 선택하세요."
         )
     return None
 
@@ -352,6 +379,18 @@ def review_rows(
                 result.error_fields["analysis"] = f"account_type_{index}"
                 break
         return result
+    # apply_analysis와 같은 규칙: 확정 때 자동 생성될 미등록 팀을 미리 알린다.
+    known_teams = set(db.scalars(select(Team.name)))
+    result.new_teams = sorted(
+        {
+            change.team_name
+            for change in result.analysis.changes
+            if change.action not in ABSENT_ACTIONS
+            and not change.clear_team
+            and change.team_name
+            and change.team_name not in known_teams
+        }
+    )
     result.request_amount = sum(row.amount for row in result.rows)
     latest = db.scalar(select(func.max(MonthlySnapshot.month)))
     if latest:

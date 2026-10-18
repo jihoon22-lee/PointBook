@@ -4,7 +4,8 @@
 <h1>장부 반영 결과</h1>
 <p class="alert alert-success">검토한 변경을 반영했습니다.</p>
 <div class="card"><p>기록 시각: {{ created_at }} (한국 시간) · 관리자: {{ actor }}</p><p>사유: {{ operation.reason }}</p><p class="muted">작업 번호: {{ operation.request_key }}</p></div>
-{% if operation.kind == 'profile' %}<div class="card"><h2>기본 정보 변경</h2><table><thead><tr><th>항목</th><th>전</th><th>후</th></tr></thead><tbody>{% for change in details.changes %}{% for key,label in [('name','이름'),('point_no','포인트번호'),('personal_no','개인번호'),('team_name','팀'),('grade','계급'),('status','상태'),('account_type','계정 구분')] %}<tr><td>{{ label }}</td><td>{{ change.before.get(key,'') if change.before else '신규' }}</td><td>{{ change.after.get(key,'') }}</td></tr>{% endfor %}{% endfor %}</tbody></table></div>{% endif %}
+{% if operation.kind == 'team' %}<p>삭제한 팀: <strong>{{ details.team.name }}</strong> · 소속 계정 {{ details.changes|length }}개를 팀 없음으로 변경</p>{% endif %}
+{% if operation.kind in ['profile', 'team'] %}<div class="card"><h2>{{ '소속 변경' if operation.kind == 'team' else '기본 정보 변경' }}</h2><table><thead><tr><th>항목</th><th>전</th><th>후</th></tr></thead><tbody>{% for change in details.changes %}{% for key,label in [('name','이름'),('point_no','포인트번호'),('personal_no','개인번호'),('team_name','팀'),('grade','계급'),('status','상태'),('account_type','계정 구분')] %}<tr><td>{{ label }}</td><td>{{ change.before.get(key,'') if change.before else '신규' }}</td><td>{{ change.after.get(key,'') }}</td></tr>{% endfor %}{% endfor %}</tbody></table></div>{% endif %}
 {% if operation.kind == 'monthly' %}<p>{{ details.month }} 월간 확정 · {{ details.changes|length }}명 반영</p><p><a href="/dashboard?month={{ details.month }}&account_type=all&operation_id={{ operation.id }}">확정 당시 보고서</a></p>{% endif %}
 {% if details.changes %}<div class="card table-wrap"><table><thead><tr><th>월</th><th>항목</th><th>전</th><th>후</th></tr></thead><tbody>
 {% for change in details.changes %}{% if change.after is defined and change.after.month is defined %}
