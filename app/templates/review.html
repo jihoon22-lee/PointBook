@@ -141,6 +141,7 @@
       {% if groups[action] %}<h3>{{ label }} ({{ groups[action]|length }})</h3>
       <p>{% for c in groups[action] %}<span class="badge {% if action == 'deactivated' %}badge-inactive{% endif %}">{{ c.name }}{% if c.account_type == 'shared' %} ·공용{% endif %}{% if c.team_changed %} ·팀변경{% endif %}{% if c.profile_changed %} ·정보변경{% endif %}</span> {% endfor %}</p>{% endif %}
     {% endfor %}
+    {% if new_teams %}<p role="status">확정 시 새로 만들 팀: {{ new_teams|join(', ') }} <span class="muted">(팀 이름 오인식이 아닌지 원본과 대조하세요)</span></p>{% endif %}
   </div>
 
   {% for balance_action, balance_title in [('deactivated','비재직 전환 대상 이월 잔액'), ('inactive_kept','기존 비재직 인원 이월 잔액')] %}

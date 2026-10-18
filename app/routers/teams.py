@@ -1,15 +1,20 @@
 import re
+import uuid
 from dataclasses import dataclass
 from typing import Any
 
 from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from sqlalchemy import case, select
-from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session, joinedload
 
 from app.auth import require_login
 from app.db import get_db
 from app.models import Person, Team
+from app.services.backup import BackupError, backup_database
+from app.services.history import profile_for_person
+from app.services.ledger import add_operation, start_write
 from app.services.teams import TEAM_COLORS
 from app.services.tenure import tenure_labels
 from app.template_utils import render
@@ -220,12 +225,59 @@ def update_team_color(
 
 
 @router.post("/{team_id}/delete")
-def delete_team(team_id: int, db: Session = Depends(get_db)) -> Response:
-    team = db.get(Team, team_id)
-    if team is None:
-        return RedirectResponse("/teams", status_code=303)
-    for person in team.persons:
-        person.team_id = None
-    db.delete(team)
-    db.commit()
+def delete_team(team_id: int, request: Request, db: Session = Depends(get_db)) -> Response:
+    """소속 계정을 팀 없음으로 옮기는 변경을 인원 버전과 변경 이력에 남긴다."""
+    try:
+        start_write(db)
+        team = db.get(Team, team_id)
+        if team is None:
+            db.rollback()
+            return RedirectResponse("/teams", status_code=303)
+        if backup_database() is None:
+            raise BackupError("변경 전 검증 백업을 만들 수 없습니다.")
+        members = list(
+            db.scalars(
+                select(Person)
+                .options(joinedload(Person.team))
+                .where(Person.team_id == team.id)
+                .order_by(Person.id)
+            )
+        )
+        changes = []
+        for person in members:
+            before = profile_for_person(person)
+            person.team = None
+            person.version += 1
+            changes.append(
+                {
+                    "person_id": person.id,
+                    "before": before,
+                    "after": {**before, "team_id": None, "team_name": "", "team_color": "#9aa3ad"},
+                }
+            )
+        add_operation(
+            db,
+            request_key=uuid.uuid4().hex,
+            kind="team",
+            payload={"team_id": team.id, "name": team.name},
+            actor_id=int(request.session["admin_id"]),
+            reason=f"팀 '{team.name}' 삭제",
+            details={
+                "team": {"id": team.id, "name": team.name, "color": team.color},
+                "changes": changes,
+            },
+            result_url="/teams",
+        )
+        db.delete(team)
+        db.commit()
+    except (BackupError, SQLAlchemyError, OSError):
+        db.rollback()
+        return render(
+            request,
+            "teams.html",
+            _team_page_context(
+                db, "변경 전 백업을 저장할 수 없거나 다른 작업과 충돌해 팀을 삭제하지 않았습니다."
+            ),
+            409,
+        )
     return RedirectResponse("/teams", status_code=303)
