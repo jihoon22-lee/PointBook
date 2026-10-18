@@ -19,7 +19,7 @@
     <input type="hidden" name="plan_token" value="{{ plan.token }}">
     {% include "ledger_plan.html" %}
     <p class="muted">계산 오류를 포함한 사전 사본은 별도 보존됩니다. 정상 검증 백업과 구분하며 자동 복원하지 않습니다.</p>
-    <button type="submit" formaction="/ledger/repair/apply" class="btn btn-primary" onclick="return confirm('계산 필드 복구 계획을 반영할까요?')">검토한 복구 반영</button>
+    <button type="submit" formaction="/ledger/repair/apply" class="btn btn-primary" data-confirm="계산 필드 복구 계획을 반영할까요?">검토한 복구 반영</button>
   {% endif %}
 </form>
 {% endif %}
