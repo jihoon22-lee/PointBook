@@ -36,6 +36,7 @@ from app.services.drafts import (
     verify_draft_for_confirm,
 )
 from app.services.history import profile_for_person
+from app.services.identifiers import normalize_point_no
 from app.services.import_notes import join_notices, split_notice
 from app.services.ledger import LedgerConflict, add_operation, find_replay
 from app.services.observations import latest_observations
@@ -312,7 +313,11 @@ async def upload(request: Request, db: Session = Depends(get_db)) -> Response:
             db.scalars(select(Person.point_no).where(Person.account_type == "shared"))
         )
         for row in rows:
-            if row.point_no.replace(" ", "").replace("-", "") in shared_points:
+            try:
+                point = normalize_point_no(row.point_no)
+            except ValueError:
+                continue
+            if point in shared_points and row.account_type == "person":
                 row.account_type = "shared"
     return store_review_response(request, db, month, rows, source=source, form=form)
 

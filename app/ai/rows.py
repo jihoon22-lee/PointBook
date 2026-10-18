@@ -47,6 +47,11 @@ def parse_rows(text: str, *, roster: bool = False) -> list[RawRequestRow]:
         issues = []
         for key in ROW_FIELDS:
             value = item.get(key, "person" if key == "account_type" else "")
+            if key == "account_type" and (
+                value is None or (isinstance(value, str) and not value.strip())
+            ):
+                # 지급표에는 유형 열이 없다. 공용 표시가 없으면 일반 인원으로 검수한다.
+                value = "person"
             if value is None:
                 values[key] = ""
             elif isinstance(value, str):
