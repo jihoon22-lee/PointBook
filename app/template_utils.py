@@ -10,7 +10,7 @@ from app._version import __version__
 from app.auth import csrf_token
 from app.config import get_settings
 from app.services.dates import KST
-from app.services.identifiers import format_point_no
+from app.services.identifiers import format_point_no, normalize_point_no
 
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 
@@ -31,6 +31,14 @@ def kst_datetime(value: datetime | None) -> str:
         return "미확인"
     instant = value if value.tzinfo is not None else value.replace(tzinfo=UTC)
     return instant.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def point_key(value: str | None) -> str:
+    """검수 화면 조회용 포인트번호 키. 정규화할 수 없으면 빈 키를 쓴다."""
+    try:
+        return normalize_point_no(value or "")
+    except ValueError:
+        return ""
 
 
 def _relative_luminance(hex_color: str) -> float:
@@ -59,6 +67,7 @@ def contrast_color(background: str) -> str:
 templates.env.filters["number_format"] = number_format
 templates.env.filters["kst_datetime"] = kst_datetime
 templates.env.filters["point_no"] = format_point_no
+templates.env.filters["point_key"] = point_key
 templates.env.filters["contrast_color"] = contrast_color
 
 

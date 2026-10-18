@@ -20,7 +20,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from app._version import __version__
 from app.services.dates import KST, validate_month
-from app.services.parsing import MAX_REQUEST_ROWS, RawRequestRow
+from app.services.parsing import ACCOUNT_TYPE_LABELS, MAX_REQUEST_ROWS, RawRequestRow
 from app.services.stats import Report
 
 FORM_MARKER = "PointBook 월간 요청서"
@@ -276,7 +276,7 @@ def read_request(data: bytes, filename: str) -> XlsxRequest:
                     issues.append(
                         f"요청서!{cells[index].coordinate}: 번호가 문자열이 아닙니다. 선행 0을 추정하지 않았으므로 원본 번호를 확인하세요."
                     )
-            account_type = {"일반": "person", "공용": "shared"}.get(values[1], values[1])
+            account_type = ACCOUNT_TYPE_LABELS.get(values[1].strip(), values[1])
             result.append(
                 RawRequestRow(
                     account_type=account_type,

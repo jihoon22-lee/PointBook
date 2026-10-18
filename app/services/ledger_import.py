@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.models import BalanceRecord, MonthlySnapshot, Person, Team
 from app.services.history import freeze_new_records, preserve_revision
 from app.services.identifiers import is_legacy_point_no, normalize_point_no
+from app.services.teams import TEAM_COLORS
 
 
 class LedgerImportError(ValueError):
@@ -428,9 +429,13 @@ def _team_map(db: Session, data: LedgerData) -> dict[str, Team]:
     required_names = {
         account.team_name for account in (*data.people, *data.shared_accounts) if account.team_name
     }
+    used = {team.color for team in teams.values()}
     for name in sorted(required_names):
         if name not in teams:
-            team = Team(name=name)
+            # 팀별 색상 구분을 위해 월간 자동 생성과 같은 순서로 미사용 색상을 배정한다.
+            color = next((c for c in TEAM_COLORS if c not in used), TEAM_COLORS[0])
+            used.add(color)
+            team = Team(name=name, color=color)
             db.add(team)
             teams[name] = team
     db.flush()

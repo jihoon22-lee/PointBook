@@ -70,7 +70,7 @@
         <tbody>
         {% for row in rows %}
           {% set row_index = loop.index0 %}
-          {% set row_change = row_changes.get(row.point_no|replace(' ','')|replace('-',''),{}) %}
+          {% set row_change = row_changes.get(row.point_no|point_key,{}) %}
           {% set row_state = row_states.get(row.row_id, 'pending') %}
           <tr class="review-row-{{ row_state }}" data-link-status="{{ row_state }}" data-action="{{ row_change.get('action','') }}" data-team-changed="{{ 'yes' if row_change.get('team_changed') or profile_differences.get(row.row_id, {}).get('team') else 'no' }}" data-profile-changed="{{ 'yes' if row_change.get('profile_changed') or profile_differences.get(row.row_id) else 'no' }}" data-row-id="{{ row.row_id }}" data-original-order="{{ loop.index0 }}" data-has-error="{{ 'yes' if errors.get(row.row_id) else 'no' }}">
             <td class="person-link-cell">
@@ -104,7 +104,7 @@
               {% elif field == 'note' %}<textarea data-field="note" name="note_{{ row_index }}" rows="1" class="row-input" aria-label="{{ row_index + 1 }}행 {{ label }}">
 {{ row.note }}</textarea>
               {% elif field == 'carry' %}
-              {% set normalized = row.point_no|replace(' ', '')|replace('-', '') %}
+              {% set normalized = row.point_no|point_key %}
               {% set previous = prev_totals.get(normalized) if row_state in ['auto','manual'] else none %}
               {% set state = row_carry_states[row.row_id] %}
               <div class="carry-control">
@@ -112,7 +112,6 @@
                 {{ carry_help('row-' ~ row.row_id, state, previous, row.name) }}
               </div>
               {% else %}
-              {% set normalized = row.point_no|replace(' ', '')|replace('-', '') %}
               <input type="text" data-field="{{ field }}" name="{{ field }}_{{ row_index }}" value="{{ row[field] }}" class="row-input" aria-label="{{ row_index + 1 }}행 {{ label }}" {% if field == 'amount' %}inputmode="numeric"{% endif %} {% if field == 'point_no' %}placeholder="포인트번호"{% endif %}>
               {% endif %}
               {{ profile_choices(row, field) }}

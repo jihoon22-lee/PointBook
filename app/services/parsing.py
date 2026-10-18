@@ -1,7 +1,9 @@
 """요청서 원문과 검증된 행을 구분한다. 오류 행도 검수 화면에서 수정할 수 있다."""
 
 import csv
+import io
 import uuid
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 
 from app.services.identifiers import normalize_point_no
@@ -10,6 +12,11 @@ from app.services.validation import FieldError, parse_money
 
 MAX_REQUEST_ROWS = 2000
 MAX_REVIEW_FORM_FIELDS = MAX_REQUEST_ROWS * 32 + 100
+# 초안 셀 원문 한도와 같다(app/services/drafts.py).
+MAX_RECORD_CHARS = 20_000
+MAX_RECORD_LINES = 100
+# 빈 계정 구분은 제목 없는 붙여넣기·AI 입력과 같이 일반 인원으로 검수한다.
+ACCOUNT_TYPE_LABELS = {"": "person", "일반": "person", "공용": "shared"}
 ROW_FIELDS = ("point_no", "personal_no", "name", "team", "grade", "amount", "note", "account_type")
 
 
@@ -68,18 +75,54 @@ def _to_int(value: str) -> int:
     return parse_money(value)
 
 
+def _records(text: str) -> Iterator[tuple[str, list[str]]]:
+    """붙여넣기 레코드와 원문. Excel이 따옴표로 감싼 셀 안의 줄바꿈은 같은 행으로 읽는다.
+
+    구분자는 기존처럼 레코드의 첫 줄에서 고른다. 따옴표가 끝나지 않거나 레코드가 너무 길면
+    그 줄만 원문 오류 후보로 남기고 다음 줄부터 다시 읽는다.
+    재시도 비용은 레코드 길이·줄 수 한도와 요청서 행 한도로 묶인다. 공백뿐인 레코드는 건너뛴다.
+    """
+    lines = io.StringIO(text, newline="").readlines()
+    index = 0
+    while index < len(lines):
+        first = lines[index]
+        if not first.strip():
+            index += 1
+            continue
+        delimiter = "\t" if "\t" in first else ","
+        if '"' not in first:
+            # 따옴표가 없는 줄은 다음 줄로 이어지지 않는다.
+            index += 1
+            yield first.rstrip("\r\n"), next(csv.reader([first], delimiter=delimiter))
+            continue
+        used = 0
+
+        def feed(start: int = index) -> Iterator[str]:
+            nonlocal used
+            size = 0
+            for position in range(start, len(lines)):
+                physical = lines[position]
+                used += 1
+                size += len(physical)
+                if size > MAX_RECORD_CHARS or used > MAX_RECORD_LINES:
+                    raise csv.Error("붙여넣기 레코드가 너무 깁니다.")
+                yield physical
+
+        try:
+            cols = next(csv.reader(feed(), delimiter=delimiter, strict=True))
+            raw = "".join(lines[index : index + used])
+        except csv.Error:
+            used, raw = 1, first
+            cols = [first.rstrip("\r\n")]
+        index += used
+        yield raw.rstrip("\r\n").replace("\r\n", "\n").replace("\r", "\n"), cols
+
+
 def parse_pasted_raw(text: str) -> list[RawRequestRow]:
     rows: list[RawRequestRow] = []
     has_sequence: bool | None = None
     request_headers: list[str] | None = None
-    for line in text.splitlines():
-        if not line.strip():
-            continue
-        delimiter = "\t" if "\t" in line else ","
-        try:
-            cols = next(csv.reader([line], delimiter=delimiter, strict=True))
-        except csv.Error:
-            cols = [line]
+    for line, cols in _records(text):
         headers = [c.strip() for c in cols]
         if (
             "이름" in headers
@@ -119,7 +162,7 @@ def parse_pasted_raw(text: str) -> list[RawRequestRow]:
                 )
             else:
                 values = dict(zip(request_headers, cols, strict=True))
-                kind = values.get("계정 구분", "person").strip()
+                kind = values.get("계정 구분", "").strip()
                 rows.append(
                     RawRequestRow(
                         team=values.get("팀", ""),
@@ -129,7 +172,7 @@ def parse_pasted_raw(text: str) -> list[RawRequestRow]:
                         personal_no=values["개인번호"],
                         note=values.get("비고", ""),
                         carry=values.get("이월 잔액", ""),
-                        account_type={"일반": "person", "공용": "shared"}.get(kind, kind),
+                        account_type=ACCOUNT_TYPE_LABELS.get(kind, kind),
                         source_line=line,
                     )
                 )
