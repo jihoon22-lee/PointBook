@@ -21,6 +21,14 @@ def csrf_token(request: Request) -> str:
     return token
 
 
+# 월간 업로드 폼(요청서·명단 사진칸 두 개)으로 제출되는 경로. 빈 요청서 시작도 같은 폼이다.
+UPLOAD_FORM_PATHS = ("/monthly/upload", "/monthly/start")
+
+
+def form_file_limit(path: str) -> int:
+    return 2 if path in UPLOAD_FORM_PATHS else 1
+
+
 async def verify_csrf(request: Request) -> AsyncIterator[None]:
     try:
         if request.method not in {"GET", "HEAD", "OPTIONS"}:
@@ -28,7 +36,7 @@ async def verify_csrf(request: Request) -> AsyncIterator[None]:
             supplied: object = request.headers.get("x-csrf-token")
             if supplied is None:
                 form = await request.form(
-                    max_files=2 if request.url.path == "/monthly/upload" else 1,
+                    max_files=form_file_limit(request.url.path),
                     max_fields=MAX_REVIEW_FORM_FIELDS,
                     max_part_size=2 * 1024 * 1024,
                 )

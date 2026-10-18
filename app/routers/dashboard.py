@@ -3,16 +3,26 @@ from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth import require_login
 from app.db import get_db
+from app.models import Team
 from app.services import stats
 from app.services.dates import current_month
 from app.services.xlsx import report_workbook
 from app.template_utils import render
 
 router = APIRouter(prefix="/dashboard", dependencies=[Depends(require_login)], tags=["dashboard"])
+
+
+def _team_options(db: Session, selected: str | None) -> list[str]:
+    """팀 마스터 이름. 이미 지운 팀 이름으로 연 주소도 선택 상태를 잃지 않게 포함한다."""
+    names = list(db.scalars(select(Team.name).order_by(Team.name)))
+    if selected and selected not in names:
+        names.append(selected)
+    return names
 
 
 @router.get("")
@@ -67,6 +77,7 @@ def dashboard(
                 "scope": scope,
                 "account_type": account_type,
                 "operation_id": operation_id,
+                "team_options": _team_options(db, team_name),
             },
             400,
         )
@@ -94,6 +105,7 @@ def dashboard(
             "scope": scope,
             "account_type": account_type,
             "team_name": team_name or "",
+            "team_options": _team_options(db, team_name),
             "person_id": person_id,
             "operation_id": requested_operation,
             "sort_by": sort_by,

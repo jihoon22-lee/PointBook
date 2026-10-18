@@ -18,6 +18,7 @@ from app.models import BalanceAdjustment, BalanceRecord, Person
 from app.services.backup import BackupError, _atomic_json, _fsync, _sync_directory, copy_database
 from app.services.dates import validate_month
 from app.services.history import preserve_revision, record_data
+from app.services.identifiers import format_point_no
 from app.services.ledger import (
     LedgerConflict,
     LedgerPlan,
@@ -47,6 +48,18 @@ class IntegrityReport:
         return not self.issues and not self.blocking
 
 
+def person_label(person: Person | None, person_id: int) -> str:
+    """업무 화면에는 내부 ID 대신 이름과 포인트번호를 보인다."""
+    if person is None:
+        return f"연결 인원 없음(#{person_id})"
+    return f"{person.name}({format_point_no(person.point_no)})"
+
+
+def person_labels(db: Session, person_ids: set[int]) -> dict[int, str]:
+    people = {p.id: p for p in db.scalars(select(Person).where(Person.id.in_(person_ids)))}
+    return {person_id: person_label(people.get(person_id), person_id) for person_id in person_ids}
+
+
 def inspect_ledger(db: Session) -> IntegrityReport:
     report = IntegrityReport(version=ledger_version(db))
     if db.execute(text("PRAGMA integrity_check")).scalars().all() != ["ok"]:
@@ -71,7 +84,10 @@ def inspect_ledger(db: Session) -> IntegrityReport:
             if not isinstance(json.loads(record.profile_data), dict):
                 raise TypeError
         except (ValueError, TypeError):
-            report.blocking.append(f"기록 {record.id}: 월 또는 당시 정보 형식을 확인해야 합니다.")
+            label = person_label(people.get(record.person_id), record.person_id)
+            report.blocking.append(
+                f"{label}의 기록(#{record.id}): 월 또는 당시 정보 형식을 확인해야 합니다."
+            )
         groups.setdefault(record.person_id, []).append(
             (
                 record.snapshot.month,
@@ -85,7 +101,10 @@ def inspect_ledger(db: Session) -> IntegrityReport:
         try:
             validate_month(adjustment.month)
         except ValueError:
-            report.blocking.append(f"보정 {adjustment.id}: 관측 월 형식을 확인해야 합니다.")
+            label = person_label(people.get(adjustment.person_id), adjustment.person_id)
+            report.blocking.append(
+                f"{label}의 잔액 보정(#{adjustment.id}): 관측 월 형식을 확인해야 합니다."
+            )
         groups.setdefault(adjustment.person_id, []).append(
             (adjustment.month, adjustment.observed_at, adjustment.id, 1, adjustment)
         )
@@ -110,8 +129,9 @@ def inspect_ledger(db: Session) -> IntegrityReport:
                         "after": after,
                     }
                 )
+                label = person_label(people.get(person_id), person_id)
                 report.issues.append(
-                    f"{month} 기록 {identifier}: 총잔액 또는 직전 관측 기준 순사용이 다릅니다."
+                    f"{month} {label}: 총잔액 또는 직전 관측 기준 순사용이 다릅니다."
                 )
             previous = total
             expected_current = {"carry_balance": event.carry_balance, "amount": event.amount}
@@ -135,7 +155,9 @@ def inspect_ledger(db: Session) -> IntegrityReport:
                     "after": {**expected_current, "version": person.version + 1},
                 }
             )
-            report.issues.append(f"인원 {person_id}: 현재 잔액이 마지막 유효 관측과 다릅니다.")
+            report.issues.append(
+                f"{person_label(person, person_id)}: 현재 잔액이 마지막 유효 관측과 다릅니다."
+            )
     if ledger_version(db) != report.version:
         raise LedgerConflict("검사 중 다른 작업이 반영되었습니다. 다시 검사하세요.")
     return report

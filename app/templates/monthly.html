@@ -38,6 +38,7 @@
 
 <div class="card">
   <h2>처리 이력</h2>
+  <p class="muted">총 잔액은 그 달에 실제 확인한 잔액의 합계로, 공용계정과 비재직 잔액 보존 기록을 포함합니다. 월을 누르면 그 달의 대시보드를 엽니다.</p>
   <div class="table-wrap">
     <table>
       <thead>
@@ -46,7 +47,7 @@
       <tbody>
       {% for s in summary %}
         <tr>
-          <td class="month-label">{{ s.month }}<br><span class="muted">{{ {"closed":"월간 확정","partial":"일부 인원 정정"}.get(month_statuses.get(s.month),"별도 잔액 관측") }}</span></td>
+          <td class="month-label"><a href="/dashboard?month={{ s.month }}">{{ s.month }}</a><br><span class="muted">{{ {"closed":"월간 확정","partial":"일부 인원 정정"}.get(month_statuses.get(s.month),"별도 잔액 관측") }}</span></td>
           <td>{{ s.workforce_count }}명</td>
           <td>{{ (s.total_amount|number_format) ~ "원" if s.processed_count else "월간 기록 없음" }}</td>
           <td>{{ (s.total_usage|number_format) ~ "원" if s.processed_count else "월간 기록 없음" }}</td>
@@ -59,5 +60,5 @@
     </table>
   </div>
 </div>
-<script src="/static/js/monthly-upload.js" defer></script>
+<script src="/static/js/monthly-upload.js?v={{ version }}" defer></script>
 {% endblock %}

@@ -51,10 +51,20 @@
       var key = th.getAttribute('data-sort');
       if (!key) return;
       headerIndex[key] = i;
-      th.style.cursor = 'pointer';
-      th.addEventListener('click', function () {
+      // 키보드로도 정렬할 수 있게 제목을 버튼으로 감싸고 현재 정렬을 aria-sort로 알린다.
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'sort-button';
+      while (th.firstChild) button.appendChild(th.firstChild);
+      th.appendChild(button);
+      th.setAttribute('aria-sort', 'none');
+      button.addEventListener('click', function () {
         if (state.key === key) state.desc = !state.desc;
         else { state.key = key; state.desc = false; }
+        Array.prototype.forEach.call(headers, function (other) {
+          if (other.getAttribute('data-sort')) other.setAttribute('aria-sort', 'none');
+        });
+        th.setAttribute('aria-sort', state.desc ? 'descending' : 'ascending');
         var rows = Array.prototype.slice.call(tbody.rows);
         rows.sort(function (a, b) {
           var va = cellValue(a, key);

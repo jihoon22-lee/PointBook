@@ -16,7 +16,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from werkzeug.security import check_password_hash
 
 from app import db as db_module
-from app.auth import verify_csrf
+from app.auth import UPLOAD_FORM_PATHS, verify_csrf
 from app.config import DEFAULT_ADMIN_PASSWORD, get_settings
 from app.db import ensure_default_database, init_db
 from app.logging import get_logger, log_security_warnings
@@ -85,7 +85,7 @@ def _too_large_response(scope: Scope, limit: int) -> Response:
     accept = next(
         (value.decode("latin-1") for key, value in scope["headers"] if key == b"accept"), ""
     )
-    if scope["path"] == "/monthly/upload":
+    if scope["path"] in UPLOAD_FORM_PATHS:
         each = get_settings().max_upload_mb
         message = f"요청서 사진과 개인번호 명단 사진은 각각 최대 {each}MB까지 올릴 수 있습니다."
         back = "/monthly"
@@ -185,7 +185,10 @@ def create_app() -> FastAPI:
 
     # 월간 업로드는 두 파일을 받으므로 파일별 한도의 두 배와 폼 여유분을 허용한다.
     upload_limit = max(DEFAULT_BODY_LIMIT, (2 * settings.max_upload_mb + 1) * MIB)
-    app.add_middleware(RequestSizeLimitMiddleware, path_limits={"/monthly/upload": upload_limit})
+    app.add_middleware(
+        RequestSizeLimitMiddleware,
+        path_limits=dict.fromkeys(UPLOAD_FORM_PATHS, upload_limit),
+    )
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.secret_key,

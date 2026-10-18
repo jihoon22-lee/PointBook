@@ -20,6 +20,13 @@ def settings_page(request: Request, db: Session = Depends(get_db)) -> Response:
     return render(request, "settings.html", {"operations": operation_status(db)})
 
 
+def _error(request: Request, db: Session, error: str, status: int) -> Response:
+    """오류 화면에서도 운영 상태 카드를 그대로 보인다."""
+    return render(
+        request, "settings.html", {"error": error, "operations": operation_status(db)}, status
+    )
+
+
 @router.post("")
 def change_password(
     request: Request,
@@ -33,23 +40,11 @@ def change_password(
         return RedirectResponse("/login", status_code=303)
     user = db.scalar(select(AdminUser).where(AdminUser.username == username))
     if user is None or not check_password_hash(user.password_hash, current_password):
-        return render(
-            request,
-            "settings.html",
-            {"error": "현재 비밀번호가 올바르지 않습니다."},
-            400,
-        )
+        return _error(request, db, "현재 비밀번호가 올바르지 않습니다.", 400)
     if len(new_password) < 8 or new_password == DEFAULT_ADMIN_PASSWORD:
-        return render(
-            request,
-            "settings.html",
-            {"error": "새 비밀번호는 8자 이상이며 기본 암호와 달라야 합니다."},
-            400,
-        )
+        return _error(request, db, "새 비밀번호는 8자 이상이며 기본 암호와 달라야 합니다.", 400)
     if new_password != confirm_password:
-        return render(
-            request, "settings.html", {"error": "새 비밀번호 확인이 일치하지 않습니다."}, 400
-        )
+        return _error(request, db, "새 비밀번호 확인이 일치하지 않습니다.", 400)
     changed_id = db.scalar(
         update(AdminUser)
         .where(AdminUser.id == user.id, AdminUser.auth_version == user.auth_version)
@@ -61,12 +56,7 @@ def change_password(
     )
     if changed_id is None:
         db.rollback()
-        return render(
-            request,
-            "settings.html",
-            {"error": "인증 상태가 변경되었습니다. 다시 로그인하세요."},
-            409,
-        )
+        return _error(request, db, "인증 상태가 변경되었습니다. 다시 로그인하세요.", 409)
     db.commit()
     logout_user(request)
     get_logger().info("관리자 비밀번호 변경: %s", username)

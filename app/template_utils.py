@@ -25,11 +25,18 @@ def number_format(value: int | None) -> str:
     return f"{value:,}"
 
 
-def kst_datetime(value: datetime | None) -> str:
+def kst_datetime(value: datetime | str | None) -> str:
     """UTC 저장값은 그대로 두고 업무 화면의 시각만 한국 시간으로 표시한다."""
-    if value is None:
+    if value is None or value == "":
         return "미확인"
-    instant = value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+    if isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value)
+        except ValueError:
+            return value
+    else:
+        parsed = value
+    instant = parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
     return instant.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
 
 

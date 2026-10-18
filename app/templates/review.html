@@ -181,9 +181,9 @@
   <button type="submit" aria-describedby="confirm-reason confirm-message carry-confirm-reason" class="btn btn-primary confirm-monthly" {% if not review_token or carry_counts.error %}disabled{% endif %}>확정 · 동기화</button>
   <a class="btn" href="/monthly">취소</a>
 </form>
-<script src="/static/js/review.js" defer></script>
-<script src="/static/js/drafts.js" defer></script>
-<script src="/static/js/review-input.js" defer></script>
-<script src="/static/js/review-position.js" defer></script>
-<script src="/static/js/review-header.js" defer></script>
+<script src="/static/js/review.js?v={{ version }}" defer></script>
+<script src="/static/js/drafts.js?v={{ version }}" defer></script>
+<script src="/static/js/review-input.js?v={{ version }}" defer></script>
+<script src="/static/js/review-position.js?v={{ version }}" defer></script>
+<script src="/static/js/review-header.js?v={{ version }}" defer></script>
 {% endblock %}
