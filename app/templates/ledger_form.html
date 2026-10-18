@@ -28,7 +28,7 @@
   <button type="submit" class="btn">전후 차이 검토</button>
   {% if plan %}
     {% include "ledger_plan.html" %}
-    <button type="submit" formaction="/ledger/{{ 'correct' if kind == 'correction' else 'adjust' }}/{{ person.id }}/apply" class="btn btn-primary" onclick="return confirm('표시된 전후 차이와 사유로 반영할까요?')">검토한 내용 반영</button>
+    <button type="submit" formaction="/ledger/{{ 'correct' if kind == 'correction' else 'adjust' }}/{{ person.id }}/apply" class="btn btn-primary" data-confirm="표시된 전후 차이와 사유로 반영할까요?">검토한 내용 반영</button>
   {% endif %}
   <a class="btn" href="/people/{{ person.id }}">인원으로 돌아가기</a>
 </form>

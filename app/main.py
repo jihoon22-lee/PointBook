@@ -70,16 +70,60 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         db_module.engine.dispose()
 
 
+MIB = 1024 * 1024
+DEFAULT_BODY_LIMIT = 20 * MIB
+SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "same-origin",
+}
+
+
+def _too_large_response(scope: Scope, limit: int) -> Response:
+    """브라우저 폼에는 스크립트 없는 안내 화면, 스크립트 요청에는 JSON 오류를 준다."""
+    headers = {"Cache-Control": "no-store", **SECURITY_HEADERS}
+    accept = next(
+        (value.decode("latin-1") for key, value in scope["headers"] if key == b"accept"), ""
+    )
+    if scope["path"] == "/monthly/upload":
+        each = get_settings().max_upload_mb
+        message = f"요청서 사진과 개인번호 명단 사진은 각각 최대 {each}MB까지 올릴 수 있습니다."
+        back = "/monthly"
+    else:
+        message = f"요청 본문이 너무 큽니다. (최대 {limit // MIB}MB)"
+        back = "/"
+    if "text/html" in accept:
+        page = (
+            '<!doctype html><html lang="ko"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width, initial-scale=1">'
+            "<title>파일이 너무 큽니다 - PointBook</title></head>"
+            '<body style="font-family:sans-serif;padding:24px;line-height:1.7">'
+            f"<h1>파일이 너무 큽니다</h1><p>{message}</p>"
+            "<p>사진 크기를 줄이거나 한 장씩 다시 선택해 주세요.</p>"
+            f'<p><a href="{back}">돌아가기</a></p></body></html>'
+        )
+        return HTMLResponse(page, status_code=413, headers=headers)
+    return JSONResponse({"detail": message, "error": message}, status_code=413, headers=headers)
+
+
 class RequestSizeLimitMiddleware:
     """Bound the complete request before multipart/form parsing, including chunked uploads."""
 
-    def __init__(self, app: ASGIApp) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        default_limit: int = DEFAULT_BODY_LIMIT,
+        path_limits: dict[str, int] | None = None,
+    ) -> None:
         self.app = app
+        self.default_limit = default_limit
+        self.path_limits = path_limits or {}
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http" or scope["method"] in {"GET", "HEAD", "OPTIONS"}:
             await self.app(scope, receive, send)
             return
+        limit = self.path_limits.get(scope["path"], self.default_limit)
         chunks: list[bytes] = []
         size = 0
         while True:
@@ -88,10 +132,8 @@ class RequestSizeLimitMiddleware:
                 return
             body = message.get("body", b"")
             size += len(body)
-            if size > 20 * 1024 * 1024:
-                await JSONResponse({"detail": "요청 본문이 너무 큽니다."}, status_code=413)(
-                    scope, receive, send
-                )
+            if size > limit:
+                await _too_large_response(scope, limit)(scope, receive, send)
                 return
             chunks.append(body)
             if not message.get("more_body", False):
@@ -133,14 +175,17 @@ def create_app() -> FastAPI:
             return HTMLResponse(
                 (BASE_DIR / "templates" / "legacy_browser.html").read_text(),
                 status_code=426,
-                headers={"Cache-Control": "no-store"},
+                headers={"Cache-Control": "no-store", **SECURITY_HEADERS},
             )
         response: Response = await call_next(request)
         if not request.url.path.startswith("/static"):
             response.headers["Cache-Control"] = "no-store"
+        response.headers.update(SECURITY_HEADERS)
         return response
 
-    app.add_middleware(RequestSizeLimitMiddleware)
+    # 월간 업로드는 두 파일을 받으므로 파일별 한도의 두 배와 폼 여유분을 허용한다.
+    upload_limit = max(DEFAULT_BODY_LIMIT, (2 * settings.max_upload_mb + 1) * MIB)
+    app.add_middleware(RequestSizeLimitMiddleware, path_limits={"/monthly/upload": upload_limit})
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.secret_key,

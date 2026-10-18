@@ -29,7 +29,7 @@
           <td>{{ summary.shared_balance|number_format }}원</td>
           <td><strong>{{ summary.total_balance|number_format }}원</strong></td>
           <td>
-            <form method="post" action="/teams/{{ team.id }}/delete" onsubmit="return confirm('팀 \'{{ team.name }}\' 을(를) 삭제할까요? (소속 인원·공용계정은 팀 없음으로 변경됩니다)')">
+            <form method="post" action="/teams/{{ team.id }}/delete" data-confirm="팀 '{{ team.name }}' 을(를) 삭제할까요? (소속 인원·공용계정은 팀 없음으로 변경됩니다)">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button type="submit" class="btn btn-sm btn-danger">삭제</button>
             </form>
