@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}PointBook{% endblock %}</title>
-  <link rel="stylesheet" href="/static/css/style.css">
-  <script src="/static/js/money-input.js" defer></script>
-  <script src="/static/js/confirm.js" defer></script>
+  <link rel="stylesheet" href="/static/css/style.css?v={{ version }}">
+  <script src="/static/js/money-input.js?v={{ version }}" defer></script>
+  <script src="/static/js/confirm.js?v={{ version }}" defer></script>
 </head>
 <body>
   {% if request.session.get('admin_username') %}

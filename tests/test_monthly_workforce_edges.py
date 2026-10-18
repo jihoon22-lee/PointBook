@@ -30,7 +30,7 @@ def assert_workforce(client, db, month, active, departed):
         assert (summary.active_count, summary.deactivated_count) == (active, departed)
     counts = dict(
         re.findall(
-            r'<td class="month-label">(\d{4}-\d{2}).*?</td>\s*<td>(\d+)명</td>',
+            r'<td class="month-label">(?:<a [^>]*>)?(\d{4}-\d{2}).*?</td>\s*<td>(\d+)명</td>',
             client.get("/monthly").text,
             re.DOTALL,
         )

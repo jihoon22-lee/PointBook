@@ -87,16 +87,24 @@
     var rows = table.tBodies[0].rows;
     for (var i = 0; i < rows.length; i++) {
       var fields = rows[i].querySelectorAll('[data-field]');
-      for (var j = 0; j < fields.length; j++) fields[j].name = fields[j].getAttribute('data-field') + '_' + i;
+      for (var j = 0; j < fields.length; j++) {
+        fields[j].name = fields[j].getAttribute('data-field') + '_' + i;
+        var label = fields[j].getAttribute('data-label');
+        var current = fields[j].getAttribute('aria-label');
+        if (label) fields[j].setAttribute('aria-label', (i + 1) + '행 ' + label);
+        else if (current && /^\d+행 /.test(current)) fields[j].setAttribute('aria-label', current.replace(/^\d+행 /, (i + 1) + '행 '));
+      }
     }
   }
+  var FIELD_LABELS = {name: '이름', personal_no: '개인번호', point_no: '포인트번호', team: '팀', grade: '계급',
+    carry: '이월 잔액', amount: '충전액', note: '비고'};
   function field(td, key, value, hidden) {
     var input = document.createElement(key === 'note' ? 'textarea' : 'input');
     if (key === 'note') input.rows = 1;
     else input.type = hidden ? 'hidden' : 'text';
     input.value = value || '';
     input.setAttribute('data-field', key); input.className = 'row-input';
-    input.setAttribute('aria-label', key);
+    if (!hidden) input.setAttribute('data-label', FIELD_LABELS[key] || key);
     if (key === 'amount' || key === 'carry') input.setAttribute('inputmode', 'numeric');
     if (key === 'carry') input.required = true;
     if (key === 'carry' || key === 'amount') td.className = 'money-' + key;
@@ -120,7 +128,7 @@
     ['personal_no','point_no','team','grade','carry','amount','note'].forEach(function (key) { field(tr.insertCell(), key); });
     var typeCell = tr.insertCell();
     var select = document.createElement('select'); select.setAttribute('data-field', 'account_type');
-    select.setAttribute('aria-label', '계정 유형');
+    select.setAttribute('data-label', '계정 유형');
     select.innerHTML = '<option value="person">일반</option><option value="shared">공용</option>';
     typeCell.appendChild(select);
     var button = document.createElement('button'); button.type = 'button';

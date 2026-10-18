@@ -92,7 +92,7 @@ def test_existing_raw_revisions_restore_absence_employment_departure_and_return(
     monthly = auth_client.get("/monthly")
     counts = dict(
         re.findall(
-            r'<td class="month-label">(\d{4}-\d{2}).*?</td>\s*<td>(\d+)명</td>',
+            r'<td class="month-label">(?:<a [^>]*>)?(\d{4}-\d{2}).*?</td>\s*<td>(\d+)명</td>',
             monthly.text,
             re.DOTALL,
         )
@@ -156,7 +156,7 @@ def test_dashboard_and_xlsx_restore_workforce_counts_and_use_only_current_assign
     monthly = auth_client.get("/monthly")
     counts = dict(
         re.findall(
-            r'<td class="month-label">(\d{4}-\d{2}).*?</td>\s*<td>(\d+)명</td>',
+            r'<td class="month-label">(?:<a [^>]*>)?(\d{4}-\d{2}).*?</td>\s*<td>(\d+)명</td>',
             monthly.text,
             re.DOTALL,
         )
@@ -166,8 +166,10 @@ def test_dashboard_and_xlsx_restore_workforce_counts_and_use_only_current_assign
     assert "재직·비재직 전환 인원" in html.text
     assert "해당 월 관측 잔액" not in html.text
     assert "재직 1명 · 비재직 전환 1명" in html.text
-    assert "과거팀" not in html.text and "과거계급" not in html.text
-    assert "현재팀" in html.text and "현재계급" in html.text
+    # 조회 조건의 팀 선택 목록은 팀 마스터 전체를 보이므로 그 아래 보고서만 확인한다.
+    report = html.text.split('name="direction"', 1)[1].split("</form>", 1)[1]
+    assert "과거팀" not in report and "과거계급" not in report
+    assert "현재팀" in report and "현재계급" in report
     data = auth_client.get("/dashboard/export.xlsx?month=2025-03&account_type=all&operation_id=0")
     with closing(load_workbook(io.BytesIO(data.content))) as workbook:
         summary = {row[0].value: row[1].value for row in workbook["요약"]}

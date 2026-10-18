@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, joinedload
 from starlette.datastructures import FormData
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
-from app.auth import require_login
+from app.auth import form_file_limit, require_login
 from app.config import get_settings
 from app.db import get_db
 from app.logging import get_logger
@@ -65,7 +65,7 @@ ALLOWED_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".heic", ".xlsx"}
 
 async def monthly_form(request: Request) -> FormData:
     return await request.form(
-        max_files=2 if request.url.path == "/monthly/upload" else 1,
+        max_files=form_file_limit(request.url.path),
         max_fields=MAX_REVIEW_FORM_FIELDS,
     )
 
@@ -531,6 +531,10 @@ def store_review_response(
 @router.post("/start")
 async def start_monthly(request: Request, db: Session = Depends(get_db)) -> Response:
     form = await monthly_form(request)
+    # 업로드 폼에서 누른 버튼이므로 선택한 사진은 쓰지 않고 닫는다.
+    for _, uploaded in form.multi_items():
+        if isinstance(uploaded, StarletteUploadFile):
+            await uploaded.close()
     return store_review_response(
         request, db, str(form.get("month", current_month())), [RawRequestRow()], source="manual"
     )

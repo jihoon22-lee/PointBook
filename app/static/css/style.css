@@ -170,6 +170,13 @@ h2 { font-size: 1.05rem; margin: 0 0 12px; font-weight: 600; }
 .alert { padding: 11px 14px; border-radius: 10px; margin: 12px 0; font-size: 0.95rem; }
 .alert-error { background: var(--danger-soft); color: var(--danger); border: 1px solid #fecaca; }
 .alert-success { background: var(--success-soft); color: #166534; border: 1px solid #bbf7d0; }
+.alert-warning { background: #fffbeb; color: #78350f; border: 1px solid #fcd34d; }
+.alert ul { margin: 0; padding-left: 20px; }
+.note-text { white-space: pre-line; overflow-wrap: anywhere; }
+.sort-button { width: 100%; background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; text-align: left; }
+.sort-button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+th[aria-sort="ascending"] .sort-button::after { content: " ▲"; }
+th[aria-sort="descending"] .sort-button::after { content: " ▼"; }
 
 /* ---------- 폼 ---------- */
 label { display: block; margin-bottom: 14px; font-weight: 600; font-size: 0.92rem; }
@@ -200,6 +207,8 @@ input:focus, select:focus, textarea:focus {
 
 /* ---------- 테이블 ---------- */
 .table-wrap {
+  /* 화면낭독용 절대 위치 문구가 가로 스크롤 밖으로 페이지를 넓히지 않게 한다. */
+  position: relative;
   overflow-x: auto;
   background: var(--card);
   border: 1px solid var(--border);
@@ -377,6 +386,10 @@ body:has(.login-wrap) .login-wrap .muted { color: #cbd5e1; }
   .card { padding: 16px; }
   th, td { padding: 9px 8px; }
   .summary-card .value { font-size: 1.35rem; }
+  .nav { flex-wrap: nowrap; overflow-x: auto; min-width: 0; -webkit-overflow-scrolling: touch; }
+  .nav a { flex: 0 0 auto; white-space: nowrap; padding: 7px 10px; }
+  .nav .inline-form { flex: 0 0 auto; }
+  .nav .btn-link { white-space: nowrap; }
 }
 
 /* 월간 검수: 집중 입력과 스크롤 중 행 식별 */
@@ -445,6 +458,7 @@ body:has(.login-wrap) .login-wrap .muted { color: #cbd5e1; }
 .person-name { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .person-name .badge { white-space: nowrap; margin: 0; padding: 2px 8px; }
 .person-link-editor, .person-source { margin-top: 4px; font-size: .85rem; }
+.person-source span { white-space: pre-wrap; overflow-wrap: anywhere; }
 .person-link-editor > select { width: 100%; margin: 6px 0; }
 .person-link-editor .btn { margin-bottom: 4px; }
 .row-error { display: block; font-size: .85rem; overflow-wrap: anywhere; }

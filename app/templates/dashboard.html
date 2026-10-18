@@ -17,7 +17,7 @@
       <option value="shared" {% if account_type == 'shared' %}selected{% endif %}>공용 계정</option>
       <option value="all" {% if account_type == 'all' %}selected{% endif %}>일반·공용 전체</option>
     </select></label>
-    <label>현재 팀 이름 <input type="text" name="team_name" value="{{ team_name or '' }}" placeholder="전체 팀"></label>
+    <label>현재 팀 <select name="team_name"><option value="">전체 팀</option>{% for name in team_options or [] %}<option value="{{ name }}" {% if name == team_name %}selected{% endif %}>{{ name }}</option>{% endfor %}</select></label>
     {% if operation_id is not none %}<input type="hidden" name="operation_id" value="{{ operation_id }}">{% endif %}
     {% if person_id %}<input type="hidden" name="person_id" value="{{ person_id }}">{% endif %}
     <label>정렬<select name="sort_by">{% for key,label in [('name','이름'),('point_no','포인트번호'),('team_name','팀'),('amount','월간 충전'),('usage','월간 순사용'),('total','잔액')] %}<option value="{{ key }}" {% if sort_by == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
@@ -91,11 +91,11 @@
       <td>{{ p.usage|number_format if p.usage is not none else '기록 없음' }}</td>
       <td><strong>{{ p.total|number_format if p.total is not none else ('다른 조회 범위' if p.balance_kind == 'activity_only' else '미확인') }}</strong>{% if p.current_reference_total is not none %}<br><span class="muted">현재값 참고: {{ p.current_reference_total|number_format }}원</span>{% endif %}</td>
       <td>{{ p.observation_month or '관측 없음' }}{% if p.balance_kind == 'adjustment' %} · 잔액 보정{% endif %}</td>
-      <td>{{ p.note or '-' }}{% if p.activity_note and p.activity_note != p.note %}<br>월간 비고: {{ p.activity_note }}{% endif %}</td>
+      <td><span class="note-text">{{ p.note or '-' }}</span>{% if p.activity_note and p.activity_note != p.note %}<br>월간 비고: <span class="note-text">{{ p.activity_note }}</span>{% endif %}</td>
     </tr>{% endfor %}</tbody>
   </table></div>
 </div>
 {% endif %}
-<script src="/static/js/chart.umd.min.js"></script>
-<script src="/static/js/dashboard.js"></script>
+<script src="/static/js/chart.umd.min.js?v={{ version }}"></script>
+<script src="/static/js/dashboard.js?v={{ version }}"></script>
 {% endblock %}

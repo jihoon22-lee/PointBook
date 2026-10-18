@@ -1,12 +1,13 @@
 {% extends "base.html" %}
-{% block title %}장부 반영 결과 - PointBook{% endblock %}
+{% block title %}{{ '장부 반영 결과' if done else '변경 이력 상세' }} - PointBook{% endblock %}
 {% block content %}
-<h1>장부 반영 결과</h1>
-<p class="alert alert-success">검토한 변경을 반영했습니다.</p>
+<h1>{{ '장부 반영 결과' if done else '변경 이력 상세' }}</h1>
+{% if done %}<p class="alert alert-success" role="status">검토한 변경을 반영했습니다.</p>{% endif %}
 <div class="card"><p>기록 시각: {{ created_at }} (한국 시간) · 관리자: {{ actor }}</p><p>사유: {{ operation.reason }}</p><p class="muted">작업 번호: {{ operation.request_key }}</p></div>
 {% if operation.kind == 'team' %}<p>삭제한 팀: <strong>{{ details.team.name }}</strong> · 소속 계정 {{ details.changes|length }}개를 팀 없음으로 변경</p>{% endif %}
 {% if operation.kind in ['profile', 'team'] %}<div class="card"><h2>{{ '소속 변경' if operation.kind == 'team' else '기본 정보 변경' }}</h2><table><thead><tr><th>항목</th><th>전</th><th>후</th></tr></thead><tbody>{% for change in details.changes %}{% for key,label in [('name','이름'),('point_no','포인트번호'),('personal_no','개인번호'),('team_name','팀'),('grade','계급'),('status','상태'),('account_type','계정 구분')] %}<tr><td>{{ label }}</td><td>{{ change.before.get(key,'') if change.before else '신규' }}</td><td>{{ change.after.get(key,'') }}</td></tr>{% endfor %}{% endfor %}</tbody></table></div>{% endif %}
-{% if operation.kind == 'monthly' %}<p>{{ details.month }} 월간 확정 · {{ details.changes|length }}명 반영</p><p><a href="/dashboard?month={{ details.month }}&account_type=all&operation_id={{ operation.id }}">확정 당시 보고서</a></p>{% endif %}
+{% if operation.kind == 'monthly' %}<p>{{ details.month }} 월간 확정 · {{ details.changes|length }}명 반영</p><p><a href="/dashboard?month={{ details.month }}&account_type=all&operation_id={{ operation.id }}">확정 당시 보고서</a></p>
+{% if monthly_summary %}<div class="card"><h2>처리 유형별 인원</h2>{% for group in monthly_summary %}<details><summary>{{ group.label }} {{ group.names|length }}명</summary><p>{{ group.names|join(', ') }}</p></details>{% endfor %}<p class="muted">확정 당시 포인트번호의 현재 인원 이름을 표시합니다. 이후 번호가 바뀐 인원은 당시 번호로 표시합니다.</p></div>{% endif %}{% endif %}
 {% if details.changes %}<div class="card table-wrap"><table><thead><tr><th>월</th><th>항목</th><th>전</th><th>후</th></tr></thead><tbody>
 {% for change in details.changes %}{% if change.after is defined and change.after.month is defined %}
 {% for field,label in [('carry_balance','이월 잔액'),('amount','충전액'),('usage','순사용'),('total','총잔액'),('note','비고')] %}<tr><td>{{ change.after.month }}</td><td>{{ label }}</td><td>{% if change.before %}{{ change.before[field]|number_format if field != 'note' else change.before[field] }}{% else %}신규 관측{% endif %}</td><td>{{ change.after[field]|number_format if field != 'note' else change.after[field] }}</td></tr>{% endfor %}

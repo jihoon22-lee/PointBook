@@ -13,7 +13,8 @@ from app.auth import require_login
 from app.db import get_db
 from app.models import AdminUser, LedgerOperation, Person
 from app.services.dates import current_month
-from app.services.integrity import apply_repair, inspect_ledger, repair_plan
+from app.services.identifiers import format_point_no
+from app.services.integrity import apply_repair, inspect_ledger, person_labels, repair_plan
 from app.services.ledger import (
     LedgerConflict,
     LedgerPlan,
@@ -128,13 +129,53 @@ def operations(
     )
 
 
+MONTHLY_ACTION_LABELS = [
+    ("new", "신규"),
+    ("returned", "복귀"),
+    ("kept", "재직 유지"),
+    ("deactivated", "비재직 전환"),
+    ("inactive_kept", "기존 비재직 잔액 보존"),
+]
+
+
+def _monthly_summary(db: Session, changes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """월간 확정의 처리 유형별 인원. 이름은 다른 화면처럼 현재 인원 정보로 보인다."""
+    points = {str(change.get("point_no", "")) for change in changes}
+    names: dict[str, str] = {
+        point_no: name
+        for point_no, name in db.execute(
+            select(Person.point_no, Person.name).where(Person.point_no.in_(points))
+        )
+    }
+    summary = []
+    for action, label in MONTHLY_ACTION_LABELS:
+        members = [
+            names.get(change["point_no"]) or format_point_no(change["point_no"])
+            for change in changes
+            if change.get("action") == action
+        ]
+        if members:
+            summary.append({"label": label, "names": members})
+    return summary
+
+
+def _applied(url: str) -> Response:
+    """반영 직후 이동한 결과 화면에서만 반영 완료를 알린다. 저장된 결과 주소는 바꾸지 않는다."""
+    return RedirectResponse(f"{url}?done=1", status_code=303)
+
+
 @router.get("/operations/{key}")
-def operation_detail(key: str, request: Request, db: Session = Depends(get_db)) -> Response:
+def operation_detail(
+    key: str, request: Request, done: str = "", db: Session = Depends(get_db)
+) -> Response:
     operation = db.scalar(select(LedgerOperation).where(LedgerOperation.request_key == key))
     if operation is None:
         return RedirectResponse("/ledger", status_code=303)
     actor = db.get(AdminUser, operation.actor_id) if operation.actor_id else None
     details = json.loads(operation.detail_json)
+    summary = (
+        _monthly_summary(db, details.get("changes", [])) if operation.kind == "monthly" else []
+    )
     return render(
         request,
         "ledger_operation.html",
@@ -143,6 +184,8 @@ def operation_detail(key: str, request: Request, db: Session = Depends(get_db)) 
             "details": details,
             "actor": actor.username if actor else "작성자 미확인",
             "created_at": kst_datetime(operation.created_at),
+            "done": done == "1",
+            "monthly_summary": summary,
         },
     )
 
@@ -203,16 +246,16 @@ async def _apply(request: Request, db: Session, kind: str, person_id: int) -> Re
         candidate = _build(db, kind, person_id, values)
         replay = find_replay(db, values["request_key"], kind, candidate.payload)
         if replay:
-            return RedirectResponse(replay.result_url, status_code=303)
+            return _applied(replay.result_url)
         start_write(db)
         replay = find_replay(db, values["request_key"], kind, candidate.payload)
         if replay:
             db.rollback()
-            return RedirectResponse(replay.result_url, status_code=303)
+            return _applied(replay.result_url)
         plan = _build(db, kind, person_id, values)
         operation = commit_plan(db, plan, values["plan_token"], int(request.session["admin_id"]))
         db.commit()
-        return RedirectResponse(operation.result_url, status_code=303)
+        return _applied(operation.result_url)
     except (LedgerConflict, IntegrityError, OperationalError):
         db.rollback()
         return _form(
@@ -283,6 +326,13 @@ def _integrity_page(
         {
             "report": inspect_ledger(db),
             "plan": plan,
+            "person_labels": person_labels(
+                db,
+                {change["person_id"] for change in plan.changes}
+                | {current["person_id"] for current in plan.current_changes},
+            )
+            if plan
+            else {},
             "values": values or {"request_key": uuid.uuid4().hex, "reason": ""},
             "error": error,
         },
@@ -315,16 +365,16 @@ async def repair_apply(request: Request, db: Session = Depends(get_db)) -> Respo
         }
         replay = find_replay(db, values["request_key"], "repair", payload)
         if replay:
-            return RedirectResponse(replay.result_url, status_code=303)
+            return _applied(replay.result_url)
         start_write(db)
         replay = find_replay(db, values["request_key"], "repair", payload)
         if replay:
             db.rollback()
-            return RedirectResponse(replay.result_url, status_code=303)
+            return _applied(replay.result_url)
         plan = repair_plan(db, reason=values["reason"], request_key=values["request_key"])
         url = apply_repair(db, plan, values["plan_token"], int(request.session["admin_id"]))
         db.commit()
-        return RedirectResponse(url, status_code=303)
+        return _applied(url)
     except (LedgerConflict, IntegrityError, OperationalError):
         db.rollback()
         return _integrity_page(
