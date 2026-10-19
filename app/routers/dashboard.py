@@ -11,6 +11,7 @@ from app.db import get_db
 from app.models import Team
 from app.services import stats
 from app.services.dates import current_month
+from app.services.observations import observation_events
 from app.services.xlsx import report_workbook
 from app.template_utils import render
 
@@ -47,6 +48,8 @@ def dashboard(
                 raise ValueError("정정판 작업 번호는 0 이상의 정수여야 합니다.")
             requested_operation = int(operation_id)
         cutoff = stats.report_cutoff(db) if requested_operation is None else requested_operation
+        # 보고서와 추이는 같은 정정판의 관측을 쓰므로 한 번만 읽는다.
+        events = observation_events(db, operation_id=cutoff)
         result = stats.report(
             db,
             selected,
@@ -55,6 +58,7 @@ def dashboard(
             person_id,
             team_name if team_name else None,
             cutoff,
+            all_events=events,
         )
         stats.sort_report(result, sort_by, direction)
         trend_data = stats.trend(
@@ -64,6 +68,7 @@ def dashboard(
             operation_id=cutoff,
             person_id=person_id,
             team_name=team_name or None,
+            all_events=events,
         )
     except ValueError as exc:
         return render(
