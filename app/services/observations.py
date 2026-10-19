@@ -159,17 +159,25 @@ def _source(operation_id: int | None = None) -> Subquery:
     return union_all(monthly_with_previous, adjustments).subquery()
 
 
-def _read(row: Any) -> Observation:
-    try:
-        profile = json.loads(row.profile_data or "{}")
-    except (TypeError, ValueError):
-        profile = {}
-    try:
-        previous = json.loads(row.previous_profile_data or "{}")
-    except (TypeError, ValueError):
-        previous = {}
+def _profile(raw: Any, parsed: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """당시 정보 JSON. 같은 조회 안에서 반복되는 원문은 한 번만 해석한다(결과는 읽기 전용)."""
+    text = raw or "{}"
+    if not isinstance(text, str):
+        return {}
+    if text not in parsed:
+        try:
+            value = json.loads(text)
+        except ValueError:
+            value = {}
+        parsed[text] = value if isinstance(value, dict) else {}
+    return parsed[text]
+
+
+def _read(row: Any, parsed: dict[str, dict[str, Any]] | None = None) -> Observation:
+    parsed = {} if parsed is None else parsed
+    profile = _profile(row.profile_data, parsed)
     previous = monthly_profile(
-        previous if isinstance(previous, dict) else {}, row.previous_amount, row.previous_provenance
+        _profile(row.previous_profile_data, parsed), row.previous_amount, row.previous_provenance
     )
     return Observation(
         person_id=row.person_id,
@@ -178,9 +186,7 @@ def _read(row: Any) -> Observation:
         carry_balance=row.carry_balance,
         amount=row.amount,
         usage=row.usage,
-        profile=monthly_profile(
-            profile if isinstance(profile, dict) else {}, row.amount, row.provenance
-        ),
+        profile=monthly_profile(profile, row.amount, row.provenance),
         provenance=row.provenance or "unknown",
         kind=row.kind,
         observed_at=row.observed_at,
@@ -248,7 +254,8 @@ def latest_observations(
         .subquery()
     )
     rows = db.execute(select(ranked).where(ranked.c.position == 1)).all()
-    return {row.person_id: _read(row) for row in rows}
+    parsed: dict[str, dict[str, Any]] = {}
+    return {row.person_id: _read(row, parsed) for row in rows}
 
 
 def observation_events(
@@ -261,7 +268,8 @@ def observation_events(
     )
     if month is not None:
         stmt = stmt.where(source.c.month == validate_month(month))
-    events = [_read(row) for row in db.execute(stmt)]
+    parsed: dict[str, dict[str, Any]] = {}
+    events = [_read(row, parsed) for row in db.execute(stmt)]
     operations = select(LedgerOperation.detail_json).where(LedgerOperation.kind == "monthly")
     if operation_id is not None:
         operations = operations.where(LedgerOperation.id <= operation_id)

@@ -227,7 +227,10 @@ def _assemble(
     balances: dict[int, Observation],
     person_id: int | None,
     team_name: str | None,
+    *,
+    summary_only: bool = False,
 ) -> Report:
+    """summary_only는 추이처럼 요약만 쓰는 호출에서 정렬·팀 집계를 생략한다. 요약 값은 같다."""
     activities = {o.person_id: o for o in events if o.kind == "monthly"}
     candidates = set(people) if scope == "as_of" else set(balances) | set(activities)
     rows, unclassified = [], []
@@ -273,7 +276,8 @@ def _assemble(
         unknown_activity = activity if classification_unknown(activity) else None
         if unknown_balance or unknown_activity:
             unclassified.append(_row(person, unknown_balance, unknown_activity))
-    rows.sort(key=lambda row: (row.name, row.point_no, row.person_id))
+    if not summary_only:
+        rows.sort(key=lambda row: (row.name, row.point_no, row.person_id))
     summary = MonthSummary(
         month=month,
         count=len(rows),
@@ -294,9 +298,8 @@ def _assemble(
         ),
         deactivated_count=sum(row.deactivated for row in rows),
     )
-    return Report(
-        month, scope, account_type, operation_id, rows, summary, _teams(rows), unclassified
-    )
+    teams = [] if summary_only else _teams(rows)
+    return Report(month, scope, account_type, operation_id, rows, summary, teams, unclassified)
 
 
 def report_cutoff(db: Session) -> int:
@@ -312,18 +315,25 @@ def report(
     person_id: int | None = None,
     team_name: str | None = None,
     operation_id: int | None = None,
+    *,
+    all_events: list[Observation] | None = None,
 ) -> Report:
     """화면·Excel 공통 계약. 금액/usage는 선택월 실제 월간 기록, 잔액은 선택한 관측 범위다.
 
     유형은 각 기록의 유형을 사용하고 팀·계급은 현재 인원 마스터로 통일한다.
     미관측 현재값은 참고 칸에만 두며 역사 잔액 합계에 넣지 않는다.
+    all_events는 같은 operation_id로 읽은 전체 관측이다. 추이와 함께 그리는 화면이 한 번만 읽게 한다.
     """
     validate_month(month)
     if scope not in {"observed", "as_of"} or account_type not in {"person", "shared", "all"}:
         raise ValueError("올바른 잔액 범위와 계정 유형을 선택해 주세요.")
     operation_id = report_cutoff(db) if operation_id is None else operation_id
     people = {p.id: p for p in db.scalars(select(Person).options(joinedload(Person.team)))}
-    events = observation_events(db, month=month, operation_id=operation_id)
+    events = (
+        [event for event in all_events if event.month == month]
+        if all_events is not None
+        else observation_events(db, month=month, operation_id=operation_id)
+    )
     balances = (
         {o.person_id: o for o in events}
         if scope == "observed"
@@ -384,13 +394,16 @@ def trend(
     operation_id: int | None = None,
     person_id: int | None = None,
     team_name: str | None = None,
+    all_events: list[Observation] | None = None,
 ) -> list[MonthSummary]:
     """기간 길이에 비례하는 추가 쿼리 없이 모든 실제 관측 달의 추이를 만든다."""
     if scope not in {"observed", "as_of"} or account_type not in {"person", "shared", "all"}:
         raise ValueError("올바른 잔액 범위와 계정 유형을 선택해 주세요.")
     operation_id = report_cutoff(db) if operation_id is None else operation_id
     people = {p.id: p for p in db.scalars(select(Person).options(joinedload(Person.team)))}
-    events = observation_events(db, operation_id=operation_id)
+    events = (
+        all_events if all_events is not None else observation_events(db, operation_id=operation_id)
+    )
     by_month: dict[str, list[Observation]] = {}
     for event in events:
         by_month.setdefault(event.month, []).append(event)
@@ -411,6 +424,7 @@ def trend(
                 balances,
                 person_id,
                 team_name,
+                summary_only=True,
             ).summary
         )
     return result
