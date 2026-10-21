@@ -3,10 +3,11 @@
 import hashlib
 import json
 import re
+from collections.abc import Collection
 from dataclasses import asdict, dataclass, field, replace
 
 from itsdangerous import BadSignature, URLSafeTimedSerializer
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, joinedload
 from starlette.datastructures import FormData
 
@@ -182,7 +183,7 @@ def matches_token(token: str, digest: str) -> bool:
         return False
 
 
-def new_month_error(db: Session, month: str) -> str | None:
+def new_month_error(db: Session, month: str, request_points: Collection[str]) -> str | None:
     try:
         validate_month(month)
     except ValueError as exc:
@@ -196,10 +197,15 @@ def new_month_error(db: Session, month: str) -> str | None:
         )
     # 이후 월의 현재 보정·신규 등록 관측보다 앞선 일반 확정은 현재 잔액을 과거 값으로 덮고
     # 관측 없던 달의 기록을 만든다. 같은 월은 직전 잔액 계산이 관측 시각을 따른다.
+    # 확정이 기록을 쓰는 계정만 본다: 일반 인원은 요청서 유무와 관계없이 기록되지만
+    # 요청서에 없는 공용계정은 analyze()가 제외하므로 기록·잔액이 바뀌지 않는다.
     later = db.execute(
         select(Person.name, Person.point_no, func.max(BalanceAdjustment.month))
         .join(BalanceAdjustment, BalanceAdjustment.person_id == Person.id)
-        .where(BalanceAdjustment.month > month)
+        .where(
+            BalanceAdjustment.month > month,
+            or_(Person.account_type == "person", Person.point_no.in_(request_points)),
+        )
         .group_by(Person.id)
         .order_by(func.max(BalanceAdjustment.month).desc(), Person.name, Person.id)
     ).all()
@@ -247,6 +253,7 @@ def review_rows(
                 (person.name.strip(), person.personal_no.strip(), person.account_type), []
             ).append(person)
     by_point = {person.point_no: person for person in people}
+    request_points: set[str] = set()
     for raw_index, raw in enumerate(raw_rows):
         identity = (raw.name.strip(), raw.personal_no.strip(), raw.account_type)
         exact = by_identity.get(identity, []) if all(identity) else []
@@ -283,6 +290,8 @@ def review_rows(
             point = normalize_point_no(raw.point_no)
         except ValueError:
             point = ""
+        if point:
+            request_points.add(point)
         linked_person = by_point.get(point)
         if raw.link_state == "new" and linked_person:
             result.errors[raw.row_id] = "이미 등록된 포인트번호입니다. 기존 인원을 연결하세요."
@@ -317,7 +326,7 @@ def review_rows(
                 if raw.link_state == "new"
                 else "기존 인원 연결 또는 신규 선택"
             )
-    month_error = new_month_error(db, month)
+    month_error = new_month_error(db, month, request_points)
     if month_error:
         result.errors["month"] = month_error
         result.error_fields["month"] = "month"

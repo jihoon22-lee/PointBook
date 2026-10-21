@@ -5,7 +5,7 @@ import uuid
 import pytest
 from sqlalchemy import func, select
 
-from app.models import MonthlySnapshot, Person
+from app.models import BalanceRecord, MonthlySnapshot, Person
 from app.services.integrity import inspect_ledger
 from app.services.ledger import adjustment_plan, commit_plan, start_write
 from tests.factories import make_person
@@ -106,12 +106,73 @@ def test_current_adjustment_in_later_month_blocks_present_account_too(auth_clien
     assert (person.current_carry_balance, person.current_amount) == (300, 0)
 
 
+def _shared_adjusted_in_later_month(db, monkeypatch):
+    from app.services import ledger
+
+    monkeypatch.setattr(ledger, "current_month", lambda: LATER)
+    shared = make_person(db, "", "합성공용", point_no="00000900", account_type="shared")
+    plan = adjustment_plan(
+        db,
+        person_id=shared.id,
+        total="300",
+        note="",
+        reason="합성 공용 보정",
+        request_key=uuid.uuid4().hex,
+    )
+    start_write(db)
+    commit_plan(db, plan, plan.token, 1)
+    db.commit()
+    return shared
+
+
+def test_omitted_shared_account_later_adjustment_does_not_block(auth_client, db, monkeypatch):
+    shared = _shared_adjusted_in_later_month(db, monkeypatch)
+    make_person(db, "102", "합성재직")
+    reviewed = auth_client.post("/monthly/review", data=_request(EARLIER))
+    assert review_fields(reviewed)["review_token"]
+    values = review_fields(reviewed)
+    values.update(ack_warnings="yes")
+    confirmed = auth_client.post("/monthly/confirm", data=values, follow_redirects=False)
+    assert confirmed.status_code == 303
+    db.expire_all()
+    assert db.scalar(select(MonthlySnapshot.month)) == EARLIER
+    # 요청서에 없는 공용계정은 기록·잔액·상태가 그대로다.
+    assert db.scalar(select(BalanceRecord.id).where(BalanceRecord.person_id == shared.id)) is None
+    assert (shared.status, shared.current_carry_balance, shared.current_amount) == (
+        "active",
+        300,
+        0,
+    )
+    assert inspect_ledger(db).healthy
+
+
+def test_requested_shared_account_later_adjustment_still_blocks(auth_client, db, monkeypatch):
+    _shared_adjusted_in_later_month(db, monkeypatch)
+    make_person(db, "102", "합성재직")
+    data = _request(EARLIER)
+    data.update(
+        point_no_1="00000900",
+        account_type_1="shared",
+        personal_no_1="",
+        name_1="합성공용",
+        team_1="",
+        grade_1="",
+        amount_1="50",
+        carry_1="0",
+    )
+    reviewed = auth_client.post("/monthly/review", data=data)
+    assert reviewed.status_code == 400
+    assert "합성공용(0000 0900, 2026-09)" in reviewed.text
+    assert review_fields(reviewed)["review_token"] == ""
+    assert db.scalar(select(func.count(MonthlySnapshot.id))) == 0
+
+
 def test_confirm_refuses_to_write_behind_a_later_observation(auth_client, db, monkeypatch):
     from app.services import review
 
     person = _register_in_later_month(auth_client, db, monkeypatch)
     make_person(db, "102", "합성재직")
-    monkeypatch.setattr(review, "new_month_error", lambda _db, _month: None)
+    monkeypatch.setattr(review, "new_month_error", lambda *_args: None)
     reviewed = auth_client.post("/monthly/review", data=_request(EARLIER))
     assert review_fields(reviewed)["review_token"]
     confirmed = _confirm(auth_client, reviewed)
@@ -139,6 +200,6 @@ def test_block_message_lists_at_most_five_accounts(client, db, count, monkeypatc
         start_write(db)
         commit_plan(db, plan, plan.token, 1)
         db.commit()
-    message = new_month_error(db, EARLIER)
+    message = new_month_error(db, EARLIER, ())
     assert message is not None and "외 1명" in message
     assert message.count("2026-09)") == 5
