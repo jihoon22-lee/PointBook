@@ -4,7 +4,7 @@ import csv
 import io
 import uuid
 from collections.abc import Iterator
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 
 from app.services.identifiers import normalize_point_no
 from app.services.sync import RequestRow
@@ -37,6 +37,8 @@ class RawRequestRow:
     source_warning: str = ""
     link_state: str = ""
     profile_review: str = ""
+    # 업로드 보완에만 쓰고 폼·초안·검수 서명에는 저장하지 않는다. 옛 행은 추정하지 않는다.
+    account_type_input: str = ""
 
     def __post_init__(self) -> None:
         # Excel LF와 브라우저 폼 CRLF를 같은 비고로 검수한다. 빈 줄도 보존한다.
@@ -70,12 +72,19 @@ class RawRequestRow:
         )
 
 
+def stored_row(row: RawRequestRow) -> dict[str, str]:
+    """초안·검수 비교의 기존 행 계약. 일회성 입력 구분은 제외한다."""
+    values = asdict(row)
+    values.pop("account_type_input")
+    return values
+
+
 def _to_int(value: str) -> int:
     """기존 호출부의 호환 이름. 잘못된 값을 0으로 바꾸지 않는다."""
     return parse_money(value)
 
 
-def _records(text: str) -> Iterator[tuple[str, list[str]]]:
+def _records(text: str) -> Iterator[tuple[str, list[str], str]]:
     """붙여넣기 레코드와 원문. Excel이 따옴표로 감싼 셀 안의 줄바꿈은 같은 행으로 읽는다.
 
     구분자는 기존처럼 레코드의 첫 줄에서 고른다. 따옴표가 끝나지 않거나 레코드가 너무 길면
@@ -93,7 +102,15 @@ def _records(text: str) -> Iterator[tuple[str, list[str]]]:
         if '"' not in first:
             # 따옴표가 없는 줄은 다음 줄로 이어지지 않는다.
             index += 1
-            yield first.rstrip("\r\n"), next(csv.reader([first], delimiter=delimiter))
+            raw = first.rstrip("\r\n")
+            try:
+                if len(raw) > MAX_RECORD_CHARS:
+                    raise csv.Error("붙여넣기 레코드가 너무 깁니다.")
+                cols = next(csv.reader([first], delimiter=delimiter))
+                issue = ""
+            except csv.Error:
+                cols, issue = [], "붙여넣기 행의 길이·열 구분을 확인하세요. 원문을 수정해 주세요."
+            yield raw, cols, issue
             continue
         used = 0
 
@@ -104,25 +121,34 @@ def _records(text: str) -> Iterator[tuple[str, list[str]]]:
                 physical = lines[position]
                 used += 1
                 size += len(physical)
-                if size > MAX_RECORD_CHARS or used > MAX_RECORD_LINES:
+                # 마지막 CRLF는 레코드 내용이 아니다. 실제 내용 길이는 파싱 뒤 확인한다.
+                if size > MAX_RECORD_CHARS + 2 or used > MAX_RECORD_LINES:
                     raise csv.Error("붙여넣기 레코드가 너무 깁니다.")
                 yield physical
 
         try:
             cols = next(csv.reader(feed(), delimiter=delimiter, strict=True))
             raw = "".join(lines[index : index + used])
+            if len(raw.rstrip("\r\n")) > MAX_RECORD_CHARS:
+                raise csv.Error("붙여넣기 레코드가 너무 깁니다.")
+            issue = ""
         except csv.Error:
             used, raw = 1, first
-            cols = [first.rstrip("\r\n")]
+            cols, issue = [], "붙여넣기 행의 따옴표·길이·줄 수를 확인하세요. 원문을 수정해 주세요."
         index += used
-        yield raw.rstrip("\r\n").replace("\r\n", "\n").replace("\r", "\n"), cols
+        yield raw.rstrip("\r\n").replace("\r\n", "\n").replace("\r", "\n"), cols, issue
 
 
 def parse_pasted_raw(text: str) -> list[RawRequestRow]:
     rows: list[RawRequestRow] = []
     has_sequence: bool | None = None
     request_headers: list[str] | None = None
-    for line, cols in _records(text):
+    for line, cols, issue in _records(text):
+        if issue:
+            rows.append(RawRequestRow(source_line=line, source_issue=issue))
+            if len(rows) > MAX_REQUEST_ROWS:
+                raise ValueError(f"요청서는 최대 {MAX_REQUEST_ROWS}행까지 처리할 수 있습니다.")
+            continue
         headers = [c.strip() for c in cols]
         if (
             "이름" in headers
@@ -173,6 +199,7 @@ def parse_pasted_raw(text: str) -> list[RawRequestRow]:
                         note=values.get("비고", ""),
                         carry=values.get("이월 잔액", ""),
                         account_type=ACCOUNT_TYPE_LABELS.get(kind, kind),
+                        account_type_input="explicit" if kind else "omitted",
                         source_line=line,
                     )
                 )
@@ -224,6 +251,7 @@ def parse_pasted_raw(text: str) -> list[RawRequestRow]:
                     amount=amount,
                     note=note,
                     account_type=account_type.strip() or "person",
+                    account_type_input="explicit" if account_type.strip() else "omitted",
                     source_line=line,
                 )
             )

@@ -221,3 +221,38 @@ def test_link_states_profile_choices_and_lower_row_position(page):
     assert new_row.locator(".link-state-new").count() == 1
     assert new_row.locator('[data-field="point_no"]').input_value() == "00008700"
     assert page.locator(".confirm-monthly").is_enabled()
+
+
+def test_formatted_point_and_explicit_account_type_choices(page):
+    login(page)
+    upload(
+        page,
+        "2101-03",
+        "합성기존팀\t형식합성일반\t소방사\t100\t8891\t00008891\t\tperson\n"
+        "\t형식합성공용\t\t100\t\t00008892\t\tshared",
+    )
+    confirm_seed(page)
+    upload(
+        page,
+        "2101-04",
+        "합성새팀\t형식합성일반\t소방사\t100\t8891\t0000-8891\t\tperson\n"
+        "\t형식합성공용\t\t100\t\t00008892\t\tperson",
+    )
+    assert page.input_value('[name="point_no_0"]') == "0000-8891"
+    assert page.input_value('[name="account_type_1"]') == "person"
+    assert (
+        page.locator('button[value$=":account_type:current"][data-choice-pending="yes"]').count()
+        == 1
+    )
+    with page.expect_response(lambda response: response.url.endswith("/monthly/choose")):
+        page.locator('button[value$=":team:incoming"]').first.click()
+    page.wait_for_selector('button[value$=":team:incoming"][aria-pressed="true"]')
+    with page.expect_response(lambda response: response.url.endswith("/monthly/choose")):
+        page.locator('button[value$=":account_type:current"]').click()
+    page.wait_for_function("document.getElementById('review-token').value !== ''")
+    assert page.input_value('[name="account_type_1"]') == "shared"
+    page.reload()
+    page.wait_for_selector("#review-form")
+    assert page.input_value('[name="point_no_0"]') == "0000-8891"
+    assert page.input_value('[name="account_type_1"]') == "shared"
+    confirm_seed(page)

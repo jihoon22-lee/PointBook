@@ -197,6 +197,7 @@ def _archive_check(data: bytes, started: float) -> None:
                 if item.filename in sheets:
                     rows = 0
                     last_row = 0
+                    last_column = 0
                     coordinates: set[str] = set()
                     for element in root.iter():
                         if element.tag.rsplit("}", 1)[-1] == "row":
@@ -207,6 +208,7 @@ def _archive_check(data: bytes, started: float) -> None:
                                     "Excel 행 번호가 중복되거나 순서가 잘못되었습니다."
                                 )
                             last_row = row_number
+                            last_column = 0
                             if (
                                 rows > MAX_REQUEST_ROWS + 4
                                 or int(element.attrib.get("r", "0")) > MAX_REQUEST_ROWS + 4
@@ -220,7 +222,11 @@ def _archive_check(data: bytes, started: float) -> None:
                                     "Excel 셀 위치가 중복되거나 행과 일치하지 않습니다."
                                 )
                             coordinates.add(coordinate)
-                            if column_index_from_string(column) > 10 or row > MAX_REQUEST_ROWS + 4:
+                            column_number = column_index_from_string(column)
+                            if column_number <= last_column:
+                                raise ValueError("Excel 열 순서가 잘못되었습니다.")
+                            last_column = column_number
+                            if column_number > 10 or row > MAX_REQUEST_ROWS + 4:
                                 raise ValueError("Excel 열·행이 표준 양식 범위를 벗어났습니다.")
 
 
@@ -247,6 +253,9 @@ def read_request(data: bytes, filename: str) -> XlsxRequest:
                 "표준 요청서 시트 이름을 확인하세요. 보고서는 입력 양식으로 사용할 수 없습니다."
             )
         sheet = workbook["요청서"]
+        # dimension은 오래되거나 생략될 수 있다. 사전 검사한 실제 XML 범위를 읽는다.
+        sheet.reset_dimensions()
+        sheet.calculate_dimension(force=True)
         version = str(sheet["B1"].value)
         if sheet["A1"].value != FORM_MARKER or version not in FORM_HEADERS:
             raise ValueError(

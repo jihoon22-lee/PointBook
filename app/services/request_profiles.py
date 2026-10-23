@@ -6,6 +6,7 @@ from itsdangerous import BadSignature, URLSafeSerializer
 
 from app.config import get_settings
 from app.models import Person
+from app.services.identifiers import normalize_point_no
 from app.services.parsing import RawRequestRow
 
 PROFILE_FIELDS = ("name", "personal_no", "team", "grade", "account_type")
@@ -117,7 +118,7 @@ def choose(row: RawRequestRow, person: Person, field: str, side: str) -> None:
         state is None
         or state["person_id"] != person.id
         or state["point_no"] != person.point_no
-        or row.point_no != person.point_no
+        or normalize_point_no(row.point_no) != person.point_no
         or state["base"] != current_values(person)
         or expected_values(state) != values(row)
     ):
