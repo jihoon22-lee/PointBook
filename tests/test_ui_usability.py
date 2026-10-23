@@ -6,7 +6,8 @@ from datetime import UTC, datetime
 import pytest
 from sqlalchemy import select
 
-from app.models import LedgerOperation, MonthlyDraft
+from app.models import BalanceRecord, LedgerOperation, MonthlyDraft
+from app.services.balance import create_monthly_snapshot
 from app.template_utils import kst_datetime
 from tests.factories import make_person, make_team
 from tests.test_audit_presentation import add_operation
@@ -75,14 +76,20 @@ def test_applied_banner_only_right_after_apply(auth_client, db):
 
 
 def test_monthly_operation_lists_people_by_action(auth_client, db):
-    make_person(db, "201", "합성유지", point_no="00000201")
-    make_person(db, "202", "합성전환", point_no="00000202")
+    kept = make_person(db, "201", "합성유지", point_no="00000201")
+    deactivated = make_person(db, "202", "합성전환", point_no="00000202", status="inactive")
     changes = [
         {"point_no": "00000201", "action": "kept"},
         {"point_no": "00000202", "action": "deactivated"},
         {"point_no": "00000203", "action": "new"},
     ]
     operation = add_operation(db, "monthly", {"month": "2026-09", "changes": changes})
+    create_monthly_snapshot(
+        db,
+        "2026-09",
+        [BalanceRecord(person_id=person.id) for person in (kept, deactivated)],
+        operation_id=operation.id,
+    )
     page = auth_client.get("/ledger/operations/" + operation.request_key).text
     assert re.search(r"<summary>신규 1명</summary><p>0000 0203</p>", page)
     assert re.search(r"<summary>재직 유지 1명</summary><p>합성유지</p>", page)
