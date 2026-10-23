@@ -11,7 +11,7 @@ from starlette.datastructures import FormData
 
 from app.auth import require_login
 from app.db import get_db
-from app.models import AdminUser, LedgerOperation, Person
+from app.models import AdminUser, BalanceRecord, BalanceRevision, LedgerOperation, Person
 from app.services.dates import current_month
 from app.services.identifiers import format_point_no
 from app.services.integrity import apply_repair, inspect_ledger, person_labels, repair_plan
@@ -138,15 +138,28 @@ MONTHLY_ACTION_LABELS = [
 ]
 
 
-def _monthly_summary(db: Session, changes: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """월간 확정의 처리 유형별 인원. 이름은 다른 화면처럼 현재 인원 정보로 보인다."""
-    points = {str(change.get("point_no", "")) for change in changes}
-    names: dict[str, str] = {
-        point_no: name
-        for point_no, name in db.execute(
-            select(Person.point_no, Person.name).where(Person.point_no.in_(points))
+def _monthly_summary(
+    db: Session, operation_id: int, changes: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """최초 월간 기록의 인원 연결로 현재 이름을 읽는다. 번호 재사용은 따라가지 않는다."""
+    originals = db.execute(
+        select(BalanceRevision.data_json, Person.name)
+        .select_from(BalanceRevision)
+        .join(BalanceRecord, BalanceRecord.id == BalanceRevision.record_id)
+        .join(Person, Person.id == BalanceRecord.person_id)
+        .where(
+            BalanceRevision.operation_id == operation_id,
+            BalanceRevision.version == 1,
         )
-    }
+    )
+    names: dict[str, str] = {}
+    for raw, name in originals:
+        try:
+            point_no = json.loads(raw).get("profile", {}).get("point_no")
+            if isinstance(point_no, str):
+                names[point_no] = name
+        except (TypeError, ValueError, AttributeError):
+            continue
     summary = []
     for action, label in MONTHLY_ACTION_LABELS:
         members = [
@@ -174,7 +187,9 @@ def operation_detail(
     actor = db.get(AdminUser, operation.actor_id) if operation.actor_id else None
     details = json.loads(operation.detail_json)
     summary = (
-        _monthly_summary(db, details.get("changes", [])) if operation.kind == "monthly" else []
+        _monthly_summary(db, operation.id, details.get("changes", []))
+        if operation.kind == "monthly"
+        else []
     )
     return render(
         request,
