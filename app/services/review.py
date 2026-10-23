@@ -4,7 +4,7 @@ import hashlib
 import json
 import re
 from collections.abc import Collection
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import dataclass, field, replace
 
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 from sqlalchemy import func, or_, select
@@ -25,7 +25,7 @@ from app.services.balance import previous_totals
 from app.services.carry_inputs import parse_carry_input
 from app.services.dates import current_month, validate_month
 from app.services.identifiers import format_point_no, normalize_point_no
-from app.services.parsing import MAX_REQUEST_ROWS, ROW_FIELDS, RawRequestRow
+from app.services.parsing import MAX_REQUEST_ROWS, ROW_FIELDS, RawRequestRow, stored_row
 from app.services.request_profiles import prepare, reset_target
 from app.services.sync import ABSENT_ACTIONS, ACTION_DEACTIVATED, RequestRow, SyncAnalysis, analyze
 from app.services.validation import (
@@ -118,7 +118,7 @@ def canonical_money(value: str, *, balance: bool = False, expected: bool = False
 
 
 def canonical_row(row: RawRequestRow, *, include_carry: bool = False) -> dict[str, str]:
-    value = {k: v for k, v in asdict(row).items() if k != "source_line"}
+    value = {k: v for k, v in stored_row(row).items() if k != "source_line"}
     if not row.source_warning:
         value.pop("source_warning")
     value["amount"] = canonical_money(row.amount)

@@ -307,7 +307,7 @@ async def upload(request: Request, db: Session = Depends(get_db)) -> Response:
         for _, uploaded in form.multi_items():
             if isinstance(uploaded, StarletteUploadFile):
                 await uploaded.close()
-    # 표준 XLSX의 명시적 유형은 보존한다. 유형 열 없는 입력만 DB 공용 정보를 보완한다.
+    # 표준 XLSX는 유형 계약을 그대로 쓴다. 다른 입력도 유형이 생략된 행만 보완한다.
     if source != "xlsx":
         shared_points = set(
             db.scalars(select(Person.point_no).where(Person.account_type == "shared"))
@@ -317,7 +317,11 @@ async def upload(request: Request, db: Session = Depends(get_db)) -> Response:
                 point = normalize_point_no(row.point_no)
             except ValueError:
                 continue
-            if point in shared_points and row.account_type == "person":
+            if (
+                point in shared_points
+                and row.account_type == "person"
+                and row.account_type_input == "omitted"
+            ):
                 row.account_type = "shared"
     return store_review_response(request, db, month, rows, source=source, form=form)
 
@@ -412,7 +416,7 @@ async def choose_profile(request: Request, db: Session = Depends(get_db)) -> Res
             person = db.scalar(
                 select(Person)
                 .options(joinedload(Person.team))
-                .where(Person.point_no == row.point_no)
+                .where(Person.point_no == normalize_point_no(row.point_no))
             )
             if person is None:
                 raise ValueError("연결된 인원이 변경되었습니다. 다시 연결하세요.")

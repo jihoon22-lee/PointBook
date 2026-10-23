@@ -3,7 +3,6 @@
 import json
 import re
 import uuid
-from dataclasses import asdict
 from datetime import timedelta
 from typing import Any
 
@@ -20,7 +19,7 @@ from app.services.absent_carries import (
     reconcile,
 )
 from app.services.ledger import ledger_version, start_write, validate_request_key
-from app.services.parsing import MAX_REQUEST_ROWS, RawRequestRow
+from app.services.parsing import MAX_REQUEST_ROWS, RawRequestRow, stored_row
 from app.services.review import (
     carry_values,
     deactivated_from_form,
@@ -56,11 +55,11 @@ def draft_payload(
         raise DraftError("입력 출처를 확인해 주세요.")
     if len(rows) > MAX_REQUEST_ROWS or len(month) > 20:
         raise DraftError("초안의 월·행 수 범위를 확인해 주세요.")
-    if any(len(value) > 20_000 for row in rows for value in asdict(row).values()):
+    if any(len(value) > 20_000 for row in rows for value in stored_row(row).values()):
         raise DraftError("초안 셀의 원문 길이 한도를 넘었습니다.", 413)
     value = {
         "month": month,
-        "rows": [asdict(row) for row in rows],
+        "rows": [stored_row(row) for row in rows],
         "deactivated": deactivated or {},
         "absent_bindings": absent_bindings or {},
         "preserved_absent_carries": preserved_absent_carries or [],
@@ -155,7 +154,7 @@ def save_draft(
         )
         payload = {
             **payload,
-            "rows": [asdict(row) for row in review.raw_rows],
+            "rows": [stored_row(row) for row in review.raw_rows],
             "deactivated": absent.values,
             "absent_bindings": absent.bindings,
             "preserved_absent_carries": absent.preserved,

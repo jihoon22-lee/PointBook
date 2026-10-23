@@ -63,7 +63,13 @@ def parse_rows(text: str, *, roster: bool = False) -> list[RawRequestRow]:
                 issues.append(f"{key} 필드의 자료형을 확인하세요.")
         if set(item) - set(ROW_FIELDS):
             issues.append("알 수 없는 필드가 있습니다. 원문을 확인하세요.")
-        row = RawRequestRow(**values, source_line=source)
+        raw_type = item.get("account_type")
+        omitted_type = raw_type is None or (isinstance(raw_type, str) and not raw_type.strip())
+        row = RawRequestRow(
+            **values,
+            source_line=source,
+            account_type_input="omitted" if omitted_type else "explicit",
+        )
         if not roster:
             try:
                 row.validated()
