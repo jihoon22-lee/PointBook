@@ -58,6 +58,15 @@ export ADMIN_USERNAME=check-admin ADMIN_PASSWORD=check-password SECRET_KEY=check
   앞서 검증한 트리와 동일함을 확인했다. `tests/test_audit_presentation.py`를 다시 실행해
   **13 passed**를 확인했다. 변경과 새 커밋의 Gitleaks 검사에서 민감정보가 검출되지 않았다.
 
+## 최종 PR 검증
+
+[PR #95](https://github.com/jihoon22-lee/PointBook/pull/95), source
+`25aed185f3b255140d0bb043450229784849c6ac`와 merge ref
+`f2f2d269b1b37d5f81257aa287a135b154b9d9e0`의 트리가 같음을 확인했다.
+[CI](https://github.com/jihoon22-lee/PointBook/actions/runs/39939897946)의 필수 7개와
+Quality gate가 모두 성공했다. 전체 서버 **1,064개 / coverage 94.66%**, E2E·복구 smoke 성공.
+Squash merge: `75e524c09bb0f81989f328bf9d82e61d4e77458d`.
+
 ## 한계
 
 실제 운영 DB 대사와 Win7 Chrome 109·갤럭시 실기는 실행하지 않았다. HTTP 템플릿 검증을

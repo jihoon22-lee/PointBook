@@ -43,6 +43,15 @@ Mock·합성 관리자·합성 Excel과 HTTP 요청을 사용했다.
 - Gitleaks 8.30.1로 기반 Git 히스토리 74개 커밋을 검사해 비밀정보 검출 없음. 변경 파일과
   새 커밋도 같은 기반에서 별도로 검사한다. 공개 검증에는 합성 자료만 사용한다.
 
+## 최종 PR 검증
+
+[PR #93](https://github.com/jihoon22-lee/PointBook/pull/93), source
+`0a21f1b9523c6db7c604518b600a80eeecb77aac`와 merge ref
+`625e641049e836022574eab630a296c9da029c46`의 트리가 같음을 확인했다.
+[CI](https://github.com/jihoon22-lee/PointBook/actions/runs/39936911076)의 필수 7개와
+Quality gate가 모두 성공했다. 전체 서버 **1,044개 / coverage 94.61%**, E2E·복구 smoke 성공.
+Squash merge: `9bc1b512d8996c98a7980057005df8d4e0a8de45`.
+
 ## 한계
 
 실제 Gemini 호출과 Win7 Chrome 109·Android 실기 검증은 하지 않았다. 합성 응답 경계 검증을

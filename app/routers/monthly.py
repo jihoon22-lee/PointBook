@@ -32,7 +32,7 @@ from app.services.drafts import (
     draft_payload,
     draft_state,
     payload_from_form,
-    save_draft,
+    review_and_save_draft,
     verify_draft_for_confirm,
 )
 from app.services.history import profile_for_person
@@ -471,40 +471,34 @@ def store_review_response(
     expected_amount = str(form.get("expected_amount", ""))
     deactivated = deactivated_from_form(form)
     key = str(form.get("request_key", "")) or uuid.uuid4().hex
-    result = review_rows(
-        db,
-        month,
-        rows,
-        expected_count,
-        expected_amount,
-        import_notice=str(form.get("import_notice", "")),
-    )
+    import_notice = str(form.get("import_notice", ""))
+    result: Review | None = None
     info: dict[str, Any] = {
         "draft_id": str(form.get("draft_id", "")),
         "draft_version": str(form.get("draft_version", "")),
     }
-    status, message = (400 if result.errors else 200), ""
+    status, message = 200, ""
     try:
-        draft = save_draft(
+        draft, result = review_and_save_draft(
             db,
             owner_id=int(request.session["admin_id"]),
             payload=draft_payload(
                 month,
-                result.raw_rows,
+                rows,
                 deactivated=deactivated,
                 absent_bindings=bindings_from_form(form),
                 preserved_absent_carries=preserved_from_form(form),
                 expected_count=expected_count,
                 expected_amount=expected_amount,
                 source=source,
-                review_token=result.token,
-                import_notice=result.import_notice,
+                import_notice=import_notice,
             ),
             request_key=key,
             draft_id=info["draft_id"],
             version=info["draft_version"],
         )
         info = draft_state(draft)
+        status = 400 if result.errors else 200
     except DraftError as exc:
         status, message = exc.status, str(exc)
     except Exception:  # noqa: BLE001 - 초안 실패는 원문을 보존하고 안전하게 알린다.
@@ -515,6 +509,16 @@ def store_review_response(
         )
     if status == 200 and info.get("draft_saved_at"):
         return RedirectResponse("/drafts/" + str(info["draft_id"]), status_code=303)
+    if result is None:
+        # 저장 실패도 제출 원문을 현재 기준으로 보여준다. 성공 경로는 잠금 안 검수만 쓴다.
+        result = review_rows(
+            db,
+            month,
+            rows,
+            expected_count,
+            expected_amount,
+            import_notice=import_notice,
+        )
     return review_response(
         request,
         month,
