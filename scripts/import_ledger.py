@@ -7,6 +7,8 @@ import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 
+from sqlalchemy import text
+
 from app import db as db_module
 from app.services.backup import backup_database, copy_database
 from app.services.ledger_import import (
@@ -101,6 +103,8 @@ def _apply(data: LedgerData, *, replace_empty_history_people: bool) -> tuple[Led
             raise LedgerImportError("실제 DB 백업에 실패하여 적용을 중단했습니다.")
     db_module.init_db()
     with db_module.SessionLocal() as db:
+        # 분석과 적용 사이에 새 관측이 추가되지 않게 같은 쓰기 잠금으로 묶는다.
+        db.execute(text("BEGIN IMMEDIATE"))
         plan = analyze_ledger_import(
             db,
             data,

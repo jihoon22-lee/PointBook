@@ -1,8 +1,13 @@
+import sqlite3
 from pathlib import Path
+
+import pytest
 
 from app import db as db_module
 from app.services.ledger_import import LedgerAccount, LedgerData, LedgerRecord
 from scripts import import_ledger
+from tests.factories import make_person
+from tests.test_ledger_import import _add_initial_observation, _business_rows
 
 
 def _synthetic_data() -> LedgerData:
@@ -63,3 +68,49 @@ def test_cli_failed_backup_aborts_without_writes(monkeypatch, tmp_path, capsys):
     assert code == 1
     assert "백업" in capsys.readouterr().out
     assert database_path.read_bytes() == before
+
+
+@pytest.mark.parametrize("mode", ["--dry-run", "--apply"])
+@pytest.mark.parametrize("total", [0, 500000])
+def test_cli_rejects_existing_observation_without_business_changes(
+    monkeypatch, tmp_path, capsys, mode, total
+):
+    database_path = _prepare_cli(monkeypatch, tmp_path)
+    with db_module.SessionLocal() as db:
+        person = make_person(db, "101", "합성현재계정", point_no="00000001")
+        _add_initial_observation(db, person.id, total)
+        before = _business_rows(db)
+    code = import_ledger.main(["--file", "source.xlsx", mode])
+    assert code == 1
+    assert "잔액 관측" in capsys.readouterr().out
+    db_module.configure_database(f"sqlite:///{database_path}")
+    with db_module.SessionLocal() as db:
+        assert _business_rows(db) == before
+
+
+def test_cli_serializes_analysis_and_apply_against_competing_writes(monkeypatch, tmp_path):
+    database_path = _prepare_cli(monkeypatch, tmp_path)
+    analyze = import_ledger.analyze_ledger_import
+    apply = import_ledger.apply_ledger_import
+    locked_phases = []
+
+    def competing_write_is_blocked(phase):
+        with (
+            sqlite3.connect(database_path, timeout=0) as competing,
+            pytest.raises(sqlite3.OperationalError, match="locked"),
+        ):
+            competing.execute("BEGIN IMMEDIATE")
+        locked_phases.append(phase)
+
+    def analyze_while_locked(*args, **kwargs):
+        competing_write_is_blocked("analyze")
+        return analyze(*args, **kwargs)
+
+    def apply_while_locked(*args, **kwargs):
+        competing_write_is_blocked("apply")
+        return apply(*args, **kwargs)
+
+    monkeypatch.setattr(import_ledger, "analyze_ledger_import", analyze_while_locked)
+    monkeypatch.setattr(import_ledger, "apply_ledger_import", apply_while_locked)
+    import_ledger._apply(_synthetic_data(), replace_empty_history_people=False)
+    assert locked_phases == ["analyze", "apply"]

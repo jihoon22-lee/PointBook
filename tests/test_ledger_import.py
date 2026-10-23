@@ -1,3 +1,5 @@
+import json
+import uuid
 from pathlib import Path
 from shutil import copyfile
 
@@ -5,14 +7,19 @@ import pytest
 from openpyxl import Workbook, load_workbook
 from openpyxl.utils import get_column_letter
 from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
-from app.models import BalanceRecord, MonthlySnapshot, Person
+from app.models import BalanceAdjustment, BalanceRecord, LedgerOperation, MonthlySnapshot, Person
+from app.services.history import profile_for_person
+from app.services.integrity import inspect_ledger
+from app.services.ledger import add_operation
 from app.services.ledger_import import (
     LedgerImportError,
     analyze_ledger_import,
     apply_ledger_import,
     parse_ledger,
 )
+from tests.factories import make_person
 
 MONTH_BLOCKS = (
     ("2024-06", 7),
@@ -351,3 +358,86 @@ def test_second_apply_is_rejected(client, db, ledger_path):
     db.commit()
     with pytest.raises(LedgerImportError, match="월별 이력"):
         analyze_ledger_import(db, data)
+
+
+def _add_initial_observation(db, person_id, total):
+    person = db.get(Person, person_id)
+    operation = add_operation(
+        db,
+        request_key=uuid.uuid4().hex,
+        kind="profile",
+        payload={},
+        actor_id=None,
+        reason="합성 초기 잔액 관측",
+        details={},
+        result_url=f"/people/{person_id}",
+    )
+    person.current_carry_balance = total
+    person.current_amount = 0
+    db.add(
+        BalanceAdjustment(
+            person_id=person_id,
+            month="2026-10",
+            total=total,
+            profile_data=json.dumps(profile_for_person(person)),
+            operation_id=operation.id,
+        )
+    )
+    db.commit()
+
+
+def _business_rows(db):
+    from app.db import Base
+
+    return {
+        table.name: list(db.execute(select(table)).tuples())
+        for table in Base.metadata.sorted_tables
+    }
+
+
+@pytest.mark.parametrize("total", [0, 500000])
+def test_existing_initial_observation_rejects_import_without_changes(
+    client, db, ledger_path, total
+):
+    data = parse_ledger(ledger_path)
+    source = data.people[0]
+    person = make_person(db, "101", "합성현재계정", point_no=source.point_no)
+    _add_initial_observation(db, person.id, total)
+    before = _business_rows(db)
+    assert inspect_ledger(db).healthy
+    with pytest.raises(LedgerImportError, match="잔액 관측"):
+        analyze_ledger_import(db, data)
+    assert _business_rows(db) == before
+    assert inspect_ledger(db).healthy
+
+
+@pytest.mark.parametrize("total", [0, 500000])
+def test_apply_rechecks_observation_committed_by_another_session_after_plan(
+    client, db, ledger_path, total
+):
+    data = parse_ledger(ledger_path)
+    person = make_person(db, "101", "합성현재계정", point_no=data.people[0].point_no)
+    person_id = person.id
+    plan = analyze_ledger_import(db, data)
+    with Session(db.get_bind()) as concurrent:
+        _add_initial_observation(concurrent, person_id, total)
+    before = _business_rows(db)
+    with pytest.raises(LedgerImportError, match="잔액 관측"):
+        apply_ledger_import(db, plan)
+    db.expire_all()
+    assert _business_rows(db) == before
+    assert inspect_ledger(db).healthy
+    assert db.scalar(select(func.count(LedgerOperation.id))) == 1
+
+
+def test_observation_free_exact_match_still_imports_in_place(client, db, ledger_path):
+    data = parse_ledger(ledger_path)
+    person = make_person(db, "101", "합성기존계정", point_no=data.people[0].point_no)
+    person_id = person.id
+    plan = analyze_ledger_import(db, data)
+    assert plan.update_account_count == 1
+    apply_ledger_import(db, plan)
+    db.commit()
+    assert db.get(Person, person_id).point_no == data.people[0].point_no
+    assert _counts(db) == (78, 28, 5)
+    assert inspect_ledger(db).healthy
