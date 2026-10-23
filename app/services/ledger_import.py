@@ -13,10 +13,10 @@ from typing import Any
 
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.models import BalanceRecord, MonthlySnapshot, Person, Team
+from app.models import BalanceAdjustment, BalanceRecord, MonthlySnapshot, Person, Team
 from app.services.history import freeze_new_records, preserve_revision
 from app.services.identifiers import is_legacy_point_no, normalize_point_no
 from app.services.teams import TEAM_COLORS
@@ -365,6 +365,16 @@ def validate_expected_totals(data: LedgerData) -> None:
             raise LedgerImportError(f"예상 검증값 불일치: {label}")
 
 
+def _require_empty_history(db: Session) -> None:
+    if (
+        db.scalar(select(MonthlySnapshot.id).limit(1)) is not None
+        or db.scalar(select(BalanceRecord.id).limit(1)) is not None
+    ):
+        raise LedgerImportError("기존 월별 이력이 있어 누적 장부를 적용할 수 없습니다.")
+    if db.scalar(select(BalanceAdjustment.id).limit(1)) is not None:
+        raise LedgerImportError("기존 잔액 관측이 있어 누적 장부를 적용할 수 없습니다.")
+
+
 def analyze_ledger_import(
     db: Session,
     data: LedgerData,
@@ -372,10 +382,7 @@ def analyze_ledger_import(
     replace_empty_history_people: bool = False,
 ) -> LedgerImportPlan:
     """DB를 변경하지 않고 누적 장부 적용 계획을 만든다."""
-    snapshot_count = db.scalar(select(func.count(MonthlySnapshot.id))) or 0
-    record_count = db.scalar(select(func.count(BalanceRecord.id))) or 0
-    if snapshot_count or record_count:
-        raise LedgerImportError("기존 월별 이력이 있어 누적 장부를 적용할 수 없습니다.")
+    _require_empty_history(db)
 
     source_accounts = (*data.people, *data.shared_accounts)
     existing = list(db.scalars(select(Person).order_by(Person.id)).all())
@@ -502,12 +509,9 @@ def _validate_database_invariants(db: Session, data: LedgerData) -> None:
 
 
 def apply_ledger_import(db: Session, plan: LedgerImportPlan) -> LedgerApplyResult:
-    """계획을 현재 트랜잭션에 적용한다. 성공 후 commit은 호출자가 수행한다."""
+    """호출자의 쓰기 잠금 안에서 이력을 재확인하고 적용한다. commit도 호출자 책임이다."""
     try:
-        if (db.scalar(select(func.count(MonthlySnapshot.id))) or 0) or (
-            db.scalar(select(func.count(BalanceRecord.id))) or 0
-        ):
-            raise LedgerImportError("기존 월별 이력이 있어 누적 장부를 적용할 수 없습니다.")
+        _require_empty_history(db)
         if plan.delete_person_ids:
             db.execute(delete(Person).where(Person.id.in_(plan.delete_person_ids)))
 

@@ -62,13 +62,14 @@ class ImportResult:
     records: int
 
 
-def _cell_text(value: object) -> str:
-    """셀 값을 문자열로 읽는다. 0을 빈칸으로 바꾸지 않고 정수형 소수만 정수로 표기한다."""
+def _cell_text(value: object, *, preserve_whitespace: bool = False) -> str:
+    """0을 보존해 문자열로 읽는다. 비고는 공백을 남기고 줄끝만 LF로 통일한다."""
     if value is None:
         return ""
     if type(value) is float and value.is_integer():
         return str(int(value))
-    return str(value).strip()
+    text = str(value)
+    return text.replace("\r\n", "\n").replace("\r", "\n") if preserve_whitespace else text.strip()
 
 
 def _find_columns(headers: list[str]) -> dict[str, int]:
@@ -129,7 +130,10 @@ def read_rows(path: Path) -> list[ImportRow]:
     seen: dict[str, int] = {}
 
     for number, cells in enumerate(sheet.iter_rows(), 1):
-        values = [_cell_text(c.value) for c in cells]
+        values = [
+            _cell_text(cell.value, preserve_whitespace=index == columns.get("note"))
+            for index, cell in enumerate(cells)
+        ]
         if not any(values):
             continue
         if not columns:
@@ -177,7 +181,7 @@ def import_excel(db: Session, path: Path, month: str) -> ImportResult:
             name=row.name,
             grade=row.grade,
             team_id=team.id if team else None,
-            status="active",
+            status="active" if row.amount > 0 else "inactive",
             current_carry_balance=row.balance,
             current_amount=row.amount,
         )
@@ -191,6 +195,7 @@ def import_excel(db: Session, path: Path, month: str) -> ImportResult:
             amount=row.amount,
             usage=0,
             total=compute_total(row.amount, row.balance),
+            note=row.note,
         )
         for row in imported
     ]

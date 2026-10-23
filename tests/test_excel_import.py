@@ -1,9 +1,16 @@
+import io
+import json
+
 import pytest
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from sqlalchemy import select
 
-from app.models import MonthlySnapshot, Person, Team
+from app.models import BalanceRecord, BalanceRevision, MonthlySnapshot, Person, Team
+from app.services.dates import current_month
 from app.services.excel_import import import_excel, read_rows
+from app.services.stats import report
+from app.services.sync import analyze
+from app.services.xlsx import report_workbook
 from tests.factories import make_person
 
 
@@ -133,3 +140,58 @@ def test_read_rows_rejects_missing_point_number_column(tmp_path):
 
     with pytest.raises(ValueError, match="포인트번호"):
         read_rows(path)
+
+
+@pytest.mark.parametrize("newline", ["\n", "\r\n", "\r"])
+def test_import_preserves_note_blank_lines_in_record_revision_and_report(
+    tmp_path, client, db, newline
+):
+    path = tmp_path / "note.xlsx"
+    note = newline.join(("", " 첫째 줄 ", "", "둘째 줄", ""))
+    expected = "\n 첫째 줄 \n\n둘째 줄\n"
+    _make_xlsx(
+        path,
+        [(" 1팀 ", " 합성이관 ", "소방경", 100, "101", "00000001", note, 20)],
+        header=("팀", "이름", "계급", "금액", "개인번호", "포인트번호", "비고", "잔액"),
+    )
+    import_excel(db, path, "2026-07")
+    record = db.scalar(select(BalanceRecord))
+    revision = db.scalar(select(BalanceRevision))
+    assert record.note == expected
+    assert json.loads(revision.data_json)["note"] == expected
+    assert record.person.name == "합성이관" and record.person.team.name == "1팀"
+    result = report(db, "2026-07")
+    assert result.rows[0].activity_note == result.rows[0].note == expected
+    workbook = load_workbook(io.BytesIO(report_workbook(result, sort_by="name", direction="asc")))
+    sheet = workbook["인원"]
+    cells = dict(zip((cell.value for cell in sheet[1]), (cell.value for cell in sheet[2])))
+    assert cells["월간 비고"] == cells["잔액 비고"] == expected
+
+
+def test_import_zero_payment_initializes_inactive_and_preserves_next_month_classification(
+    tmp_path, client, db
+):
+    path = tmp_path / "status.xlsx"
+    _make_xlsx(
+        path,
+        [
+            ("1팀", "합성비재직", "소방경", 0, "101", "00000001", "", 100),
+            ("1팀", "합성재직", "소방경", 50, "102", "00000002", "", 20),
+        ],
+        header=("팀", "이름", "계급", "금액", "개인번호", "포인트번호", "비고", "잔액"),
+    )
+    month = current_month()
+    import_excel(db, path, month)
+    people = {person.point_no: person for person in db.scalars(select(Person))}
+    assert people["00000001"].status == "inactive"
+    assert people["00000002"].status == "active"
+    assert people["00000001"].current_carry_balance == 100
+    result = report(db, month)
+    assert result.summary.active_count == result.summary.workforce_count == 1
+    assert {row.point_no: row.status for row in result.rows} == {
+        point: person.status for point, person in people.items()
+    }
+    assert {change.point_no: change.action for change in analyze(db, []).changes} == {
+        "00000001": "inactive_kept",
+        "00000002": "deactivated",
+    }
