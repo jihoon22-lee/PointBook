@@ -21,6 +21,7 @@ from app.services.absent_carries import (
 from app.services.ledger import ledger_version, start_write, validate_request_key
 from app.services.parsing import MAX_REQUEST_ROWS, RawRequestRow, stored_row
 from app.services.review import (
+    Review,
     carry_values,
     deactivated_from_form,
     matches_token,
@@ -130,6 +131,50 @@ def save_draft(
     draft_id: str = "",
     version: str = "",
 ) -> MonthlyDraft:
+    """자동 저장은 제출된 검수 토큰을 유지하며 현재 기준과 대조한다."""
+    draft, _review = _save_draft(
+        db,
+        owner_id=owner_id,
+        payload=payload,
+        request_key=request_key,
+        draft_id=draft_id,
+        version=version,
+        issue_review_token=False,
+    )
+    return draft
+
+
+def review_and_save_draft(
+    db: Session,
+    *,
+    owner_id: int,
+    payload: dict[str, Any],
+    request_key: str,
+    draft_id: str = "",
+    version: str = "",
+) -> tuple[MonthlyDraft, Review]:
+    """명시적인 검수는 쓰기 잠금 안의 분석과 토큰을 함께 저장해 반환한다."""
+    return _save_draft(
+        db,
+        owner_id=owner_id,
+        payload=payload,
+        request_key=request_key,
+        draft_id=draft_id,
+        version=version,
+        issue_review_token=True,
+    )
+
+
+def _save_draft(
+    db: Session,
+    *,
+    owner_id: int,
+    payload: dict[str, Any],
+    request_key: str,
+    draft_id: str,
+    version: str,
+    issue_review_token: bool,
+) -> tuple[MonthlyDraft, Review]:
     validate_request_key(request_key)
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True)
     if len(encoded.encode()) > MAX_DRAFT_BYTES:
@@ -155,6 +200,7 @@ def save_draft(
         payload = {
             **payload,
             "rows": [stored_row(row) for row in review.raw_rows],
+            "review_token": review.token if issue_review_token else payload["review_token"],
             "deactivated": absent.values,
             "absent_bindings": absent.bindings,
             "preserved_absent_carries": absent.preserved,
@@ -195,7 +241,7 @@ def save_draft(
                     and existing.status == "active"
                 ):
                     db.rollback()
-                    return existing
+                    return existing, review
                 raise DraftError("같은 작업의 초안이 이미 있습니다. 서버 초안을 확인하세요.", 409)
             count = (
                 db.scalar(
@@ -238,7 +284,7 @@ def save_draft(
         draft.updated_at = utcnow()
         draft.expires_at = draft.updated_at + timedelta(days=get_settings().draft_keep_days)
         db.commit()
-        return draft
+        return draft, review
     except Exception:
         db.rollback()
         raise

@@ -56,6 +56,15 @@
   문서의 두 변경이 함께 유지됨을 확인하고 위 관련 5개 파일의 80사례를 다시 실행해 통과했다.
   변경 파일과 새 커밋의 Gitleaks 검사에서도 민감정보가 검출되지 않았다.
 
+## 최종 PR 검증
+
+[PR #94](https://github.com/jihoon22-lee/PointBook/pull/94), source
+`2edb07a021b38e4b8e5f04fcb05e3d678ae6f914`와 merge ref
+`238972fe44ca1a0a4945c79c77b30350618be373`의 트리가 같음을 확인했다.
+[CI](https://github.com/jihoon22-lee/PointBook/actions/runs/39938605399)의 필수 7개와
+Quality gate가 모두 성공했다. 전체 서버 **1,058개 / coverage 94.69%**, E2E·복구 smoke 성공.
+Squash merge: `a25375668ef0a872fab2e78a8177a5d46bb43c92`.
+
 ## 한계
 
 - 전체 pytest/coverage·필수 CI·E2E·성능의 최종 결과는 PR 및 릴리스 기록에 연결한다.
