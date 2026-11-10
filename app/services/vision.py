@@ -140,7 +140,7 @@ async def read_images(
         )
         initial.append((rows, began))
     if not provider.supports_name_recheck:
-        return [ImageRead(rows) for rows, _began in initial]
+        return _with_fallback_notice(provider, [ImageRead(rows) for rows, _began in initial])
     result = []
     for (data, filename, roster), (rows, began) in zip(documents, initial, strict=True):
         # 재확인은 각 원표의 기존 시간 예산 안에서만 수행한다.
@@ -158,4 +158,15 @@ async def read_images(
             notices: list[str] = []
             compared = compare_name_reads(rows, checked, roster=roster, notices=notices)
             result.append(ImageRead(compared, join_notices(*notices)))
-    return result
+    return _with_fallback_notice(provider, result)
+
+
+FALLBACK_NOTICE = (
+    "Gemini 호출이 실패해 OpenAI가 사진을 인식했습니다. 인식 결과를 원본과 대조하세요."
+)
+
+
+def _with_fallback_notice(provider: VisionProvider, reads: list[ImageRead]) -> list[ImageRead]:
+    if reads and getattr(provider, "fallback_used", False):
+        reads[0].notice = join_notices(FALLBACK_NOTICE, reads[0].notice)
+    return reads

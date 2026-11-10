@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.6-flash"
     openai_api_key: str = ""
+    openai_model: str = "gpt-6.1-sol"
     mock_table_json: str = ""
     database_path: str = "data/pointbook.db"
     app_env: Literal["development", "test", "production"] = "development"
