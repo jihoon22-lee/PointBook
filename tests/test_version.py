@@ -6,8 +6,8 @@ def test_template_version_matches_app_version():
     assert templates.env.globals["version"] == __version__
 
 
-def test_version_is_1_7_4():
-    assert __version__ == "1.7.4"
+def test_version_is_1_8_0():
+    assert __version__ == "1.8.0"
 
 
 def test_footer_shows_version(auth_client):

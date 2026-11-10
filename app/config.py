@@ -75,8 +75,10 @@ class Settings(BaseSettings):
 
     def validate_runtime(self) -> None:
         """초기 관리자 환경 암호와 실제 DB의 인증 상태를 구분한다."""
-        if self.ai_provider not in {"mock", "gemini"}:
-            raise ValueError("AI_PROVIDER는 mock 또는 gemini여야 합니다.")
+        if self.ai_provider not in {"mock", "gemini", "openai"}:
+            raise ValueError("AI_PROVIDER는 mock, gemini, openai 중 하나여야 합니다.")
+        if self.ai_provider == "openai" and not self.openai_api_key.strip():
+            raise ValueError("OPENAI_API_KEY가 설정되지 않았습니다.")
         if self.ai_provider == "gemini" and not self.gemini_api_key.strip():
             raise ValueError("GEMINI_API_KEY가 설정되지 않았습니다.")
         if (self.app_env == "production" or self.enforce_secure_defaults) and (

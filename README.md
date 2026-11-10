@@ -11,7 +11,7 @@
 - [변경 이력](CHANGELOG.md) — 버전별 변경 사항
 - [개발 에이전트 작업 안내](docs/agent-workflow.md) — 지침·skills, 격리 검증, 운영 명령 구분
 
-현재 버전: **v1.7.4**
+현재 버전: **v1.8.0**
 
 ## 주요 기능
 
@@ -44,7 +44,7 @@
 
 Python FastAPI + SQLite(SQLAlchemy 2.x) + Alembic(마이그레이션) + Jinja2/바닐라 JS + 세션 인증.
 운영 서버는 Docker Compose 단일 앱 컨테이너로 실행하고 기존 `data/`를 bind mount한다.
-AI는 VisionProvider 인터페이스로 추상화 — Gemini(사진 테이블 인식)와 개발용 Mock 구현체를 제공한다.
+AI는 VisionProvider 인터페이스로 추상화 — OpenAI·Gemini(사진 테이블 인식, 한쪽 실패 시 다른 쪽으로 전환)와 개발용 Mock 구현체를 제공한다.
 금액표와 개인번호 명단이 별도 사진이면 두 장을 함께 입력한다. 금액표를 기준으로 팀·계급·이름이
 유일하게 일치하는 번호만 보완하고, 불일치·미사용 명단은 검수와 초안에 남긴다.
 

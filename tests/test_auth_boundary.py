@@ -151,7 +151,7 @@ def test_production_rejects_empty_and_default_secret(secret):
         ).validate_runtime()
 
 
-@pytest.mark.parametrize("provider", ["", "typo", "openai"])
+@pytest.mark.parametrize("provider", ["", "typo", "claude"])
 def test_unknown_provider_is_not_mock(provider):
     with pytest.raises(ValueError, match="AI_PROVIDER"):
         Settings(ai_provider=provider).validate_runtime()

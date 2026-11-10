@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, joinedload
 from starlette.datastructures import FormData
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
+from app.ai.factory import provider_labels
 from app.auth import form_file_limit, require_login
 from app.config import get_settings
 from app.db import get_db
@@ -54,6 +55,7 @@ from app.services.review import (
     review_rows,
 )
 from app.services.sync import ABSENT_ACTIONS, RequestRow, apply_analysis
+from app.services.tenure import tenure_labels
 from app.services.validation import MAX_TOTAL
 from app.services.vision import read_images
 from app.services.xlsx import FORM_VERSION, extract_request, request_template
@@ -92,7 +94,7 @@ def monthly_home(request: Request, db: Session = Depends(get_db)) -> Response:
             "month": current_month(),
             "done": request.query_params.get("done"),
             "ai_provider": get_settings().ai_provider,
-            "ai_fallback": bool(get_settings().openai_api_key.strip()),
+            "ai_labels": provider_labels(get_settings()),
         },
     )
 
@@ -118,13 +120,43 @@ def _error_response(
             "error": message,
             "pasted": pasted,
             "ai_provider": get_settings().ai_provider,
-            "ai_fallback": bool(get_settings().openai_api_key.strip()),
+            "ai_labels": provider_labels(get_settings()),
             "summary": list(
                 reversed(stats.trend(db, account_type="all", operation_id=stats.report_cutoff(db)))
             ),
         },
         400,
     )
+
+
+def review_tenures(
+    db: Session, review: Review
+) -> tuple[dict[str, str], dict[str, list[dict[str, str]]]]:
+    """연결된 인원과 연결 후보의 장부 기준 재직 기간. 화면 참고용이며 저장하지 않는다."""
+    candidate_ids = {
+        int(candidate["value"].split(":")[0])
+        for options in review.candidates.values()
+        for candidate in options
+    }
+    ids = candidate_ids | set(review.linked_people.values())
+    if not ids:
+        return {}, review.candidates
+    labels = tenure_labels(db, list(db.scalars(select(Person).where(Person.id.in_(ids)))))
+    shown = {pid: label for pid, label in labels.items() if label != "-"}  # 공용계정 제외
+    candidates = {
+        row_id: [
+            {
+                **candidate,
+                "label": candidate["label"] + f" · 재직 {shown[pid]}",
+            }
+            if (pid := int(candidate["value"].split(":")[0])) in shown
+            else candidate
+            for candidate in options
+        ]
+        for row_id, options in review.candidates.items()
+    }
+    tenures = {row_id: shown[pid] for row_id, pid in review.linked_people.items() if pid in shown}
+    return tenures, candidates
 
 
 def review_response(
@@ -142,7 +174,9 @@ def review_response(
     expected_amount: str = "",
     message: str = "",
     status: int = 200,
+    db: Session | None = None,
 ) -> Response:
+    tenures, candidates = review_tenures(db, review) if db is not None else ({}, review.candidates)
     absent = reconcile(
         month,
         review.analysis.changes or None,
@@ -169,7 +203,8 @@ def review_response(
             "input_source": input_source,
             "draft_keep_days": get_settings().draft_keep_days,
             "rows": review.raw_rows,
-            "candidates": review.candidates,
+            "candidates": candidates,
+            "tenures": tenures,
             "pending_links": review.pending_links,
             "row_states": review.row_states,
             "profile_differences": review.profile_differences,
@@ -372,6 +407,7 @@ async def link_person(request: Request, db: Session = Depends(get_db)) -> Respon
             request,
             month,
             result,
+            db=db,
             request_key=str(form.get("request_key", "")),
             draft_info={
                 "draft_id": str(form.get("draft_id", "")),
@@ -430,6 +466,7 @@ async def choose_profile(request: Request, db: Session = Depends(get_db)) -> Res
             request,
             month,
             result,
+            db=db,
             request_key=str(form.get("request_key", "")),
             draft_info={
                 "draft_id": str(form.get("draft_id", "")),
@@ -525,6 +562,7 @@ def store_review_response(
         request,
         month,
         result,
+        db=db,
         request_key=key,
         draft_info=info,
         input_source=source,
@@ -596,6 +634,7 @@ async def confirm(request: Request, db: Session = Depends(get_db)) -> Response:
             request,
             month,
             result,
+            db=db,
             request_key=request_key,
             draft_info={
                 "draft_id": str(form.get("draft_id", "")),

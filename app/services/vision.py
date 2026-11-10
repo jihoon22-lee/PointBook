@@ -39,6 +39,7 @@ class VisionExecutor:
             )
         with self._state_lock:
             self._active += 1
+        provider = provider.limited(timeout)
         try:
             if names_only:
                 future = self._pool.submit(provider.extract_names, data, filename, roster=roster)
@@ -132,41 +133,55 @@ async def read_images(
             _executor = VisionExecutor(settings.ai_max_concurrency)
         executor = _executor
     # 두 원표를 먼저 확보한다. 재확인 실패/시간 초과가 다음 원표 인식을 막지 않게 한다.
-    initial: list[tuple[list[RawRequestRow], float]] = []
+    initial: list[tuple[list[RawRequestRow], float, bool]] = []
     for data, filename, roster in documents:
         began = time.monotonic()
         rows = await executor.extract(
             provider, data, filename, settings.ai_timeout_seconds, roster=roster
         )
-        initial.append((rows, began))
+        initial.append((rows, began, _fell_back(provider)))
     if not provider.supports_name_recheck:
-        return _with_fallback_notice(provider, [ImageRead(rows) for rows, _began in initial])
+        return [
+            ImageRead(rows, _fallback_notice(provider, table=True) if switched else "")
+            for rows, _began, switched in initial
+        ]
     result = []
-    for (data, filename, roster), (rows, began) in zip(documents, initial, strict=True):
+    for (data, filename, roster), (rows, began, switched) in zip(documents, initial, strict=True):
+        table_notice = _fallback_notice(provider, table=True) if switched else ""
         # 재확인은 각 원표의 기존 시간 예산 안에서만 수행한다.
         remaining = settings.ai_timeout_seconds - (time.monotonic() - began)
         if remaining <= 0:
-            result.append(ImageRead(name_check_unavailable(rows)))
+            result.append(ImageRead(name_check_unavailable(rows), table_notice))
             continue
         try:
             checked = await executor.extract(
                 provider, data, filename, remaining, roster=roster, names_only=True
             )
         except VisionError:
-            result.append(ImageRead(name_check_unavailable(rows)))
+            result.append(ImageRead(name_check_unavailable(rows), table_notice))
         else:
             notices: list[str] = []
             compared = compare_name_reads(rows, checked, roster=roster, notices=notices)
-            result.append(ImageRead(compared, join_notices(*notices)))
-    return _with_fallback_notice(provider, result)
+            # 원표는 기본 제공자가 읽고 재확인만 넘어간 경우를 구분해 알린다.
+            recheck_notice = (
+                _fallback_notice(provider, table=False)
+                if _fell_back(provider) and not switched
+                else ""
+            )
+            result.append(ImageRead(compared, join_notices(table_notice, recheck_notice, *notices)))
+    return result
 
 
-FALLBACK_NOTICE = (
-    "Gemini 호출이 실패해 OpenAI가 사진을 인식했습니다. 인식 결과를 원본과 대조하세요."
-)
+def _fell_back(provider: VisionProvider) -> bool:
+    return bool(getattr(provider, "fallback_used", False))
 
 
-def _with_fallback_notice(provider: VisionProvider, reads: list[ImageRead]) -> list[ImageRead]:
-    if reads and getattr(provider, "fallback_used", False):
-        reads[0].notice = join_notices(FALLBACK_NOTICE, reads[0].notice)
-    return reads
+def _fallback_notice(provider: VisionProvider, *, table: bool) -> str:
+    primary = getattr(provider, "primary_label", "기본 AI")
+    secondary = getattr(provider, "secondary_label", "대체 AI")
+    if table:
+        return (
+            f"{primary} 호출이 실패해 {secondary}가 사진을 인식했습니다. "
+            "인식 결과를 원본과 대조하세요."
+        )
+    return f"{primary} 호출이 실패해 이름 재확인은 {secondary}가 수행했습니다."

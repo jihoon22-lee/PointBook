@@ -59,6 +59,7 @@ class Review:
     profile_differences: dict[str, dict[str, dict[str, object]]] = field(default_factory=dict)
     pending_profiles: dict[str, str] = field(default_factory=dict)
     new_teams: list[str] = field(default_factory=list)
+    linked_people: dict[str, int] = field(default_factory=dict)
 
 
 def raw_rows_from_form(form: FormData, *, clear_source_issues: bool = False) -> list[RawRequestRow]:
@@ -297,6 +298,7 @@ def review_rows(
             result.errors[raw.row_id] = "이미 등록된 포인트번호입니다. 기존 인원을 연결하세요."
             result.error_fields[raw.row_id] = f"point_no_{raw_index}"
         if linked_person and raw.link_state != "new":
+            result.linked_people[raw.row_id] = linked_person.id
             differences = prepare(raw, linked_person)
             result.profile_differences[raw.row_id] = differences
             if any(diff["pending"] for diff in differences.values()):

@@ -23,6 +23,10 @@ class VisionProvider(ABC):
     supports_name_recheck = False
     unsupported_mimes: frozenset[str] = frozenset()
 
+    def limited(self, seconds: float) -> "VisionProvider":
+        """이 호출을 기다리는 시간 안에 끝나는 제공자. 외부 호출이 없으면 그대로다."""
+        return self
+
     @abstractmethod
     def extract_table(self, image_bytes: bytes, filename: str) -> list[RawRequestRow]:
         """오류·불완전 행도 순서대로 보존하며 장부에 쓰지 않는다."""

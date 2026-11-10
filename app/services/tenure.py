@@ -5,11 +5,17 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 
 from sqlalchemy import and_, func, or_, select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
-from app.models import BalanceRecord, BalanceRevision, LedgerOperation, Person
+from app.models import (
+    BalanceRecord,
+    BalanceRevision,
+    LedgerOperation,
+    MonthlySnapshot,
+    Person,
+)
 from app.services.dates import KST, current_month, validate_month
-from app.services.history import profile_for_record
+from app.services.history import stored_profile
 
 
 def _month_index(month: str) -> int:
@@ -53,21 +59,24 @@ def tenure_labels(
         if old is None or value[:2] >= old[:2]:
             evidence[pid][month] = value
 
-    records = db.scalars(
-        select(BalanceRecord)
+    # ORM 객체 없이 필요한 열만 읽는다. 검수 화면처럼 전체 인원을 한 번에 볼 때의 비용을 줄인다.
+    records = db.execute(
+        select(
+            BalanceRecord.person_id,
+            MonthlySnapshot.month,
+            BalanceRecord.observed_at,
+            BalanceRecord.id,
+            BalanceRecord.profile_data,
+            BalanceRecord.amount,
+            BalanceRecord.provenance,
+        )
+        .join(MonthlySnapshot, MonthlySnapshot.id == BalanceRecord.snapshot_id)
         .where(BalanceRecord.person_id.in_(ids))
-        .options(joinedload(BalanceRecord.snapshot))
     )
-    for record in records:
-        profile = profile_for_record(record)
+    for person_id, month, observed_at, record_id, profile_data, amount, provenance in records:
+        profile = stored_profile(profile_data, amount, provenance)
         if profile.get("account_type") == "person":
-            remember(
-                record.person_id,
-                record.snapshot.month,
-                record.observed_at,
-                record.id,
-                profile.get("status", ""),
-            )
+            remember(person_id, month, observed_at, record_id, profile.get("status", ""))
     # 번호 재사용·과거 삽입·이후 정정은 원래 월간 작업의 인원 연결을 바꾸면 안 된다.
     # 월간 확정이 만든 최초 revision의 작업 ID와 인원 ID를 사용한다.
     monthly_people: dict[tuple[int, str], int] = {}

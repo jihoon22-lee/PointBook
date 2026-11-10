@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app import db as db_module
 from app._version import __version__
+from app.ai.factory import provider_labels
 from app.config import get_settings
 from app.services.backup import recovery_status
 
@@ -31,9 +32,9 @@ def operation_status(db: Session) -> dict[str, Any]:
         "db_ready": ready,
         "path_matches": path_matches,
         "ai_provider": settings.ai_provider
-        if settings.ai_provider in {"mock", "gemini"}
+        if settings.ai_provider in {"mock", "gemini", "openai"}
         else "설정 오류",
-        "ai_fallback": settings.ai_provider == "gemini" and bool(settings.openai_api_key.strip()),
+        "ai_fallback": provider_labels(settings)[1],
         "app_env": settings.app_env,
         "recovery": recovery_status(db_module.current_database_path()),
         "draft_keep_days": settings.draft_keep_days,

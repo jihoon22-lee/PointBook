@@ -57,7 +57,7 @@ def test_wrong_or_truncated_headers_rejected(data, filename):
 
 @pytest.mark.parametrize(
     ("name", "mode"),
-    [("", "development"), ("typo", "test"), ("openai", "development"), ("mock", "production")],
+    [("", "development"), ("typo", "test"), ("claude", "development"), ("mock", "production")],
 )
 def test_provider_configuration_never_falls_back(monkeypatch, name, mode):
     monkeypatch.setattr(
