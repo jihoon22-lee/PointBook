@@ -29,6 +29,14 @@ def envelope(text):
     return {"candidates": [{"finishReason": "STOP", "content": {"parts": [{"text": text}]}}]}
 
 
+@pytest.fixture(autouse=True)
+def retry_waits(monkeypatch):
+    """재시도 대기를 실제로 기다리지 않고 기록한다."""
+    waits = []
+    monkeypatch.setattr("app.ai.gemini.time.sleep", waits.append)
+    return waits
+
+
 def provider(handler, **kwargs):
     return GeminiProvider(
         "synthetic-key-never-real", transport=httpx.MockTransport(handler), **kwargs
@@ -72,7 +80,7 @@ def test_upstream_error_body_and_key_never_exposed(status, caplog):
 
 
 @pytest.mark.parametrize(
-    "exception", [httpx.ConnectError, httpx.ReadTimeout, httpx.RemoteProtocolError]
+    "exception", [httpx.ConnectError, httpx.ConnectTimeout, httpx.RemoteProtocolError]
 )
 def test_network_exception_is_redacted(exception, caplog):
     def respond(request):
@@ -80,8 +88,94 @@ def test_network_exception_is_redacted(exception, caplog):
 
     with pytest.raises(VisionError, match="호출에 실패") as error:
         provider(respond).extract_table(PNG, "req.png")
+    assert "code=network" in caplog.text
     assert "synthetic-key" not in str(error.value) + caplog.text
     assert "private-person" not in str(error.value) + caplog.text
+
+
+@pytest.mark.parametrize("exception", [httpx.ReadTimeout, httpx.WriteTimeout])
+def test_slow_response_is_reported_as_timeout_not_network_failure(exception, caplog):
+    calls = []
+
+    def respond(request):
+        calls.append(request)
+        raise exception("synthetic-key-never-real / private-person-number")
+
+    with pytest.raises(VisionError, match="시간이 초과") as error:
+        provider(respond).extract_table(PNG, "req.png")
+    assert len(calls) == 1  # 이미 예산을 다 쓴 긴 호출은 다시 보내지 않는다.
+    assert "code=timeout" in caplog.text
+    assert "synthetic-key" not in str(error.value) + caplog.text
+    assert "private-person" not in str(error.value) + caplog.text
+
+
+def test_response_wait_uses_whole_budget_instead_of_thirty_seconds():
+    """표 전체 인식은 첫 바이트까지 30초를 넘는다. 대기 한도는 전체 예산이어야 한다."""
+    captured = []
+
+    def respond(request):
+        captured.append(request.extensions["timeout"])
+        return httpx.Response(200, json=envelope(json.dumps([ROW])))
+
+    provider(respond, timeout=180).extract_table(PNG, "req.png")
+    assert captured[0]["read"] == pytest.approx(180, abs=1)
+    assert captured[0]["connect"] <= 10
+
+
+@pytest.mark.parametrize("status", [500, 502, 503, 504])
+def test_transient_upstream_status_is_retried(status, retry_waits):
+    statuses = [status, status, 200]
+
+    def respond(request):
+        code = statuses.pop(0)
+        if code != 200:
+            return httpx.Response(code, text="synthetic overloaded")
+        return httpx.Response(200, json=envelope(json.dumps([ROW])))
+
+    rows = provider(respond).extract_table(PNG, "req.png")
+    assert rows[0].name == "합성 인원"
+    assert not statuses
+    assert len(retry_waits) == 2
+
+
+def test_persistent_transient_status_stops_after_bounded_retries(retry_waits):
+    calls = []
+
+    def respond(request):
+        calls.append(request)
+        return httpx.Response(503, text="synthetic overloaded")
+
+    with pytest.raises(VisionError, match="503"):
+        provider(respond).extract_table(PNG, "req.png")
+    assert len(calls) == 3
+    assert len(retry_waits) == 2
+
+
+@pytest.mark.parametrize("status", [400, 401, 403, 404, 429])
+def test_permanent_upstream_status_is_not_retried(status, retry_waits):
+    calls = []
+
+    def respond(request):
+        calls.append(request)
+        return httpx.Response(status, text="synthetic rejected")
+
+    with pytest.raises(VisionError, match=str(status)):
+        provider(respond).extract_table(PNG, "req.png")
+    assert len(calls) == 1
+    assert not retry_waits
+
+
+def test_retry_never_waits_past_the_budget(retry_waits):
+    calls = []
+
+    def respond(request):
+        calls.append(request)
+        return httpx.Response(503, text="synthetic overloaded")
+
+    with pytest.raises(VisionError, match="503"):
+        provider(respond, timeout=1).extract_table(PNG, "req.png")
+    assert len(calls) == 1
+    assert not retry_waits
 
 
 @pytest.mark.parametrize(
@@ -213,8 +307,8 @@ def test_missing_key_and_invalid_model_do_not_make_requests():
 
 
 def test_stream_total_deadline_is_enforced(monkeypatch):
-    moments = iter([0.0, 2.0])
-    monkeypatch.setattr("app.ai.gemini.time.monotonic", lambda: next(moments))
+    moments = iter([0.0, 0.0])  # 기한 계산과 요청 시작. 이후 응답 수신 중에 기한을 넘긴다.
+    monkeypatch.setattr("app.ai.gemini.time.monotonic", lambda: next(moments, 2.0))
     with pytest.raises(VisionError, match="시간이 초과"):
         provider(
             lambda request: httpx.Response(200, json=envelope(json.dumps([ROW]))), timeout=1

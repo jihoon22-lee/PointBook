@@ -10,6 +10,6 @@
     var button = event.submitter || form.querySelector('button[type="submit"]');
     button.disabled = true;
     button.textContent = '검수 목록 준비 중…';
-    document.getElementById('upload-status').textContent = '처리 중입니다. 사진 인식에는 시간이 걸릴 수 있습니다.';
+    document.getElementById('upload-status').textContent = '처리 중입니다. 사진 인식은 1~4분 걸릴 수 있습니다. 완료될 때까지 이 화면을 닫지 마세요.';
   });
 })();
