@@ -7,7 +7,7 @@ from tests.test_legacy_status import legacy_record
 from tests.test_monthly_profile_choices import existing, request_row
 
 
-def test_linked_row_shows_ledger_tenure_under_the_name(auth_client, db):
+def test_linked_row_shows_ledger_tenure_with_the_personal_number(auth_client, db):
     person = existing(db)
     legacy_record(db, person, "2025-05", 100)
     legacy_record(db, person, "2026-06", 100)
