@@ -116,6 +116,8 @@ def test_latest_correction_updates_current_and_preserves_negative_usage(client, 
 def test_adjustment_is_separate_observation_and_blocks_propagation(client, db, monkeypatch):
     person, records = setup_ledger(db)
     original = record_data(records[2])
+    # 보정 관측의 월을 고정한다. 실제 날짜가 2026-10을 지나면 다음 달 계산에서 빠진다.
+    monkeypatch.setattr("app.services.ledger.current_month", lambda: "2026-10")
     plan = adjustment_plan(
         db,
         person_id=person.id,

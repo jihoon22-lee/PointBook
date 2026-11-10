@@ -46,6 +46,17 @@
   `uv run pytest --cov=app --cov-fail-under=85`, `alembic upgrade head`·`alembic check` 결과는
   PR의 CI 실행으로 연결한다.
 
+## PR CI에서 드러난 기존 문제
+
+첫 CI 실행에서 이번 변경과 무관한 두 항목이 실패해 같은 PR에서 최소 수정했다.
+
+- `tests/test_ledger_corrections.py::test_adjustment_is_separate_observation_and_blocks_propagation`:
+  보정 관측을 실제 현재 월로 기록해 2026-11부터 `2026-10` 계산에서 빠졌다(`-70 != -25`).
+  같은 파일의 다른 검사처럼 `current_month`를 `2026-10`으로 고정했다. 장부 코드는 바꾸지 않았다.
+- `security`(pip-audit): 개발 전용 의존성 `filelock` 3.32.2, `msgpack` 1.2.1에 새 권고가 등록됐다.
+  둘 다 `pip-audit` 하위 의존성이며 운영 이미지에는 없다. `uv lock --upgrade-package`로
+  `filelock` 4.2.10, `msgpack` 1.2.4로 올렸고 로컬 `uv run pip-audit`는 알려진 취약점 없음이었다.
+
 ## 한계
 
 - 이름 재확인이 남은 예산을 넘겨 끊기면 worker는 자체 기한까지 슬롯을 점유한다. 이전에는
