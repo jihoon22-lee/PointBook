@@ -33,6 +33,7 @@ def operation_status(db: Session) -> dict[str, Any]:
         "ai_provider": settings.ai_provider
         if settings.ai_provider in {"mock", "gemini"}
         else "설정 오류",
+        "ai_fallback": settings.ai_provider == "gemini" and bool(settings.openai_api_key.strip()),
         "app_env": settings.app_env,
         "recovery": recovery_status(db_module.current_database_path()),
         "draft_keep_days": settings.draft_keep_days,

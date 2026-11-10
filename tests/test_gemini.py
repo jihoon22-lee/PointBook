@@ -33,7 +33,7 @@ def envelope(text):
 def retry_waits(monkeypatch):
     """재시도 대기를 실제로 기다리지 않고 기록한다."""
     waits = []
-    monkeypatch.setattr("app.ai.gemini.time.sleep", waits.append)
+    monkeypatch.setattr("app.ai.http.time.sleep", waits.append)
     return waits
 
 
@@ -308,7 +308,7 @@ def test_missing_key_and_invalid_model_do_not_make_requests():
 
 def test_stream_total_deadline_is_enforced(monkeypatch):
     moments = iter([0.0, 0.0])  # 기한 계산과 요청 시작. 이후 응답 수신 중에 기한을 넘긴다.
-    monkeypatch.setattr("app.ai.gemini.time.monotonic", lambda: next(moments, 2.0))
+    monkeypatch.setattr("app.ai.http.time.monotonic", lambda: next(moments, 2.0))
     with pytest.raises(VisionError, match="시간이 초과"):
         provider(
             lambda request: httpx.Response(200, json=envelope(json.dumps([ROW]))), timeout=1

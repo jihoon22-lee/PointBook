@@ -92,6 +92,7 @@ def monthly_home(request: Request, db: Session = Depends(get_db)) -> Response:
             "month": current_month(),
             "done": request.query_params.get("done"),
             "ai_provider": get_settings().ai_provider,
+            "ai_fallback": bool(get_settings().openai_api_key.strip()),
         },
     )
 
@@ -117,6 +118,7 @@ def _error_response(
             "error": message,
             "pasted": pasted,
             "ai_provider": get_settings().ai_provider,
+            "ai_fallback": bool(get_settings().openai_api_key.strip()),
             "summary": list(
                 reversed(stats.trend(db, account_type="all", operation_id=stats.report_cutoff(db)))
             ),
