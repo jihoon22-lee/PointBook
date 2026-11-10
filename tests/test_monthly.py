@@ -337,7 +337,7 @@ def test_review_new_person_no_hint(auth_client):
 def test_upload_provider_error_shows_message(auth_client, monkeypatch):
     from app.services import vision
 
-    class FailingProvider:
+    class FailingProvider(MockProvider):
         def extract_table(self, image_bytes, filename):
             raise ValueError("Gemini API 오류 (400): invalid key")
 

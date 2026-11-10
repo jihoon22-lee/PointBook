@@ -1,6 +1,7 @@
 """OpenAI Chat Completions: Gemini 실패 시 같은 프롬프트로 읽는 대체 제공자."""
 
 import base64
+import copy
 import json
 import re
 from typing import Any
@@ -53,6 +54,12 @@ class OpenAIProvider(VisionProvider):
         self._timeout = timeout
         self._max_response_bytes = max_response_bytes
         self._transport = transport
+
+    def limited(self, seconds: float) -> VisionProvider:
+        # 기다리는 쪽이 포기한 뒤에도 worker가 슬롯을 쥐고 응답을 기다리지 않게 한다.
+        clone = copy.copy(self)
+        clone._timeout = min(self._timeout, seconds)
+        return clone
 
     def extract_table(self, image_bytes: bytes, filename: str) -> list[RawRequestRow]:
         return self._extract(image_bytes, filename, roster=False)

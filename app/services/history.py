@@ -51,16 +51,16 @@ def profile_for_person(person: Person) -> dict[str, Any]:
     }
 
 
-def profile_for_record(record: BalanceRecord) -> dict[str, Any]:
+def stored_profile(profile_data: str, amount: int, provenance: str) -> dict[str, Any]:
     try:
-        value = json.loads(record.profile_data)
-        return (
-            monthly_profile(value, record.amount, record.provenance)
-            if isinstance(value, dict)
-            else {}
-        )
+        value = json.loads(profile_data)
+        return monthly_profile(value, amount, provenance) if isinstance(value, dict) else {}
     except (TypeError, ValueError):
         return {}
+
+
+def profile_for_record(record: BalanceRecord) -> dict[str, Any]:
+    return stored_profile(record.profile_data, record.amount, record.provenance)
 
 
 def record_data(record: BalanceRecord, month: str | None = None) -> dict[str, Any]:

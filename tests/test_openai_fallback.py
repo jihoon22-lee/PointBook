@@ -128,7 +128,9 @@ def fallback(primary, secondary, *, timeout=240.0, budgets=None):
             budgets.append(remaining)
         return secondary
 
-    return FallbackProvider(primary, make, timeout=timeout)
+    return FallbackProvider(
+        primary, make, timeout=timeout, primary_label="Gemini", secondary_label="OpenAI"
+    )
 
 
 @pytest.mark.parametrize("code", ["upstream_status", "network", "response_schema", "empty_rows"])
@@ -191,6 +193,73 @@ def test_secondary_failure_is_reported_as_its_own_error():
         fallback(primary, secondary).extract_table(PNG, "req.png")
 
 
+def test_format_the_primary_cannot_read_goes_to_secondary():
+    primary = Scripted(failing("image_unsupported"))
+    secondary = Scripted(name="대체")
+    assert fallback(primary, secondary).extract_table(HEIC, "req.heic")[0].name == "대체"
+
+
+def test_limited_copy_shares_fallback_state_and_caps_the_budget():
+    primary, secondary = Scripted(failing("upstream_status")), Scripted(name="대체")
+    budgets = []
+    provider = fallback(primary, secondary, budgets=budgets)
+    provider.limited(30).extract_names(PNG, "req.png")
+    assert provider.fallback_used
+    assert budgets[0] <= 30
+    provider.limited(25).extract_names(PNG, "req.png")
+    assert budgets[1] <= 25
+    assert primary.calls == ["names"]
+
+
+@pytest.mark.parametrize("make", [openai, None])
+def test_limited_provider_never_waits_past_the_callers_budget(make):
+    captured = []
+
+    def respond(request):
+        captured.append(request.extensions["timeout"]["read"])
+        return httpx.Response(200, json=completion(json.dumps({"rows": [ROW]})))
+
+    if make is None:
+        instance = GeminiProvider("synthetic", transport=httpx.MockTransport(respond), timeout=240)
+        with pytest.raises(VisionError):  # OpenAI 형식 응답이라 Gemini는 거부한다. 기한만 본다.
+            instance.limited(40).extract_table(PNG, "req.png")
+    else:
+        make(respond, timeout=240).limited(40).extract_table(PNG, "req.png")
+    assert captured[0] <= 40
+
+
+def test_openai_primary_uses_gemini_as_fallback(monkeypatch):
+    base = {"ai_provider": "openai", "openai_api_key": "synthetic-openai"}
+    monkeypatch.setattr("app.ai.factory.get_settings", lambda: Settings(**base))
+    assert isinstance(get_provider(), OpenAIProvider)
+    monkeypatch.setattr(
+        "app.ai.factory.get_settings", lambda: Settings(**base, gemini_api_key="synthetic-gemini")
+    )
+    provider = get_provider()
+    assert isinstance(provider, FallbackProvider)
+    assert (provider.primary_label, provider.secondary_label) == ("OpenAI", "Gemini")
+    Settings(**base).validate_runtime()
+    with pytest.raises(ValueError, match="OPENAI_API_KEY"):
+        Settings(ai_provider="openai").validate_runtime()
+
+
+def test_recheck_only_fallback_is_reported_as_recheck(monkeypatch):
+    class TableOk(Scripted):
+        def _run(self, kind):
+            if kind == "names":
+                self.calls.append(kind)
+                raise VisionError("합성 실패", code="upstream_status")
+            return super()._run(kind)
+
+    provider = fallback(TableOk(), Scripted())
+    monkeypatch.setattr(vision, "get_provider", lambda: provider)
+    import asyncio
+
+    reads = asyncio.run(vision.read_images([(PNG, "req.png", False)]))
+    assert "이름 재확인" in reads[0].notice and "OpenAI" in reads[0].notice
+    assert "사진을 인식" not in reads[0].notice
+
+
 def test_factory_adds_openai_fallback_only_when_its_key_is_set(monkeypatch):
     base = {"ai_provider": "gemini", "gemini_api_key": "synthetic-gemini"}
     monkeypatch.setattr("app.ai.factory.get_settings", lambda: Settings(**base))
@@ -207,8 +276,8 @@ def test_review_notice_tells_which_service_read_the_photo(monkeypatch):
     import asyncio
 
     reads = asyncio.run(vision.read_images([(PNG, "req.png", False), (PNG, "roster.png", True)]))
-    assert "OpenAI" in reads[0].notice
-    assert "OpenAI" not in reads[1].notice
+    assert "OpenAI가 사진을 인식" in reads[0].notice
+    assert "OpenAI가 사진을 인식" in reads[1].notice
 
 
 def test_no_fallback_notice_when_primary_succeeds(monkeypatch):

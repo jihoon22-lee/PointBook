@@ -103,6 +103,7 @@ def draft_open(draft_id: str, request: Request, db: Session = Depends(get_db)) -
             request,
             payload["month"],
             review,
+            db=db,
             request_key=draft.request_key,
             draft_info=draft_state(draft),
             input_source=payload["source"],

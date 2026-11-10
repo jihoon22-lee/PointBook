@@ -8,7 +8,7 @@ from app.ai.images import image_mime
 from app.logging import get_logger
 from app.services.parsing import RawRequestRow
 
-# 기본 제공자 쪽 원인(한도·혼잡·연결·응답 형식·설정)만 넘긴다.
+# 기본 제공자 쪽 원인(한도·혼잡·연결·응답 형식·설정·읽지 못하는 형식)만 넘긴다.
 FALLBACK_CODES = frozenset(
     {
         "upstream_status",
@@ -21,6 +21,7 @@ FALLBACK_CODES = frozenset(
         "row_limit",
         "missing_key",
         "invalid_model",
+        "image_unsupported",
     }
 )
 MIN_FALLBACK_SECONDS = 20.0
@@ -35,12 +36,32 @@ class FallbackProvider(VisionProvider):
         make_secondary: Callable[[float], VisionProvider],
         *,
         timeout: float,
+        primary_label: str,
+        secondary_label: str,
+        state: dict[str, bool] | None = None,
     ) -> None:
         self._primary = primary
         self._make_secondary = make_secondary
         self._timeout = timeout
+        self.primary_label = primary_label
+        self.secondary_label = secondary_label
         self.supports_name_recheck = primary.supports_name_recheck
-        self.fallback_used = False
+        # limited()가 만든 사본과 전환 여부를 공유한다.
+        self._state = state if state is not None else {"used": False}
+
+    @property
+    def fallback_used(self) -> bool:
+        return self._state["used"]
+
+    def limited(self, seconds: float) -> VisionProvider:
+        return FallbackProvider(
+            self._primary.limited(seconds),
+            self._make_secondary,
+            timeout=min(self._timeout, seconds),
+            primary_label=self.primary_label,
+            secondary_label=self.secondary_label,
+            state=self._state,
+        )
 
     def extract_table(self, image_bytes: bytes, filename: str) -> list[RawRequestRow]:
         return self._run(image_bytes, filename, lambda p: p.extract_table(image_bytes, filename))
@@ -77,8 +98,12 @@ class FallbackProvider(VisionProvider):
                 if image_mime(image_bytes, filename) in secondary.unsupported_mimes:
                     raise
                 get_logger("pointbook.vision").warning(
-                    "AI 대체 제공자 사용 code=%s reference=%s", error.code, error.reference
+                    "AI 대체 제공자 사용 %s -> %s code=%s reference=%s",
+                    self.primary_label,
+                    self.secondary_label,
+                    error.code,
+                    error.reference,
                 )
-                self.fallback_used = True
+                self._state["used"] = True
                 return call(secondary)
         return call(self._make_secondary(self._timeout))

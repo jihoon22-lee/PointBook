@@ -429,6 +429,7 @@ body:has(.login-wrap) .login-wrap .muted { color: #cbd5e1; }
 .carry-help { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 6px; margin-top: 4px; white-space: normal; }
 .carry-reference, .carry-error { flex-basis: 100%; overflow-wrap: anywhere; }
 .carry-reference { color: var(--muted); font-size: 0.75rem; line-height: 1.3; }
+.tenure-reference { display: block; margin-top: 4px; color: var(--muted); font-size: 0.75rem; line-height: 1.3; white-space: normal; overflow-wrap: anywhere; }
 .carry-help .btn { font-size: 0.75rem; padding: 3px 6px; }
 .carry-state { font-size: 0.75rem; font-weight: 600; }
 .carry-state[data-state="missing"] { color: #70500d; }
